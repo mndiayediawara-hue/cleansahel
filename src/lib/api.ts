@@ -14,13 +14,16 @@ const BASE = '/api'
 function isStaticDeploy(): boolean {
   if (typeof window === 'undefined') return false
   const h = window.location.hostname
-  // Known static-deploy hostnames
+  // Known static-deploy hostnames (no backend available)
   if (h.includes('space.minimax.io')) return true
   if (h.includes('.vercel.app')) return true
   if (h.includes('.netlify.app')) return true
   if (h.includes('.github.io')) return true
-  // Allow override via localStorage flag for local dev with real backend
+  if (h.includes('localhost') && window.location.port === '5173') return true
+  // Hosts with real backend: onrender.com, render.com, anything else
+  // Allow override via localStorage flag
   if (localStorage.getItem('cleanerp-force-real') === '1') return false
+  if (localStorage.getItem('cleanerp-force-demo') === '1') return true
   return false
 }
 
