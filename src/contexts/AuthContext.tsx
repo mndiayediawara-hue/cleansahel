@@ -28,7 +28,7 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-// Sistema de permisos granulares:
+// SISTEMA DE PERMISOS granulares:
 // '*'           = puede hacer TODO (solo admin)
 // 'users.admin' = gestionar usuarios
 // 'module.read'  = ver módulo
