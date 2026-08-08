@@ -1,0 +1,758 @@
+import express from 'express'
+import bcrypt from 'bcryptjs'
+import jwt from 'jsonwebtoken'
+import db, { uid, getConfig, setConfig } from './db.js'
+
+const router = express.Router()
+const JWT_SECRET = process.env.JWT_SECRET || 'cleanerp-dev-secret-change-in-production-9f8e7d6c5b4a3210'
+
+// ---------- MIDDLEWARE ----------
+function auth(req, res, next) {
+  const header = req.headers.authorization
+  if (!header || !header.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'No autorizado' })
+  }
+  try {
+    const token = header.slice(7)
+    req.user = jwt.verify(token, JWT_SECRET)
+    next()
+  } catch {
+    return res.status(401).json({ error: 'Token inválido o expirado' })
+  }
+}
+
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'No tiene permisos para esta acción' })
+    }
+    next()
+  }
+}
+
+function addHistory(req, { action, module, entityId = null, description, before = null, after = null }) {
+  db.prepare(`INSERT INTO history (id, user_id, user_name, action, module, entity_id, description, before_json, after_json, timestamp) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .run(uid('h-'), req.user?.id || null, req.user?.fullName || 'Sistema', action, module, entityId, description, before ? JSON.stringify(before) : null, after ? JSON.stringify(after) : null, new Date().toISOString())
+}
+
+function maybeAddStockNotifications() {
+  // Auto-generate stock-low notifications
+  const lowRaw = db.prepare(`SELECT id, name, stock, min_stock, unit FROM raw_materials WHERE stock < min_stock`).all()
+  const lowPkg = db.prepare(`SELECT id, name, stock, min_stock FROM packaging WHERE stock < min_stock`).all()
+  const lowProd = db.prepare(`SELECT id, name, stock, min_stock FROM products WHERE stock < min_stock AND active = 1`).all()
+  const ins = db.prepare(`INSERT INTO notifications (id, type, title, message, severity, read, created_at, related_id) VALUES (?,?,?,?,?,0,?,?)`)
+  const now = new Date().toISOString()
+  for (const r of lowRaw) {
+    // dedupe
+    const exists = db.prepare(`SELECT id FROM notifications WHERE type='stock-bajo' AND related_id=? AND read=0`).get('raw:'+r.id)
+    if (!exists) ins.run(uid('n-'), 'stock-bajo', 'Stock bajo materia prima', `${r.name} por debajo del mínimo (${r.stock} ${r.unit} / ${r.min_stock} ${r.unit})`, 'warning', now, 'raw:'+r.id)
+  }
+  for (const r of lowPkg) {
+    const exists = db.prepare(`SELECT id FROM notifications WHERE type='stock-bajo' AND related_id=? AND read=0`).get('pkg:'+r.id)
+    if (!exists) ins.run(uid('n-'), 'stock-bajo', 'Stock bajo material de embalaje', `${r.name} por debajo del mínimo (${r.stock} / ${r.min_stock})`, 'critical', now, 'pkg:'+r.id)
+  }
+  for (const r of lowProd) {
+    const exists = db.prepare(`SELECT id FROM notifications WHERE type='stock-bajo' AND related_id=? AND read=0`).get('prd:'+r.id)
+    if (!exists) ins.run(uid('n-'), 'stock-bajo', 'Stock bajo producto terminado', `${r.name} por debajo del mínimo (${r.stock} / ${r.min_stock})`, 'warning', now, 'prd:'+r.id)
+  }
+}
+
+// ---------- AUTH ----------
+router.post('/auth/login', (req, res) => {
+  const { username, password } = req.body || {}
+  if (!username || !password) return res.status(400).json({ error: 'Usuario y contraseña requeridos' })
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username)
+  if (!user) return res.status(401).json({ error: 'Credenciales incorrectas' })
+  if (!user.active) return res.status(403).json({ error: 'Usuario desactivado' })
+  const security = getConfig('security', { maxFailedAttempts: 5 })
+  if ((user.failed_attempts || 0) >= security.maxFailedAttempts) {
+    return res.status(403).json({ error: 'Cuenta bloqueada por múltiples intentos. Contacte al administrador.' })
+  }
+  const ok = bcrypt.compareSync(password, user.password_hash)
+  if (!ok) {
+    db.prepare('UPDATE users SET failed_attempts = COALESCE(failed_attempts,0) + 1 WHERE id = ?').run(user.id)
+    return res.status(401).json({ error: 'Credenciales incorrectas' })
+  }
+  db.prepare('UPDATE users SET failed_attempts = 0, last_login = ? WHERE id = ?').run(new Date().toISOString(), user.id)
+  const token = jwt.sign({ id: user.id, username: user.username, role: user.role, fullName: user.full_name }, JWT_SECRET, { expiresIn: '8h' })
+  res.json({
+    token,
+    user: { id: user.id, username: user.username, fullName: user.full_name, email: user.email, role: user.role }
+  })
+  addHistory({ user: { id: user.id, fullName: user.full_name } }, { action: 'login', module: 'Auth', description: `Inicio de sesión: ${user.username}` })
+})
+
+router.get('/auth/me', auth, (req, res) => {
+  const u = db.prepare('SELECT id, username, full_name, email, role, active, created_at, last_login FROM users WHERE id = ?').get(req.user.id)
+  if (!u) return res.status(404).json({ error: 'No encontrado' })
+  res.json({ id: u.id, username: u.username, fullName: u.full_name, email: u.email, role: u.role, active: !!u.active, createdAt: u.created_at, lastLogin: u.last_login })
+})
+
+// ---------- USERS ----------
+router.get('/users', auth, (_req, res) => {
+  const rows = db.prepare('SELECT id, username, full_name, email, role, active, created_at, last_login FROM users ORDER BY full_name').all()
+  res.json(rows.map(u => ({
+    id: u.id, username: u.username, fullName: u.full_name, email: u.email, role: u.role,
+    active: !!u.active, createdAt: u.created_at, lastLogin: u.last_login
+  })))
+})
+
+router.post('/users', auth, requireRole('admin'), (req, res) => {
+  const { username, password, fullName, email, role } = req.body
+  if (!username || !password || !fullName) return res.status(400).json({ error: 'Datos incompletos' })
+  try {
+    const id = uid('u-')
+    db.prepare('INSERT INTO users (id, username, password_hash, full_name, email, role, active, created_at) VALUES (?,?,?,?,?,?,1,?)')
+      .run(id, username, bcrypt.hashSync(password, 10), fullName, email || '', role || 'produccion', new Date().toISOString())
+    addHistory(req, { action: 'crear', module: 'Usuarios', entityId: id, description: `Creado usuario ${username} (${role})` })
+    res.json({ id, username, fullName, email, role })
+  } catch (e) {
+    res.status(400).json({ error: 'Usuario ya existe' })
+  }
+})
+
+router.put('/users/:id', auth, requireRole('admin'), (req, res) => {
+  const { id } = req.params
+  const { fullName, email, role, active, password } = req.body
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(id)
+  if (!u) return res.status(404).json({ error: 'No encontrado' })
+  db.prepare('UPDATE users SET full_name = ?, email = ?, role = ?, active = ? WHERE id = ?')
+    .run(fullName || u.full_name, email ?? u.email, role || u.role, active === false ? 0 : 1, id)
+  if (password) db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(password, 10), id)
+  addHistory(req, { action: 'modificar', module: 'Usuarios', entityId: id, description: `Modificado usuario ${u.username}`, before: u })
+  res.json({ ok: true })
+})
+
+router.delete('/users/:id', auth, requireRole('admin'), (req, res) => {
+  const { id } = req.params
+  if (id === req.user.id) return res.status(400).json({ error: 'No puede eliminarse a sí mismo' })
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(id)
+  if (!u) return res.status(404).json({ error: 'No encontrado' })
+  db.prepare('DELETE FROM users WHERE id = ?').run(id)
+  addHistory(req, { action: 'borrar', module: 'Usuarios', entityId: id, description: `Eliminado usuario ${u.username}`, before: u })
+  res.json({ ok: true })
+})
+
+// ---------- SUPPLIERS ----------
+router.get('/suppliers', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM suppliers ORDER BY name').all().map(s => ({
+    id: s.id, name: s.name, cif: s.cif, email: s.email, phone: s.phone, contact: s.contact, address: s.address, city: s.city, country: s.country
+  })))
+})
+router.post('/suppliers', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+  const b = req.body
+  const id = uid('s-')
+  db.prepare('INSERT INTO suppliers (id, name, cif, email, phone, contact, address, city, country) VALUES (?,?,?,?,?,?,?,?,?)')
+    .run(id, b.name, b.cif || '', b.email || '', b.phone || '', b.contact || '', b.address || '', b.city || '', b.country || 'España')
+  addHistory(req, { action: 'crear', module: 'Proveedores', entityId: id, description: `Creado proveedor ${b.name}` })
+  res.json({ id })
+})
+router.put('/suppliers/:id', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+  const b = req.body
+  db.prepare('UPDATE suppliers SET name=?, cif=?, email=?, phone=?, contact=?, address=?, city=?, country=? WHERE id=?')
+    .run(b.name, b.cif, b.email, b.phone, b.contact, b.address, b.city, b.country, req.params.id)
+  addHistory(req, { action: 'modificar', module: 'Proveedores', entityId: req.params.id, description: `Modificado proveedor ${b.name}` })
+  res.json({ ok: true })
+})
+router.delete('/suppliers/:id', auth, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM suppliers WHERE id = ?').run(req.params.id)
+  addHistory(req, { action: 'borrar', module: 'Proveedores', entityId: req.params.id, description: 'Proveedor eliminado' })
+  res.json({ ok: true })
+})
+
+// ---------- RAW MATERIALS ----------
+const mapRaw = (r) => ({
+  id: r.id, code: r.code, name: r.name, category: r.category, unit: r.unit,
+  stock: r.stock, minStock: r.min_stock, maxStock: r.max_stock, price: r.price,
+  supplierId: r.supplier_id, location: r.location, expiryDate: r.expiry_date, lot: r.lot, lastUpdated: r.last_updated
+})
+
+router.get('/raw-materials', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM raw_materials ORDER BY name').all().map(mapRaw))
+})
+router.post('/raw-materials', auth, requireRole('admin', 'almacen', 'contabilidad'), (req, res) => {
+  const b = req.body
+  const id = uid('rm-')
+  db.prepare(`INSERT INTO raw_materials (id, code, name, category, unit, stock, min_stock, max_stock, price, supplier_id, location, expiry_date, lot, last_updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(id, b.code, b.name, b.category, b.unit, b.stock || 0, b.minStock || 0, b.maxStock || 0, b.price || 0, b.supplierId || null, b.location || '', b.expiryDate || null, b.lot || null, new Date().toISOString())
+  addHistory(req, { action: 'crear', module: 'Materias Primas', entityId: id, description: `Creada materia prima ${b.name}` })
+  res.json({ id })
+})
+router.put('/raw-materials/:id', auth, requireRole('admin', 'almacen', 'contabilidad'), (req, res) => {
+  const b = req.body
+  const before = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(req.params.id)
+  if (!before) return res.status(404).json({ error: 'No encontrado' })
+  db.prepare(`UPDATE raw_materials SET code=?, name=?, category=?, unit=?, min_stock=?, max_stock=?, price=?, supplier_id=?, location=?, expiry_date=?, lot=?, last_updated=? WHERE id=?`)
+    .run(b.code, b.name, b.category, b.unit, b.minStock, b.maxStock, b.price, b.supplierId || null, b.location, b.expiryDate || null, b.lot || null, new Date().toISOString(), req.params.id)
+  addHistory(req, { action: 'modificar', module: 'Materias Primas', entityId: req.params.id, description: `Modificada materia prima ${b.name}`, before: mapRaw(before), after: b })
+  res.json({ ok: true })
+})
+router.delete('/raw-materials/:id', auth, requireRole('admin'), (req, res) => {
+  const before = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(req.params.id)
+  db.prepare('DELETE FROM raw_materials WHERE id = ?').run(req.params.id)
+  addHistory(req, { action: 'borrar', module: 'Materias Primas', entityId: req.params.id, description: `Eliminada materia prima ${before?.name || ''}`, before: before ? mapRaw(before) : null })
+  res.json({ ok: true })
+})
+
+// Stock entry (compra / entrada almacén)
+router.post('/raw-materials/:id/entry', auth, requireRole('admin', 'almacen', 'contabilidad'), (req, res) => {
+  const { quantity, lot, expiryDate, price, invoice } = req.body
+  const m = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(req.params.id)
+  if (!m) return res.status(404).json({ error: 'No encontrado' })
+  const newStock = m.stock + Number(quantity)
+  db.prepare('UPDATE raw_materials SET stock = ?, last_updated = ?, lot = COALESCE(?, lot), expiry_date = COALESCE(?, expiry_date), price = COALESCE(?, price) WHERE id = ?')
+    .run(newStock, new Date().toISOString(), lot, expiryDate, price, req.params.id)
+  addHistory(req, { action: 'compra', module: 'Almacén', entityId: req.params.id, description: `Entrada de ${quantity} ${m.unit} de ${m.name}${invoice ? ' — Factura ' + invoice : ''}` })
+  maybeAddStockNotifications()
+  res.json({ ok: true, newStock })
+})
+
+// ---------- PACKAGING ----------
+const mapPkg = (p) => ({
+  id: p.id, code: p.code, name: p.name, type: p.type, size: p.size,
+  stock: p.stock, minStock: p.min_stock, maxStock: p.max_stock, price: p.price,
+  supplierId: p.supplier_id, location: p.location, lastUpdated: p.last_updated
+})
+
+router.get('/packaging', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM packaging ORDER BY name').all().map(mapPkg))
+})
+router.post('/packaging', auth, requireRole('admin', 'almacen', 'contabilidad'), (req, res) => {
+  const b = req.body
+  const id = uid('pk-')
+  db.prepare('INSERT INTO packaging (id, code, name, type, size, stock, min_stock, max_stock, price, supplier_id, location, last_updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+    .run(id, b.code, b.name, b.type, b.size || null, b.stock || 0, b.minStock || 0, b.maxStock || 0, b.price || 0, b.supplierId || null, b.location || '', new Date().toISOString())
+  addHistory(req, { action: 'crear', module: 'Embalaje', entityId: id, description: `Creado material ${b.name}` })
+  res.json({ id })
+})
+router.put('/packaging/:id', auth, requireRole('admin', 'almacen', 'contabilidad'), (req, res) => {
+  const b = req.body
+  db.prepare('UPDATE packaging SET code=?, name=?, type=?, size=?, min_stock=?, max_stock=?, price=?, supplier_id=?, location=?, last_updated=? WHERE id=?')
+    .run(b.code, b.name, b.type, b.size || null, b.minStock, b.maxStock, b.price, b.supplierId || null, b.location, new Date().toISOString(), req.params.id)
+  addHistory(req, { action: 'modificar', module: 'Embalaje', entityId: req.params.id, description: `Modificado material ${b.name}` })
+  res.json({ ok: true })
+})
+router.delete('/packaging/:id', auth, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM packaging WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
+})
+router.post('/packaging/:id/entry', auth, requireRole('admin', 'almacen', 'contabilidad'), (req, res) => {
+  const { quantity, price, invoice } = req.body
+  const m = db.prepare('SELECT * FROM packaging WHERE id = ?').get(req.params.id)
+  if (!m) return res.status(404).json({ error: 'No encontrado' })
+  db.prepare('UPDATE packaging SET stock = stock + ?, last_updated = ?, price = COALESCE(?, price) WHERE id = ?')
+    .run(Number(quantity), new Date().toISOString(), price, req.params.id)
+  addHistory(req, { action: 'compra', module: 'Almacén', entityId: req.params.id, description: `Entrada de ${quantity} ud de ${m.name}${invoice ? ' — Factura ' + invoice : ''}` })
+  maybeAddStockNotifications()
+  res.json({ ok: true })
+})
+
+// ---------- PRODUCTS ----------
+const mapProd = (p) => ({
+  id: p.id, code: p.code, name: p.name, description: p.description, category: p.category,
+  bottleSize: p.bottle_size, stock: p.stock, minStock: p.min_stock, maxStock: p.max_stock,
+  price: p.price, cost: p.cost, recipeId: p.recipe_id, active: !!p.active
+})
+
+router.get('/products', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM products ORDER BY name').all().map(mapProd))
+})
+router.post('/products', auth, requireRole('admin'), (req, res) => {
+  const b = req.body
+  const id = uid('pr-')
+  db.prepare('INSERT INTO products (id, code, name, description, category, bottle_size, stock, min_stock, max_stock, price, cost, recipe_id, active) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)')
+    .run(id, b.code, b.name, b.description || '', b.category || 'General', b.bottleSize, b.stock || 0, b.minStock || 0, b.maxStock || 0, b.price || 0, b.cost || 0, b.recipeId || null)
+  addHistory(req, { action: 'crear', module: 'Productos', entityId: id, description: `Creado producto ${b.name}` })
+  res.json({ id })
+})
+router.put('/products/:id', auth, requireRole('admin'), (req, res) => {
+  const b = req.body
+  db.prepare('UPDATE products SET code=?, name=?, description=?, category=?, bottle_size=?, min_stock=?, max_stock=?, price=?, cost=?, recipe_id=?, active=? WHERE id=?')
+    .run(b.code, b.name, b.description, b.category, b.bottleSize, b.minStock, b.maxStock, b.price, b.cost, b.recipeId || null, b.active === false ? 0 : 1, req.params.id)
+  addHistory(req, { action: 'modificar', module: 'Productos', entityId: req.params.id, description: `Modificado producto ${b.name}` })
+  res.json({ ok: true })
+})
+router.delete('/products/:id', auth, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM products WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
+})
+
+// ---------- RECIPES ----------
+const mapRec = (r) => ({
+  id: r.id, productId: r.product_id, bottleSize: r.bottle_size,
+  bottlesPerBox: r.bottles_per_box, boxesPerPallet: r.boxes_per_pallet,
+  yieldPerLiter: r.yield_per_liter, items: JSON.parse(r.items_json || '[]'),
+  updatedAt: r.updated_at
+})
+
+router.get('/recipes', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM recipes ORDER BY product_id').all().map(mapRec))
+})
+router.get('/recipes/:id', auth, (req, res) => {
+  const r = db.prepare('SELECT * FROM recipes WHERE id = ?').get(req.params.id)
+  if (!r) return res.status(404).json({ error: 'No encontrado' })
+  res.json(mapRec(r))
+})
+router.post('/recipes', auth, requireRole('admin', 'produccion'), (req, res) => {
+  const b = req.body
+  const id = uid('rc-')
+  db.prepare('INSERT INTO recipes (id, product_id, bottle_size, bottles_per_box, boxes_per_pallet, yield_per_liter, items_json, updated_at) VALUES (?,?,?,?,?,?,?,?)')
+    .run(id, b.productId, b.bottleSize, b.bottlesPerBox, b.boxesPerPallet, b.yieldPerLiter, JSON.stringify(b.items || []), new Date().toISOString())
+  addHistory(req, { action: 'crear', module: 'Recetas', entityId: id, description: `Creada receta para producto ${b.productId}` })
+  res.json({ id })
+})
+router.put('/recipes/:id', auth, requireRole('admin', 'produccion'), (req, res) => {
+  const b = req.body
+  db.prepare('UPDATE recipes SET bottle_size=?, bottles_per_box=?, boxes_per_pallet=?, yield_per_liter=?, items_json=?, updated_at=? WHERE id=?')
+    .run(b.bottleSize, b.bottlesPerBox, b.boxesPerPallet, b.yieldPerLiter, JSON.stringify(b.items || []), new Date().toISOString(), req.params.id)
+  addHistory(req, { action: 'modificar', module: 'Recetas', entityId: req.params.id, description: `Modificada receta` })
+  res.json({ ok: true })
+})
+router.delete('/recipes/:id', auth, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM recipes WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
+})
+
+// ---------- CUSTOMERS ----------
+const mapCust = (c) => ({
+  id: c.id, code: c.code, name: c.name, company: c.company, cif: c.cif,
+  address: c.address, city: c.city, country: c.country, phone: c.phone,
+  email: c.email, contact: c.contact, notes: c.notes,
+  totalPurchases: c.total_purchases, createdAt: c.created_at
+})
+
+router.get('/customers', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM customers ORDER BY name').all().map(mapCust))
+})
+router.post('/customers', auth, requireRole('admin', 'comercial'), (req, res) => {
+  const b = req.body
+  const id = uid('c-')
+  const code = b.code || `C-${String(db.prepare('SELECT COUNT(*) c FROM customers').get().c + 1).padStart(3, '0')}`
+  db.prepare('INSERT INTO customers (id, code, name, company, cif, address, city, country, phone, email, contact, notes, total_purchases, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0,?)')
+    .run(id, code, b.name, b.company || '', b.cif || '', b.address || '', b.city || '', b.country || 'España', b.phone || '', b.email || '', b.contact || '', b.notes || '', new Date().toISOString())
+  addHistory(req, { action: 'crear', module: 'Clientes', entityId: id, description: `Creado cliente ${b.name}` })
+  res.json({ id })
+})
+router.put('/customers/:id', auth, requireRole('admin', 'comercial'), (req, res) => {
+  const b = req.body
+  db.prepare('UPDATE customers SET code=?, name=?, company=?, cif=?, address=?, city=?, country=?, phone=?, email=?, contact=?, notes=? WHERE id=?')
+    .run(b.code, b.name, b.company, b.cif, b.address, b.city, b.country, b.phone, b.email, b.contact, b.notes, req.params.id)
+  addHistory(req, { action: 'modificar', module: 'Clientes', entityId: req.params.id, description: `Modificado cliente ${b.name}` })
+  res.json({ ok: true })
+})
+router.delete('/customers/:id', auth, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM customers WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
+})
+
+// ---------- ORDERS ----------
+const mapOrder = (o) => ({
+  id: o.id, number: o.number, customerId: o.customer_id, items: JSON.parse(o.items_json || '[]'),
+  subtotal: o.subtotal, tax: o.tax, discount: o.discount, total: o.total,
+  status: o.status, createdAt: o.created_at, deliveryDate: o.delivery_date, notes: o.notes, createdBy: o.created_by
+})
+
+router.get('/orders', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM orders ORDER BY created_at DESC').all().map(mapOrder))
+})
+router.post('/orders', auth, requireRole('admin', 'comercial'), (req, res) => {
+  const b = req.body
+  const id = uid('o-')
+  const count = db.prepare("SELECT COUNT(*) c FROM orders WHERE number LIKE 'PED-%'").get().c
+  const number = b.number || `PED-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`
+  db.prepare('INSERT INTO orders (id, number, customer_id, items_json, subtotal, tax, discount, total, status, created_at, delivery_date, notes, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
+    .run(id, number, b.customerId, JSON.stringify(b.items || []), b.subtotal || 0, b.tax || 0, b.discount || 0, b.total || 0, b.status || 'pendiente', new Date().toISOString(), b.deliveryDate || null, b.notes || null, req.user.id)
+  addHistory(req, { action: 'crear', module: 'Pedidos', entityId: id, description: `Creado pedido ${number}` })
+  // add notification
+  db.prepare('INSERT INTO notifications (id, type, title, message, severity, read, created_at, related_id) VALUES (?,?,?,?,?,0,?,?)')
+    .run(uid('n-'), 'pedido', 'Nuevo pedido', `Pedido ${number} creado por ${req.user.fullName}`, 'info', new Date().toISOString(), 'order:'+id)
+  res.json({ id, number })
+})
+router.put('/orders/:id', auth, requireRole('admin', 'comercial', 'produccion'), (req, res) => {
+  const b = req.body
+  const before = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)
+  if (!before) return res.status(404).json({ error: 'No encontrado' })
+  // if changing to 'confirmado' from pendiente and was not confirmed before, deduct stock
+  const newStatus = b.status || before.status
+  let touched = false
+  const deductStock = (order) => {
+    const items = JSON.parse(order.items_json)
+    for (const it of items) {
+      db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?').run(it.quantity, it.productId)
+      touched = true
+    }
+    db.prepare('UPDATE customers SET total_purchases = total_purchases + ? WHERE id = ?').run(order.total, order.customer_id)
+  }
+  if (newStatus === 'confirmado' && before.status !== 'confirmado' && before.status !== 'entregado' && before.status !== 'cancelado') {
+    deductStock(before)
+  }
+  db.prepare('UPDATE orders SET customer_id=?, items_json=?, subtotal=?, tax=?, discount=?, total=?, status=?, delivery_date=?, notes=? WHERE id=?')
+    .run(b.customerId || before.customer_id, JSON.stringify(b.items || JSON.parse(before.items_json)), b.subtotal ?? before.subtotal, b.tax ?? before.tax, b.discount ?? before.discount, b.total ?? before.total, newStatus, b.deliveryDate ?? before.delivery_date, b.notes ?? before.notes, req.params.id)
+  addHistory(req, { action: 'modificar', module: 'Pedidos', entityId: req.params.id, description: `Pedido ${before.number} → ${newStatus}${touched ? ' (stock descontado)' : ''}`, before: mapOrder(before) })
+  if (touched) maybeAddStockNotifications()
+  res.json({ ok: true })
+})
+router.delete('/orders/:id', auth, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM orders WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
+})
+
+// ---------- PURCHASES ----------
+const mapPurch = (p) => ({
+  id: p.id, number: p.number, supplierId: p.supplier_id, invoice: p.invoice, items: JSON.parse(p.items_json || '[]'),
+  subtotal: p.subtotal, tax: p.tax, total: p.total, status: p.status, date: p.date, notes: p.notes
+})
+
+router.get('/purchases', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM purchases ORDER BY date DESC').all().map(mapPurch))
+})
+router.post('/purchases', auth, requireRole('admin', 'contabilidad', 'almacen'), (req, res) => {
+  const b = req.body
+  const id = uid('pu-')
+  const count = db.prepare('SELECT COUNT(*) c FROM purchases').get().c
+  const number = b.number || `C-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`
+  db.prepare('INSERT INTO purchases (id, number, supplier_id, invoice, items_json, subtotal, tax, total, status, date, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+    .run(id, number, b.supplierId, b.invoice || '', JSON.stringify(b.items || []), b.subtotal || 0, b.tax || 0, b.total || 0, b.status || 'recibida', b.date || new Date().toISOString(), b.notes || null)
+  // auto-update stock if status recibida
+  if ((b.status || 'recibida') === 'recibida') {
+    for (const it of b.items || []) {
+      if (it.materialType === 'raw') db.prepare('UPDATE raw_materials SET stock = stock + ?, last_updated = ? WHERE id = ?').run(it.quantity, new Date().toISOString(), it.materialId)
+      else db.prepare('UPDATE packaging SET stock = stock + ?, last_updated = ? WHERE id = ?').run(it.quantity, new Date().toISOString(), it.materialId)
+    }
+    maybeAddStockNotifications()
+  }
+  addHistory(req, { action: 'compra', module: 'Compras', entityId: id, description: `Compra ${number} — Factura ${b.invoice || 's/f'}` })
+  res.json({ id, number })
+})
+router.put('/purchases/:id', auth, requireRole('admin', 'contabilidad', 'almacen'), (req, res) => {
+  const b = req.body
+  db.prepare('UPDATE purchases SET supplier_id=?, invoice=?, items_json=?, subtotal=?, tax=?, total=?, status=?, date=?, notes=? WHERE id=?')
+    .run(b.supplierId, b.invoice, JSON.stringify(b.items || []), b.subtotal, b.tax, b.total, b.status, b.date, b.notes, req.params.id)
+  res.json({ ok: true })
+})
+router.delete('/purchases/:id', auth, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM purchases WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
+})
+
+// ---------- EXPENSES ----------
+const mapExp = (e) => ({ id: e.id, date: e.date, category: e.category, amount: e.amount, description: e.description, attachment: e.attachment, createdBy: e.created_by })
+
+router.get('/expenses', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM expenses ORDER BY date DESC').all().map(mapExp))
+})
+router.post('/expenses', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+  const b = req.body
+  const id = uid('e-')
+  db.prepare('INSERT INTO expenses (id, date, category, amount, description, attachment, created_by) VALUES (?,?,?,?,?,?,?)')
+    .run(id, b.date || new Date().toISOString(), b.category, b.amount, b.description || '', b.attachment || null, req.user.id)
+  addHistory(req, { action: 'crear', module: 'Gastos', entityId: id, description: `Gasto de ${b.category}: ${b.amount}€` })
+  res.json({ id })
+})
+router.put('/expenses/:id', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+  const b = req.body
+  db.prepare('UPDATE expenses SET date=?, category=?, amount=?, description=?, attachment=? WHERE id=?')
+    .run(b.date, b.category, b.amount, b.description, b.attachment, req.params.id)
+  res.json({ ok: true })
+})
+router.delete('/expenses/:id', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+  db.prepare('DELETE FROM expenses WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
+})
+
+// ---------- LOTS ----------
+const mapLot = (l) => ({
+  id: l.id, lotNumber: l.lot_number, productId: l.product_id, recipeId: l.recipe_id,
+  quantity: l.quantity, rawMaterials: JSON.parse(l.raw_materials_json || '[]'),
+  producedBy: l.produced_by, producedAt: l.produced_at, status: l.status, notes: l.notes
+})
+
+router.get('/lots', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM lots ORDER BY produced_at DESC').all().map(mapLot))
+})
+router.get('/lots/:id', auth, (req, res) => {
+  const l = db.prepare('SELECT * FROM lots WHERE id = ?').get(req.params.id)
+  if (!l) return res.status(404).json({ error: 'No encontrado' })
+  res.json(mapLot(l))
+})
+// PRODUCE — the core action
+router.post('/produce', auth, requireRole('admin', 'produccion'), (req, res) => {
+  const { productId, quantity, notes } = req.body
+  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId)
+  if (!product) return res.status(404).json({ error: 'Producto no encontrado' })
+  const recipe = db.prepare('SELECT * FROM recipes WHERE product_id = ?').get(productId)
+  if (!recipe) return res.status(400).json({ error: 'El producto no tiene receta definida' })
+  const items = JSON.parse(recipe.items_json)
+  // Check stock for all required materials
+  const totalLiters = quantity / recipe.yield_per_liter
+  const needed = items.map(it => {
+    const totalQty = it.unit === 'g' || it.unit === 'ml' ? (it.quantity * quantity) : (it.quantity * totalLiters)
+    if (it.materialType === 'raw') {
+      const m = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(it.materialId)
+      return { ...it, totalQty, available: m ? m.stock : 0, name: m?.name || '?' }
+    } else {
+      const m = db.prepare('SELECT * FROM packaging WHERE id = ?').get(it.materialId)
+      return { ...it, totalQty, available: m ? m.stock : 0, name: m?.name || '?' }
+    }
+  })
+  const shortages = needed.filter(n => n.available < n.totalQty)
+  if (shortages.length > 0) {
+    return res.status(400).json({ error: 'Stock insuficiente para fabricar', shortages: shortages.map(s => ({ name: s.name, needed: s.totalQty, available: s.available, unit: s.unit })) })
+  }
+  // Deduct stock and create lot
+  const lotId = uid('l-')
+  const lotCount = db.prepare("SELECT COUNT(*) c FROM lots WHERE lot_number LIKE 'LOT-%'").get().c
+  const lotNumber = `LOT-${new Date().getFullYear()}-${String(lotCount + 1).padStart(4, '0')}`
+  const tx = db.transaction(() => {
+    for (const n of needed) {
+      if (n.materialType === 'raw') db.prepare('UPDATE raw_materials SET stock = stock - ?, last_updated = ? WHERE id = ?').run(n.totalQty, new Date().toISOString(), n.materialId)
+      else db.prepare('UPDATE packaging SET stock = stock - ?, last_updated = ? WHERE id = ?').run(n.totalQty, new Date().toISOString(), n.materialId)
+    }
+    db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(quantity, productId)
+    db.prepare('INSERT INTO lots (id, lot_number, product_id, recipe_id, quantity, raw_materials_json, produced_by, produced_at, status, notes) VALUES (?,?,?,?,?,?,?,?,?,?)')
+      .run(lotId, lotNumber, productId, recipe.id, quantity, JSON.stringify(needed.map(n => ({ materialId: n.materialId, materialType: n.materialType, quantity: n.totalQty, unit: n.unit }))), req.user.id, new Date().toISOString(), 'completado', notes || null)
+    db.prepare('INSERT INTO notifications (id, type, title, message, severity, read, created_at, related_id) VALUES (?,?,?,?,?,0,?,?)')
+      .run(uid('n-'), 'produccion', 'Producción completada', `Fabricadas ${quantity} ud de ${product.name} — Lote ${lotNumber}`, 'success', new Date().toISOString(), 'lot:'+lotId)
+  })
+  tx()
+  addHistory(req, { action: 'produccion', module: 'Producción', entityId: lotId, description: `Fabricadas ${quantity} ud de ${product.name} — Lote ${lotNumber}` })
+  maybeAddStockNotifications()
+  res.json({ ok: true, lotId, lotNumber })
+})
+
+// ---------- NOTIFICATIONS ----------
+router.get('/notifications', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM notifications ORDER BY created_at DESC LIMIT 100').all().map(n => ({
+    id: n.id, type: n.type, title: n.title, message: n.message, severity: n.severity,
+    read: !!n.read, createdAt: n.created_at, relatedId: n.related_id
+  })))
+})
+router.post('/notifications/:id/read', auth, (req, res) => {
+  db.prepare('UPDATE notifications SET read = 1 WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
+})
+router.post('/notifications/read-all', auth, (_req, res) => {
+  db.prepare('UPDATE notifications SET read = 1').run()
+  res.json({ ok: true })
+})
+
+// ---------- HISTORY ----------
+router.get('/history', auth, (req, res) => {
+  const limit = Math.min(Number(req.query.limit) || 500, 5000)
+  const rows = db.prepare('SELECT * FROM history ORDER BY timestamp DESC LIMIT ?').all(limit)
+  res.json(rows.map(h => ({
+    id: h.id, userId: h.user_id, userName: h.user_name, action: h.action, module: h.module,
+    entityId: h.entity_id, description: h.description, timestamp: h.timestamp
+  })))
+})
+
+// ---------- CONFIG ----------
+router.get('/config', auth, (_req, res) => {
+  res.json({
+    company: getConfig('company'),
+    defaults: getConfig('defaults'),
+    security: getConfig('security'),
+  })
+})
+router.put('/config', auth, requireRole('admin'), (req, res) => {
+  const { company, defaults, security } = req.body
+  if (company) setConfig('company', company)
+  if (defaults) setConfig('defaults', defaults)
+  if (security) setConfig('security', security)
+  addHistory(req, { action: 'modificar', module: 'Configuración', description: 'Configuración actualizada' })
+  res.json({ ok: true })
+})
+
+// ---------- DASHBOARD ----------
+router.get('/dashboard', auth, (_req, res) => {
+  const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
+  const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - 7)
+  const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0)
+
+  const rawValue = db.prepare('SELECT SUM(stock * price) v FROM raw_materials').get().v || 0
+  const pkgValue = db.prepare('SELECT SUM(stock * price) v FROM packaging').get().v || 0
+  const prodValue = db.prepare('SELECT SUM(stock * price) v FROM products').get().v || 0
+  const totalInventoryValue = rawValue + pkgValue + prodValue
+
+  const rawStock = db.prepare('SELECT COUNT(*) c, SUM(stock) q FROM raw_materials').get()
+  const pkgStock = db.prepare('SELECT COUNT(*) c, SUM(stock) q FROM packaging').get()
+  const prodStock = db.prepare('SELECT COUNT(*) c, SUM(stock) q FROM products').get()
+  const lowRaw = db.prepare('SELECT COUNT(*) c FROM raw_materials WHERE stock < min_stock').get().c
+  const lowPkg = db.prepare('SELECT COUNT(*) c FROM packaging WHERE stock < min_stock').get().c
+  const lowProd = db.prepare('SELECT COUNT(*) c FROM products WHERE stock < min_stock AND active = 1').get().c
+
+  const ordersToday = db.prepare("SELECT COALESCE(SUM(total),0) t FROM orders WHERE created_at >= ?").get(todayStart.toISOString()).t
+  const ordersMonth = db.prepare("SELECT COALESCE(SUM(total),0) t FROM orders WHERE created_at >= ?").get(monthStart.toISOString()).t
+  const expensesMonth = db.prepare("SELECT COALESCE(SUM(amount),0) t FROM expenses WHERE date >= ?").get(monthStart.toISOString()).t
+  const pendingOrders = db.prepare("SELECT COUNT(*) c FROM orders WHERE status IN ('pendiente','confirmado','preparando')").get().c
+  const productionToday = db.prepare("SELECT COALESCE(SUM(quantity),0) t FROM lots WHERE produced_at >= ? AND status = 'completado'").get(todayStart.toISOString()).t
+  const productionWeek = db.prepare("SELECT COALESCE(SUM(quantity),0) t FROM lots WHERE produced_at >= ? AND status = 'completado'").get(weekStart.toISOString()).t
+  const productionMonth = db.prepare("SELECT COALESCE(SUM(quantity),0) t FROM lots WHERE produced_at >= ? AND status = 'completado'").get(monthStart.toISOString()).t
+
+  const benefit = ordersMonth - expensesMonth
+
+  // Charts
+  const last7 = []
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(); d.setDate(d.getDate() - i); d.setHours(0, 0, 0, 0)
+    const next = new Date(d); next.setDate(next.getDate() + 1)
+    const ventas = db.prepare("SELECT COALESCE(SUM(total),0) t FROM orders WHERE created_at >= ? AND created_at < ?").get(d.toISOString(), next.toISOString()).t
+    const gastos = db.prepare("SELECT COALESCE(SUM(amount),0) t FROM expenses WHERE date >= ? AND date < ?").get(d.toISOString(), next.toISOString()).t
+    last7.push({ date: d.toISOString().slice(5, 10), ventas, gastos })
+  }
+  const salesByProduct = db.prepare(`
+    SELECT p.name, SUM(CAST(json_extract(item.value, '$.quantity') AS REAL)) qty
+    FROM orders o, json_each(o.items_json) item
+    JOIN products p ON p.id = json_extract(item.value, '$.productId')
+    WHERE o.created_at >= ?
+    GROUP BY p.id
+    ORDER BY qty DESC LIMIT 5
+  `).all(monthStart.toISOString())
+  const topCustomers = db.prepare(`
+    SELECT c.name, c.total_purchases as total
+    FROM customers c
+    ORDER BY c.total_purchases DESC LIMIT 5
+  `).all()
+
+  const recentOrders = db.prepare(`SELECT o.*, c.name as customer_name FROM orders o LEFT JOIN customers c ON c.id = o.customer_id ORDER BY o.created_at DESC LIMIT 5`).all()
+    .map(o => ({ id: o.id, number: o.number, customer: o.customer_name, total: o.total, status: o.status, createdAt: o.created_at }))
+  const recentPurchases = db.prepare(`SELECT p.*, s.name as supplier_name FROM purchases p LEFT JOIN suppliers s ON s.id = p.supplier_id ORDER BY p.date DESC LIMIT 5`).all()
+    .map(p => ({ id: p.id, number: p.number, supplier: p.supplier_name, total: p.total, date: p.date }))
+  const recentLots = db.prepare(`SELECT l.*, p.name as product_name FROM lots l LEFT JOIN products p ON p.id = l.product_id ORDER BY l.produced_at DESC LIMIT 5`).all()
+    .map(l => ({ id: l.id, lotNumber: l.lot_number, product: l.product_name, quantity: l.quantity, status: l.status, producedAt: l.produced_at }))
+  const unreadNotifs = db.prepare("SELECT COUNT(*) c FROM notifications WHERE read = 0").get().c
+
+  res.json({
+    inventory: {
+      totalValue: totalInventoryValue,
+      rawValue, pkgValue, prodValue,
+      rawCount: rawStock.c, rawQty: rawStock.q || 0,
+      pkgCount: pkgStock.c, pkgQty: pkgStock.q || 0,
+      prodCount: prodStock.c, prodQty: prodStock.q || 0,
+      lowRaw, lowPkg, lowProd,
+    },
+    sales: { today: ordersToday, month: ordersMonth },
+    expenses: { month: expensesMonth },
+    benefit,
+    production: { today: productionToday, week: productionWeek, month: productionMonth },
+    pendingOrders,
+    charts: { last7, salesByProduct, topCustomers },
+    recent: { orders: recentOrders, purchases: recentPurchases, lots: recentLots },
+    unreadNotifs,
+  })
+})
+
+// ---------- REPORTS ----------
+router.get('/reports/inventory', auth, (_req, res) => {
+  const raw = db.prepare(`SELECT r.*, s.name as supplier_name FROM raw_materials r LEFT JOIN suppliers s ON s.id = r.supplier_id ORDER BY r.name`).all()
+    .map(r => ({ tipo: 'Materia Prima', codigo: r.code, nombre: r.name, stock: r.stock, unidad: r.unit, minimo: r.min_stock, maximo: r.max_stock, precio: r.price, valor: r.stock * r.price, proveedor: r.supplier_name, ubicacion: r.location, lote: r.lot, caducidad: r.expiry_date }))
+  const pkg = db.prepare(`SELECT p.*, s.name as supplier_name FROM packaging p LEFT JOIN suppliers s ON s.id = p.supplier_id ORDER BY p.name`).all()
+    .map(p => ({ tipo: 'Embalaje', codigo: p.code, nombre: p.name, stock: p.stock, unidad: 'ud', minimo: p.min_stock, maximo: p.max_stock, precio: p.price, valor: p.stock * p.price, proveedor: p.supplier_name, ubicacion: p.location, lote: '-', caducidad: '-' }))
+  res.json([...raw, ...pkg])
+})
+
+router.get('/reports/production', auth, (_req, res) => {
+  res.json(db.prepare(`SELECT l.*, p.name as product_name, u.full_name as produced_by_name FROM lots l LEFT JOIN products p ON p.id = l.product_id LEFT JOIN users u ON u.id = l.produced_by ORDER BY l.produced_at DESC LIMIT 200`).all()
+    .map(l => ({ lote: l.lot_number, producto: l.product_name, cantidad: l.quantity, operario: l.produced_by_name, fecha: l.produced_at, estado: l.status })))
+})
+
+router.get('/reports/sales', auth, (_req, res) => {
+  res.json(db.prepare(`SELECT o.*, c.name as customer_name FROM orders o LEFT JOIN customers c ON c.id = o.customer_id ORDER BY o.created_at DESC LIMIT 200`).all()
+    .map(o => ({ numero: o.number, cliente: o.customer_name, subtotal: o.subtotal, iva: o.tax, descuento: o.discount, total: o.total, estado: o.status, fecha: o.created_at })))
+})
+
+router.get('/reports/expenses', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM expenses ORDER BY date DESC LIMIT 500').all().map(e => ({ fecha: e.date, categoria: e.category, importe: e.amount, descripcion: e.description })))
+})
+
+router.get('/reports/consumption', auth, (_req, res) => {
+  const rows = db.prepare(`
+    SELECT json_extract(item.value, '$.materialId') as mid,
+           json_extract(item.value, '$.materialType') as mtype,
+           SUM(CAST(json_extract(item.value, '$.quantity') AS REAL)) as total
+    FROM lots l, json_each(l.raw_materials_json) item
+    WHERE l.status = 'completado'
+    GROUP BY mid, mtype
+  `).all()
+  const out = rows.map(r => {
+    let name = '-'
+    if (r.mtype === 'raw') name = db.prepare('SELECT name FROM raw_materials WHERE id = ?').get(r.mid)?.name || '-'
+    else name = db.prepare('SELECT name FROM packaging WHERE id = ?').get(r.mid)?.name || '-'
+    return { material: name, tipo: r.mtype, totalConsumido: r.total }
+  })
+  res.json(out)
+})
+
+// ---------- BACKUP ----------
+router.get('/backup', auth, requireRole('admin'), (_req, res) => {
+  const tables = ['users','suppliers','raw_materials','packaging','products','recipes','customers','orders','purchases','expenses','lots','notifications','history','config']
+  const dump = {}
+  for (const t of tables) {
+    if (t === 'config') dump[t] = db.prepare('SELECT * FROM config').all()
+    else dump[t] = db.prepare(`SELECT * FROM ${t}`).all()
+  }
+  res.setHeader('Content-Disposition', `attachment; filename="cleanerp-backup-${new Date().toISOString().slice(0,10)}.json"`)
+  res.json(dump)
+})
+
+router.post('/restore', auth, requireRole('admin'), (req, res) => {
+  const dump = req.body
+  if (!dump || typeof dump !== 'object') return res.status(400).json({ error: 'Datos inválidos' })
+  try {
+    const tables = ['users','suppliers','raw_materials','packaging','products','recipes','customers','orders','purchases','expenses','lots','notifications','history']
+    const tx = db.transaction(() => {
+      for (const t of tables) db.prepare(`DELETE FROM ${t}`).run()
+      for (const t of tables) {
+        if (Array.isArray(dump[t])) {
+          for (const row of dump[t]) {
+            const cols = Object.keys(row)
+            const placeholders = cols.map(() => '?').join(',')
+            db.prepare(`INSERT INTO ${t} (${cols.join(',')}) VALUES (${placeholders})`).run(...cols.map(c => row[c]))
+          }
+        }
+      }
+    })
+    tx()
+    addHistory(req, { action: 'modificar', module: 'Sistema', description: 'Restauración desde backup' })
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ---------- GLOBAL SEARCH ----------
+router.get('/search', auth, (req, res) => {
+  const q = (req.query.q || '').toString().trim().toLowerCase()
+  if (q.length < 2) return res.json({ results: [] })
+  const results = []
+  db.prepare('SELECT id, code, name FROM products WHERE LOWER(name) LIKE ? OR LOWER(code) LIKE ?').all(`%${q}%`, `%${q}%`).forEach(p => results.push({ type: 'producto', id: p.id, title: p.name, subtitle: p.code }))
+  db.prepare('SELECT id, code, name FROM customers WHERE LOWER(name) LIKE ? OR LOWER(company) LIKE ? OR LOWER(cif) LIKE ?').all(`%${q}%`, `%${q}%`, `%${q}%`).forEach(c => results.push({ type: 'cliente', id: c.id, title: c.name, subtitle: c.company }))
+  db.prepare('SELECT id, name, cif FROM suppliers WHERE LOWER(name) LIKE ? OR LOWER(cif) LIKE ?').all(`%${q}%`, `%${q}%`).forEach(s => results.push({ type: 'proveedor', id: s.id, title: s.name, subtitle: s.cif }))
+  db.prepare('SELECT id, code, name FROM raw_materials WHERE LOWER(name) LIKE ? OR LOWER(code) LIKE ? OR LOWER(lot) LIKE ?').all(`%${q}%`, `%${q}%`, `%${q}%`).forEach(r => results.push({ type: 'materia_prima', id: r.id, title: r.name, subtitle: r.code }))
+  db.prepare('SELECT id, lot_number, product_id FROM lots WHERE LOWER(lot_number) LIKE ?').all(`%${q}%`).forEach(l => results.push({ type: 'lote', id: l.id, title: l.lot_number, subtitle: 'Lote' }))
+  db.prepare('SELECT id, number FROM orders WHERE LOWER(number) LIKE ?').all(`%${q}%`).forEach(o => results.push({ type: 'pedido', id: o.id, title: o.number, subtitle: 'Pedido' }))
+  res.json({ results: results.slice(0, 30) })
+})
+
+// ---------- BARCODE LOOKUP ----------
+router.get('/barcode/:code', auth, (req, res) => {
+  const code = req.params.code
+  let p = db.prepare('SELECT * FROM products WHERE code = ?').get(code)
+  if (p) return res.json({ type: 'producto', data: mapProd(p) })
+  p = db.prepare('SELECT * FROM raw_materials WHERE code = ?').get(code)
+  if (p) return res.json({ type: 'materia_prima', data: mapRaw(p) })
+  p = db.prepare('SELECT * FROM packaging WHERE code = ?').get(code)
+  if (p) return res.json({ type: 'packaging', data: mapPkg(p) })
+  p = db.prepare('SELECT * FROM customers WHERE code = ?').get(code)
+  if (p) return res.json({ type: 'cliente', data: mapCust(p) })
+  res.status(404).json({ error: 'No encontrado' })
+})
+
+export default router
+
+// ---------- RESET DB (dev only) ----------
+router.post('/reset', auth, requireRole('admin'), async (_req, res) => {
+  const { seed } = await import('./seed.js')
+  seed({ force: true })
+  res.json({ ok: true })
+})
