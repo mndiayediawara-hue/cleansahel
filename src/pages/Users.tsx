@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useData } from '@/contexts/DataContext'
 import { useAuth } from '@/contexts/AuthContext'
+import { Can } from '@/components/Can'
 import { api } from '@/lib/api'
 import { PageHeader, DataTable, EmptyState } from '@/components/ui/Common'
 import { Modal, ConfirmDialog } from '@/components/ui/Modal'
@@ -67,9 +68,9 @@ export default function Users() {
     { key: 'lastLogin', label: 'Último acceso', render: (r: User) => r.lastLogin ? <span className="text-xs">{formatDate(r.lastLogin)}</span> : <span className="text-xs text-surface-400">Nunca</span> },
     { key: 'actions', label: '', align: 'right' as const, render: (r: User) => (
         <div className="flex items-center justify-end gap-1">
-          <button onClick={() => { setPwReset(r); setNewPassword('') }} className="btn-ghost p-1.5" title="Reset contraseña"><Key className="w-3.5 h-3.5" /></button>
-          <button onClick={() => setEditing(r)} className="btn-ghost p-1.5 text-xs">Editar</button>
-          <button onClick={() => setConfirm(r)} className="btn-ghost p-1.5 text-red-600 text-xs">Borrar</button>
+          <Can do="users.create"><button onClick={() => { setPwReset(r); setNewPassword('') }} className="btn-ghost p-1.5" title="Reset contraseña"><Key className="w-3.5 h-3.5" /></button></Can>
+          <Can do="users.create"><button onClick={() => setEditing(r)} className="btn-ghost p-1.5 text-xs">Editar</button></Can>
+          <Can do="users.delete"><button onClick={() => setConfirm(r)} className="btn-ghost p-1.5 text-red-600 text-xs">Borrar</button></Can>
         </div>
       )
     },

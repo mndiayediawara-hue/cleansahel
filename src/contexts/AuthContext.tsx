@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { api } from '@/lib/api'
 
-export type Role = 'admin' | 'produccion' | 'almacen' | 'comercial' | 'contabilidad'
+export type Role = 'admin' | 'subadmin' | 'produccion' | 'almacen' | 'comercial' | 'contabilidad'
 
 export interface User {
   id: string
@@ -19,16 +19,58 @@ interface AuthContextValue {
   logout: () => void
   hasRole: (...roles: Role[]) => boolean
   can: (action: string) => boolean
+  canRead: (module: string) => boolean
+  canWrite: (module: string) => boolean
+  canDelete: (module: string) => boolean
+  canManageUsers: () => boolean
+  isAdmin: () => boolean
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
+// Sistema de permisos granulares:
+// '*'           = puede hacer TODO
+// 'users.admin' = gestionar usuarios
+// 'module.read'  = ver módulo
+// 'module.write' = crear/editar en módulo
+// 'module.delete' = borrar en módulo
 const ROLE_PERMISSIONS: Record<Role, string[]> = {
   admin: ['*'],
-  produccion: ['produccion', 'recipes.read', 'recipes.write', 'products.read', 'materials.read', 'dashboard', 'lots', 'alerts'],
-  almacen: ['materials.read', 'materials.write', 'packaging.read', 'packaging.write', 'purchases.read', 'purchases.write', 'dashboard', 'alerts'],
-  comercial: ['customers.read', 'customers.write', 'orders.read', 'orders.write', 'products.read', 'dashboard', 'sales'],
-  contabilidad: ['expenses.read', 'expenses.write', 'purchases.read', 'purchases.write', 'suppliers.read', 'suppliers.write', 'reports', 'dashboard', 'sales'],
+  subadmin: [
+    'users.read', 'users.create', 'users.edit', 'users.delete',
+    'dashboard', 'alerts',
+  ],
+  produccion: [
+    'dashboard', 'alerts',
+    'recipes.read', 'recipes.write',
+    'products.read', 'products.write',
+    'rawMaterials.read', 'rawMaterials.write',
+    'packaging.read', 'packaging.write',
+    'lots.read', 'lots.write',
+    'rawMaterialLots.read', 'rawMaterialLots.write',
+    'machines.read', 'machines.write',
+    'recalls.read', 'recalls.write',
+  ],
+  almacen: [
+    'dashboard', 'alerts',
+    'rawMaterials.read', 'rawMaterials.write',
+    'packaging.read', 'packaging.write',
+    'purchases.read', 'purchases.write',
+    'rawMaterialLots.read', 'rawMaterialLots.write',
+  ],
+  comercial: [
+    'dashboard', 'alerts',
+    'customers.read', 'customers.write',
+    'orders.read', 'orders.write',
+    'products.read',
+  ],
+  contabilidad: [
+    'dashboard', 'alerts',
+    'expenses.read', 'expenses.write',
+    'purchases.read', 'purchases.write',
+    'suppliers.read', 'suppliers.write',
+    'reports.read',
+  ],
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -70,14 +112,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const hasRole = (...roles: Role[]) => !!user && roles.includes(user.role)
+  
+  // Check if user can perform an action. Supports wildcard '*' for admin.
   const can = (action: string) => {
     if (!user) return false
     const perms = ROLE_PERMISSIONS[user.role] || []
-    return perms.includes('*') || perms.includes(action)
+    if (perms.includes('*')) return true
+    return perms.includes(action)
   }
+  
+  // Check if user can access a module (read permission)
+  const canRead = (module: string) => can(module + '.read') || can(module)
+  // Check if user can create/edit in a module
+  const canWrite = (module: string) => can(module + '.write')
+  // Check if user can delete in a module
+  const canDelete = (module: string) => can(module + '.delete')
+  // Special: only admin/subadmin can manage users
+  const canManageUsers = () => can('users.admin') || can('users.create')
+  // Check if user is admin (full or subadmin)
+  const isAdmin = () => !!user && (user.role === 'admin' || user.role === 'subadmin')
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout, hasRole, can }}>
+    <AuthContext.Provider value={{ user, token, loading, login, logout, hasRole, can, canRead, canWrite, canDelete, canManageUsers, isAdmin }}>
       {children}
     </AuthContext.Provider>
   )

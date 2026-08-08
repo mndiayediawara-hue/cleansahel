@@ -97,7 +97,7 @@ router.get('/users', auth, (_req, res) => {
   })))
 })
 
-router.post('/users', auth, requireRole('admin'), (req, res) => {
+router.post('/users', auth, requireRole('admin', 'subadmin'), (req, res) => {
   const { username, password, fullName, email, role } = req.body
   if (!username || !password || !fullName) return res.status(400).json({ error: 'Datos incompletos' })
   try {
@@ -111,7 +111,7 @@ router.post('/users', auth, requireRole('admin'), (req, res) => {
   }
 })
 
-router.put('/users/:id', auth, requireRole('admin'), (req, res) => {
+router.put('/users/:id', auth, requireRole('admin', 'subadmin'), (req, res) => {
   const { id } = req.params
   const { fullName, email, role, active, password } = req.body
   const u = db.prepare('SELECT * FROM users WHERE id = ?').get(id)
@@ -123,7 +123,7 @@ router.put('/users/:id', auth, requireRole('admin'), (req, res) => {
   res.json({ ok: true })
 })
 
-router.delete('/users/:id', auth, requireRole('admin'), (req, res) => {
+router.delete('/users/:id', auth, requireRole('admin', 'subadmin'), (req, res) => {
   const { id } = req.params
   if (id === req.user.id) return res.status(400).json({ error: 'No puede eliminarse a sí mismo' })
   const u = db.prepare('SELECT * FROM users WHERE id = ?').get(id)

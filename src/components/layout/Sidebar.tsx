@@ -50,7 +50,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         { to: '/production', label: t('nav.production'), icon: Factory, permission: 'produccion' },
         { to: '/lots', label: t('nav.lots'), icon: Layers, permission: 'produccion' },
         { to: '/lot-generator', label: t('nav.lot_generator'), icon: Hash, permission: 'produccion' },
-        { to: '/recalls', label: t('nav.recalls'), icon: AlertTriangle, permission: 'admin' },
+        { to: '/recalls', label: t('nav.recalls'), icon: AlertTriangle, permission: 'users.admin' },
       ],
     },
     {
@@ -74,8 +74,8 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       items: [
         { to: '/reports', label: t('nav.reports'), icon: FileBarChart, permission: 'reports' },
         { to: '/history', label: t('nav.history'), icon: History },
-        { to: '/users', label: t('nav.users'), icon: UserCog, permission: 'users' },
-        { to: '/settings', label: t('nav.settings'), icon: Settings },
+        { to: '/users', label: t('nav.users'), icon: UserCog, permission: 'users.admin' },
+        { to: '/settings', label: t('nav.settings'), icon: Settings, permission: 'users.admin' },
       ],
     },
   ]
