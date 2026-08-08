@@ -1,4 +1,5 @@
 import { createContext, useContext, ReactNode, useState, useEffect, useCallback } from 'react'
+import { useLocation } from 'react-router-dom'
 import { api } from '@/lib/api'
 import { useAuth } from './AuthContext'
 import type {
@@ -96,6 +97,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (token) { setLoading(true); fetchAll() }
     else { setLoading(false) }
   }, [token, fetchAll])
+
+  // Re-fetch on every route change (after login or page navigation)
+  useEffect(() => {
+    if (token && location.pathname !== '/login') {
+      fetchAll()
+    }
+  }, [location.pathname, token])
 
   // Reload data when window regains focus (catches logouts from other tabs, etc)
   useEffect(() => {

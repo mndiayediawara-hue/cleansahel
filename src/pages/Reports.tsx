@@ -3,7 +3,7 @@ import { useData } from '@/contexts/DataContext'
 import { PageHeader } from '@/components/ui/Common'
 import { StatCard } from '@/components/ui/StatCard'
 import { FileBarChart, FileText, FileSpreadsheet, BarChart3, Package, Factory, ShoppingCart, Receipt, TrendingUp, Beaker, Download } from 'lucide-react'
-import { formatCurrency, formatNumber, exportCSV, downloadFile } from '@/lib/utils'
+import { formatCurrency, formatNumber, exportCSV } from '@/lib/utils'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from 'recharts'
 import { useAuth } from '@/contexts/AuthContext'
 
