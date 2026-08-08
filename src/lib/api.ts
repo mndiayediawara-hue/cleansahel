@@ -238,38 +238,38 @@ function load(): any {
 export const api = {
   async get<T = any>(path: string) {
     await ensureMode()
-    if (demoMode) return demoFetch<T>(path, { method: 'GET' })
+    if (demoMode && !isProductionWithBackend()) return demoFetch<T>(path, { method: 'GET' })
     try { return await realFetch<T>(path, { method: 'GET' }) }
     catch (e: any) {
-      // Any error → assume backend unavailable and fall back to demo
-      activateDemo()
+      if (isProductionWithBackend()) { throw new Error("Error de conexión con el servidor: " + e.message + ". Recarga la página.") }
+      if (isProductionWithBackend()) throw new Error("Error de conexión con el servidor: " + e.message + ". Recarga la página."); activateDemo()
       return demoFetch<T>(path, { method: 'GET' })
     }
   },
   async post<T = any>(path: string, body?: any) {
     await ensureMode()
-    if (demoMode) return demoFetch<T>(path, { method: 'POST', body: JSON.stringify(body || {}) })
+    if (demoMode && !isProductionWithBackend()) return demoFetch<T>(path, { method: 'POST', body: JSON.stringify(body || {}) })
     try { return await realFetch<T>(path, { method: 'POST', body: JSON.stringify(body || {}) }) }
     catch (e: any) {
-      activateDemo()
+      if (isProductionWithBackend()) throw new Error("Error de conexión con el servidor: " + e.message + ". Recarga la página."); activateDemo()
       return demoFetch<T>(path, { method: 'POST', body: JSON.stringify(body || {}) })
     }
   },
   async put<T = any>(path: string, body?: any) {
     await ensureMode()
-    if (demoMode) return demoFetch<T>(path, { method: 'PUT', body: JSON.stringify(body || {}) })
+    if (demoMode && !isProductionWithBackend()) return demoFetch<T>(path, { method: 'PUT', body: JSON.stringify(body || {}) })
     try { return await realFetch<T>(path, { method: 'PUT', body: JSON.stringify(body || {}) }) }
     catch (e: any) {
-      activateDemo()
+      if (isProductionWithBackend()) throw new Error("Error de conexión con el servidor: " + e.message + ". Recarga la página."); activateDemo()
       return demoFetch<T>(path, { method: 'PUT', body: JSON.stringify(body || {}) })
     }
   },
   async del<T = any>(path: string) {
     await ensureMode()
-    if (demoMode) return demoFetch<T>(path, { method: 'DELETE' })
+    if (demoMode && !isProductionWithBackend()) return demoFetch<T>(path, { method: 'DELETE' })
     try { return await realFetch<T>(path, { method: 'DELETE' }) }
     catch (e: any) {
-      activateDemo()
+      if (isProductionWithBackend()) throw new Error("Error de conexión con el servidor: " + e.message + ". Recarga la página."); activateDemo()
       return demoFetch<T>(path, { method: 'DELETE' })
     }
   },
