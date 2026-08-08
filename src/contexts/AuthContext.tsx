@@ -32,17 +32,17 @@ const ROLE_PERMISSIONS: Record<Role, string[]> = {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(() => {
-    try {
-      const stored = localStorage.getItem('cleanerp-user')
-      return stored ? JSON.parse(stored) : null
-    } catch { return null }
+  // On production with backend, NEVER trust stale localStorage user data
+  const [user, setUser] = useState<User | null>(null)
+  const [token, setToken] = useState<string | null>(() => {
+    // Only keep the token, the user object will be re-fetched from backend
+    return localStorage.getItem('cleanerp-token')
   })
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem('cleanerp-token'))
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (token && !user) {
+    if (token) {
+      // Always re-validate token with backend to get fresh user data
       api.get<User>('/auth/me')
         .then(u => { setUser(u); localStorage.setItem('cleanerp-user', JSON.stringify(u)) })
         .catch(() => { setToken(null); setUser(null); localStorage.removeItem('cleanerp-token'); localStorage.removeItem('cleanerp-user') })
