@@ -4,6 +4,16 @@
 // and on the static deploy (demo mode).
 import { demoApi } from './demoApi'
 
+// One-time: on production deployment, clear stale demo data
+if (typeof window !== 'undefined') {
+  const h = window.location.hostname
+  if (h.includes('onrender.com') || h.includes('render.com')) {
+    try {
+      localStorage.removeItem('cleanerp-demo-data-v1')
+    } catch {}
+  }
+}
+
 let realAvailable: boolean | null = null
 let demoMode = false
 
@@ -20,10 +30,18 @@ function isStaticDeploy(): boolean {
   if (h.includes('.netlify.app')) return true
   if (h.includes('.github.io')) return true
   if (h.includes('localhost') && window.location.port === '5173') return true
-  // Hosts with real backend: onrender.com, render.com, anything else
   // Allow override via localStorage flag
   if (localStorage.getItem('cleanerp-force-real') === '1') return false
   if (localStorage.getItem('cleanerp-force-demo') === '1') return true
+  return false
+}
+
+// Detect production deployment with real backend
+function isProductionWithBackend(): boolean {
+  if (typeof window === 'undefined') return false
+  const h = window.location.hostname
+  if (h.includes('onrender.com')) return true
+  if (h.includes('render.com')) return true
   return false
 }
 
@@ -87,6 +105,13 @@ async function ensureMode() {
     realAvailable = false
     demoMode = true
     console.info('CleanERP: hosting estático detectado, activando modo demo (datos en este navegador)')
+    return
+  }
+  // On production (Render etc), always use real backend
+  if (isProductionWithBackend()) {
+    realAvailable = true
+    demoMode = false
+    console.info('CleanERP: producción detectada, usando backend real (datos compartidos)')
     return
   }
   realAvailable = await probeRealBackend()
