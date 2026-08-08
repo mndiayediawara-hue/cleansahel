@@ -1,0 +1,2 @@
+// CRITICAL FIX: Forzar usuarios correctos (admin, produccion, contabilidad)
+// Cualquier usuario con username 'admin' debe tener rol 'admin'

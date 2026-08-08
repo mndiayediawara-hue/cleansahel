@@ -19,7 +19,7 @@ interface NavItem {
 }
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
-  const { can } = useAuth()
+  const { can, user } = useAuth()
   const { notifications, products, rawMaterials, packaging, orders } = useData()
   const { t, lang, currency } = useI18n()
   const unread = notifications.filter(n => !n.read).length
@@ -101,7 +101,11 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 
       <nav className="flex-1 overflow-y-auto py-3 px-3 space-y-4">
         {sections.map((s) => {
-          const items = s.items.filter(i => !i.permission || can(i.permission))
+          const items = s.items.filter(i => {
+            // Safety net: admin ve todo
+            if (user?.role === 'admin' || user?.role === '*') return true
+            return !i.permission || can(i.permission)
+          })
           if (items.length === 0) return null
           return (
             <div key={s.title}>

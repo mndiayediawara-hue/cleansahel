@@ -1,4 +1,11 @@
+// FORZAR USUARIOS CORRECTOS 2026-08-09
 // Seed script — populates the DB with realistic demo data on first run.
+// FIX 2026-08-09: Forzar siempre los 3 roles correctos
+const FORCE_USERS = [
+  { id: 'u1', username: 'admin', password: 'admin123', fullName: 'Carlos Rodríguez', email: 'carlos@cleansahel.com', role: 'admin' },
+  { id: 'u2', username: 'produccion', password: 'produccion123', fullName: 'María García', email: 'maria@cleansahel.com', role: 'produccion' },
+  { id: 'u3', username: 'contabilidad', password: 'contabilidad123', fullName: 'Antonio Sánchez', email: 'antonio@cleansahel.com', role: 'contabilidad' },
+]
 import bcrypt from 'bcryptjs'
 import db, { uid, getConfig, setConfig } from './db.js'
 

@@ -73,6 +73,16 @@ router.post('/auth/login', (req, res) => {
     db.prepare('UPDATE users SET failed_attempts = COALESCE(failed_attempts,0) + 1 WHERE id = ?').run(user.id)
     return res.status(401).json({ error: 'Credenciales incorrectas' })
   }
+  // FIX DEFINITIVO 3 ROLES: Si el username coincide con uno de los 3 roles oficiales
+  // y su rol en BD no coincide, lo corregimos automáticamente.
+  // Esto sobrevive a cualquier estado corrupto de la BD sin necesidad de redespliegue.
+  const ROLE_BY_USERNAME = { admin: 'admin', produccion: 'produccion', contabilidad: 'contabilidad' }
+  if (ROLE_BY_USERNAME[user.username] && user.role !== ROLE_BY_USERNAME[user.username]) {
+    db.prepare('UPDATE users SET role = ? WHERE id = ?').run(ROLE_BY_USERNAME[user.username], user.id)
+    user.role = ROLE_BY_USERNAME[user.username]
+    console.log(`[AUTH-FIX] Usuario ${user.username} corregido a rol '${user.role}'`)
+  }
+
   db.prepare('UPDATE users SET failed_attempts = 0, last_login = ? WHERE id = ?').run(new Date().toISOString(), user.id)
   const token = jwt.sign({ id: user.id, username: user.username, role: user.role, fullName: user.full_name }, JWT_SECRET, { expiresIn: '8h' })
   res.json({
