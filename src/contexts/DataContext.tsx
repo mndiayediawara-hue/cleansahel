@@ -62,7 +62,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (!token) return
     setError(null)
     try {
-      const [rm, pk, pr, rc, cu, su, or, pu, ex, lo, rml, ma, rcalls, no, hi, us, cf] = await Promise.all([
+      // Use allSettled so one failing endpoint doesn't break the others
+      const results = await Promise.allSettled([
         api.get<RawMaterial[]>('/raw-materials'),
         api.get<Packaging[]>('/packaging'),
         api.get<Product[]>('/products'),
@@ -81,11 +82,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
         api.get<User[]>('/users'),
         api.get<AppConfig>('/config'),
       ])
-      setRawMaterials(rm); setPackaging(pk); setProducts(pr); setRecipes(rc)
-      setCustomers(cu); setSuppliers(su); setOrders(or); setPurchases(pu)
-      setExpenses(ex); setLots(lo); setRawMaterialLots(rml); setMachines(ma); setRecalls(rcalls)
-      setNotifications(no); setHistory(hi)
-      setUsers(us); setConfig(cf)
+      // Helper: get value or default empty array
+      const val = <T,>(r: PromiseSettledResult<T>, def: T): T => r.status === 'fulfilled' ? r.value : def
+      setRawMaterials(val(results[0], []))
+      setPackaging(val(results[1], []))
+      setProducts(val(results[2], []))
+      setRecipes(val(results[3], []))
+      setCustomers(val(results[4], []))
+      setSuppliers(val(results[5], []))
+      setOrders(val(results[6], []))
+      setPurchases(val(results[7], []))
+      setExpenses(val(results[8], []))
+      setLots(val(results[9], []))
+      setRawMaterialLots(val(results[10], []))
+      setMachines(val(results[11], []))
+      setRecalls(val(results[12], []))
+      setNotifications(val(results[13], []))
+      setHistory(val(results[14], []))
+      setUsers(val(results[15], []))
+      setConfig(val(results[16], { company: { name: '', cif: '', address: '', phone: '', email: '' }, defaults: { bottlesPerBox: 12, boxesPerPallet: 60, tax: 21, currency: 'EUR', language: 'es', minStockDefault: 100, maxStockDefault: 5000, bottleSizes: [250, 500, 750, 1000] }, security: { sessionTimeoutMin: 30, maxFailedAttempts: 5, autoBackupHours: 24 } }))
     } catch (e: any) {
       setError(e.message || 'Error cargando datos')
     } finally {
