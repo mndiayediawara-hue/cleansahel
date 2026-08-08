@@ -116,3 +116,5 @@ Base: `/api`
 - **Automático** cada N horas (configurable)
 - **Manual** desde Configuración → Copias de seguridad
 - **Restauración** desde archivo JSON
+
+<!-- Last build trigger: Sat Aug  8 23:03:54 UTC 2026 -->
