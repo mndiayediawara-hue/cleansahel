@@ -97,21 +97,24 @@ router.get('/users', auth, (_req, res) => {
   })))
 })
 
-router.post('/users', auth, requireRole('admin', 'subadmin'), (req, res) => {
+router.post('/users', auth, requireRole('admin'), (req, res) => {
   const { username, password, fullName, email, role } = req.body
   if (!username || !password || !fullName) return res.status(400).json({ error: 'Datos incompletos' })
+  // Only allow 3 roles
+  const validRoles = ['admin', 'produccion', 'contabilidad']
+  const finalRole = validRoles.includes(role) ? role : 'produccion'
   try {
     const id = uid('u-')
     db.prepare('INSERT INTO users (id, username, password_hash, full_name, email, role, active, created_at) VALUES (?,?,?,?,?,?,1,?)')
-      .run(id, username, bcrypt.hashSync(password, 10), fullName, email || '', role || 'produccion', new Date().toISOString())
-    addHistory(req, { action: 'crear', module: 'Usuarios', entityId: id, description: `Creado usuario ${username} (${role})` })
-    res.json({ id, username, fullName, email, role })
+      .run(id, username, bcrypt.hashSync(password, 10), fullName, email || '', finalRole, new Date().toISOString())
+    addHistory(req, { action: 'crear', module: 'Usuarios', entityId: id, description: `Creado usuario ${username} (${finalRole})` })
+    res.json({ id, username, fullName, email, role: finalRole })
   } catch (e) {
     res.status(400).json({ error: 'Usuario ya existe' })
   }
 })
 
-router.put('/users/:id', auth, requireRole('admin', 'subadmin'), (req, res) => {
+router.put('/users/:id', auth, requireRole('admin'), (req, res) => {
   const { id } = req.params
   const { fullName, email, role, active, password } = req.body
   const u = db.prepare('SELECT * FROM users WHERE id = ?').get(id)
@@ -123,7 +126,7 @@ router.put('/users/:id', auth, requireRole('admin', 'subadmin'), (req, res) => {
   res.json({ ok: true })
 })
 
-router.delete('/users/:id', auth, requireRole('admin', 'subadmin'), (req, res) => {
+router.delete('/users/:id', auth, requireRole('admin'), (req, res) => {
   const { id } = req.params
   if (id === req.user.id) return res.status(400).json({ error: 'No puede eliminarse a sí mismo' })
   const u = db.prepare('SELECT * FROM users WHERE id = ?').get(id)

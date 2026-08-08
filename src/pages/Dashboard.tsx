@@ -88,18 +88,18 @@ export default function Dashboard() {
 
       {/* Main stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-        <StatCard label={t('dash.kpi.inventory_value')} value={formatCurrency(data.inventory.totalValue)} icon={Wallet} tone="brand" />
-        <StatCard label={t('dash.kpi.raw_materials')} value={formatNumber(data.inventory.rawQty)} icon={Beaker} tone="cyan" hint={`${data.inventory.rawCount} refs`} />
-        <StatCard label={t('dash.kpi.packaging')} value={formatNumber(data.inventory.pkgQty)} icon={Package} tone="violet" hint={`${data.inventory.pkgCount}`} />
-        <StatCard label={t('dash.kpi.products')} value={formatNumber(data.inventory.prodQty)} icon={Boxes} tone="emerald" hint={`${data.inventory.prodCount} SKUs`} />
-        <StatCard label={t('dash.kpi.low_stock')} value={data.inventory.lowRaw + data.inventory.lowPkg + data.inventory.lowProd} icon={AlertTriangle} tone="amber" />
-        <StatCard label={t('dash.kpi.production_today')} value={formatNumber(data.production.today)} icon={Factory} tone="brand" />
-        <StatCard label={t('dash.kpi.production_week')} value={formatNumber(data.production.week)} icon={Activity} tone="cyan" />
-        <StatCard label={t('dash.kpi.production_month')} value={formatNumber(data.production.month)} icon={Activity} tone="violet" />
-        <StatCard label={t('dash.kpi.sales_today')} value={formatCurrency(data.sales.today)} icon={ShoppingCart} tone="emerald" />
-        <StatCard label={t('dash.kpi.sales_month')} value={formatCurrency(data.sales.month)} icon={TrendingUp} tone="emerald" />
-        <StatCard label={t('dash.kpi.expenses_month')} value={formatCurrency(data.expenses.month)} icon={Receipt} tone="amber" />
-        <StatCard label={t('dash.kpi.benefit')} value={formatCurrency(data.benefit)} icon={data.benefit >= 0 ? TrendingUp : TrendingDown} tone={data.benefit >= 0 ? 'emerald' : 'red'} />
+        <StatCard label={t('dash.kpi.inventory_value')} value={formatCurrency(data.inventory.totalValue)} icon={Wallet} tone="brand" to="/raw-materials" />
+        <StatCard label={t('dash.kpi.raw_materials')} value={formatNumber(data.inventory.rawQty)} icon={Beaker} tone="cyan" hint={`${data.inventory.rawCount} refs`} to="/raw-materials" />
+        <StatCard label={t('dash.kpi.packaging')} value={formatNumber(data.inventory.pkgQty)} icon={Package} tone="violet" hint={`${data.inventory.pkgCount}`} to="/packaging" />
+        <StatCard label={t('dash.kpi.products')} value={formatNumber(data.inventory.prodQty)} icon={Boxes} tone="emerald" hint={`${data.inventory.prodCount} SKUs`} to="/products" />
+        <StatCard label={t('dash.kpi.low_stock')} value={data.inventory.lowRaw + data.inventory.lowPkg + data.inventory.lowProd} icon={AlertTriangle} tone="amber" to="/alerts" />
+        <StatCard label={t('dash.kpi.production_today')} value={formatNumber(data.production.today)} icon={Factory} tone="brand" to="/lots" />
+        <StatCard label={t('dash.kpi.production_week')} value={formatNumber(data.production.week)} icon={Activity} tone="cyan" to="/lots" />
+        <StatCard label={t('dash.kpi.production_month')} value={formatNumber(data.production.month)} icon={Activity} tone="violet" to="/lots" />
+        <StatCard label={t('dash.kpi.sales_today')} value={formatCurrency(data.sales.today)} icon={ShoppingCart} tone="emerald" to="/sales" />
+        <StatCard label={t('dash.kpi.sales_month')} value={formatCurrency(data.sales.month)} icon={TrendingUp} tone="emerald" to="/sales" />
+        <StatCard label={t('dash.kpi.expenses_month')} value={formatCurrency(data.expenses.month)} icon={Receipt} tone="amber" to="/expenses" />
+        <StatCard label={t('dash.kpi.benefit')} value={formatCurrency(data.benefit)} icon={data.benefit >= 0 ? TrendingUp : TrendingDown} tone={data.benefit >= 0 ? 'emerald' : 'red'} to="/reports" />
       </div>
 
       {/* Charts row */}

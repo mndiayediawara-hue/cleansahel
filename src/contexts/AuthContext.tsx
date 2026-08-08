@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { api } from '@/lib/api'
 
-export type Role = 'admin' | 'subadmin' | 'produccion' | 'almacen' | 'comercial' | 'contabilidad'
+export type Role = 'admin' | 'produccion' | 'contabilidad'
 
 export interface User {
   id: string
@@ -29,17 +29,14 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 // Sistema de permisos granulares:
-// '*'           = puede hacer TODO
+// '*'           = puede hacer TODO (solo admin)
 // 'users.admin' = gestionar usuarios
 // 'module.read'  = ver módulo
 // 'module.write' = crear/editar en módulo
 // 'module.delete' = borrar en módulo
 const ROLE_PERMISSIONS: Record<Role, string[]> = {
   admin: ['*'],
-  subadmin: [
-    'users.read', 'users.create', 'users.edit', 'users.delete',
-    'dashboard', 'alerts',
-  ],
+  // Producción: todo el ciclo de fabricación, puede crear y editar pero NO borrar lotes/MPs
   produccion: [
     'dashboard', 'alerts',
     'recipes.read', 'recipes.write',
@@ -49,26 +46,16 @@ const ROLE_PERMISSIONS: Record<Role, string[]> = {
     'lots.read', 'lots.write',
     'rawMaterialLots.read', 'rawMaterialLots.write',
     'machines.read', 'machines.write',
-    'recalls.read', 'recalls.write',
+    'purchases.read', 'purchases.write',  // para registrar entradas de MP
+    'suppliers.read',
   ],
-  almacen: [
-    'dashboard', 'alerts',
-    'rawMaterials.read', 'rawMaterials.write',
-    'packaging.read', 'packaging.write',
-    'purchases.read', 'purchases.write',
-    'rawMaterialLots.read', 'rawMaterialLots.write',
-  ],
-  comercial: [
-    'dashboard', 'alerts',
-    'customers.read', 'customers.write',
-    'orders.read', 'orders.write',
-    'products.read',
-  ],
+  // Contabilidad: gastos, compras, informes, ver productos
   contabilidad: [
     'dashboard', 'alerts',
     'expenses.read', 'expenses.write',
     'purchases.read', 'purchases.write',
     'suppliers.read', 'suppliers.write',
+    'products.read',
     'reports.read',
   ],
 }
@@ -130,7 +117,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Special: only admin/subadmin can manage users
   const canManageUsers = () => can('users.admin') || can('users.create')
   // Check if user is admin (full or subadmin)
-  const isAdmin = () => !!user && (user.role === 'admin' || user.role === 'subadmin')
+  const isAdmin = () => !!user && user.role === 'admin'
 
   return (
     <AuthContext.Provider value={{ user, token, loading, login, logout, hasRole, can, canRead, canWrite, canDelete, canManageUsers, isAdmin }}>

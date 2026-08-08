@@ -42,10 +42,7 @@ export function seed({ force = false } = {}) {
   const users = [
     { id: 'u1', username: 'admin', password: 'admin123', fullName: 'Carlos Rodríguez', email: 'carlos@cleanpro.es', role: 'admin' },
     { id: 'u2', username: 'produccion', password: 'produccion123', fullName: 'María García', email: 'maria@cleanpro.es', role: 'produccion' },
-    { id: 'u3', username: 'almacen', password: 'almacen123', fullName: 'Javier López', email: 'javier@cleanpro.es', role: 'almacen' },
-    { id: 'u4', username: 'comercial', password: 'comercial123', fullName: 'Laura Martínez', email: 'laura@cleanpro.es', role: 'comercial' },
-    { id: 'u5', username: 'contabilidad', password: 'contabilidad123', fullName: 'Antonio Sánchez', email: 'antonio@cleanpro.es', role: 'contabilidad' },
-    { id: 'u6', username: 'subadmin', password: 'subadmin123', fullName: 'Moussa Ndiaye', email: 'moussa@cleanpro.es', role: 'subadmin' },
+    { id: 'u3', username: 'contabilidad', password: 'contabilidad123', fullName: 'Antonio Sánchez', email: 'antonio@cleanpro.es', role: 'contabilidad' },
   ]
   const insUser = db.prepare(`INSERT INTO users (id, username, password_hash, full_name, email, role, active, created_at, last_login) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`)
   for (const u of users) {
