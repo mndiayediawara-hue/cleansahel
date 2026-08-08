@@ -35,28 +35,43 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 // 'module.write' = crear/editar en módulo
 // 'module.delete' = borrar en módulo
 const ROLE_PERMISSIONS: Record<Role, string[]> = {
+  // ADMIN: puede hacer TODO, incluido gestionar usuarios
   admin: ['*'],
-  // Producción: todo el ciclo de fabricación, puede crear y editar pero NO borrar lotes/MPs
+
+  // PRODUCCIÓN: ciclo completo de fabricación
+  // Ve TODO (dashboard, alertas, productos, MPs, recetas, lotes, embalajes, máquinas, clientes, ventas, informes)
+  // Crea y edita todo lo de producción
+  // NO puede: borrar nada, gestionar usuarios, entrar a config
   produccion: [
-    'dashboard', 'alerts',
-    'recipes.read', 'recipes.write',
+    'dashboard', 'alerts', 'reports.read',
     'products.read', 'products.write',
     'rawMaterials.read', 'rawMaterials.write',
     'packaging.read', 'packaging.write',
+    'recipes.read', 'recipes.write',
     'lots.read', 'lots.write',
     'rawMaterialLots.read', 'rawMaterialLots.write',
     'machines.read', 'machines.write',
-    'purchases.read', 'purchases.write',  // para registrar entradas de MP
+    'customers.read', 'customers.write',
     'suppliers.read',
   ],
-  // Contabilidad: gastos, compras, informes, ver productos
+
+  // CONTABILIDAD: todo lo financiero
+  // Ve TODO (dashboard, alertas, productos, ventas, compras, gastos, clientes, proveedores, informes)
+  // Crea y edita solo lo financiero (gastos, compras, ventas, pedidos)
+  // NO puede: borrar nada, gestionar usuarios, ni tocar producción/recetas/lotes
   contabilidad: [
-    'dashboard', 'alerts',
+    'dashboard', 'alerts', 'reports.read',
     'expenses.read', 'expenses.write',
     'purchases.read', 'purchases.write',
+    'sales.read', 'sales.write',
+    'orders.read', 'orders.write',
+    'customers.read', 'customers.write',
     'suppliers.read', 'suppliers.write',
     'products.read',
-    'reports.read',
+    'rawMaterials.read',
+    'packaging.read',
+    'lots.read',
+    'rawMaterialLots.read',
   ],
 }
 
