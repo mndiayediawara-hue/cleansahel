@@ -3,7 +3,7 @@ import cors from 'cors'
 import path from 'path'
 import fs from 'fs'
 import { fileURLToPath } from 'url'
-import './routes.js'
+import apiRoutes from './routes.js'
 import { seed } from './seed.js'
 import { db } from './db.js'
 
@@ -31,7 +31,7 @@ app.get('/api/health', (_req, res) => {
 })
 
 // Mount all API routes
-app.use('/api', (await import('./routes.js')).default)
+app.use('/api', apiRoutes)
 
 // Serve React build
 const distPath = path.join(__dirname, '..', 'dist')
