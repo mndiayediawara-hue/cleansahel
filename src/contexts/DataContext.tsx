@@ -35,6 +35,7 @@ const DataContext = createContext<DataContextValue | null>(null)
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const { token } = useAuth()
+  const location = useLocation()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -95,6 +96,28 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (token) { setLoading(true); fetchAll() }
     else { setLoading(false) }
   }, [token, fetchAll])
+
+  // Reload data when window regains focus (catches logouts from other tabs, etc)
+  useEffect(() => {
+    const onFocus = () => { if (token) fetchAll() }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [token, fetchAll])
+
+  // Also reload on visibility change (tab switch)
+  useEffect(() => {
+    const onVis = () => { if (token && document.visibilityState === 'visible') fetchAll() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [token, fetchAll])
+
+  // CRITICAL: re-fetch on every route change (after login) to ensure data is fresh
+  useEffect(() => {
+    if (token && location.pathname !== '/login') {
+      fetchAll()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, token])
 
   const refresh = fetchAll
 
