@@ -32,6 +32,18 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, time: new Date().toISOString(), version: '1.0.0' })
 })
 
+// ENDPOINT TEMPORAL: Reset DB (usar para forzar re-seed)
+app.post('/api/reset-db', (req, res) => {
+  const token = req.headers['x-reset-token']
+  if (token !== 'sahel2024') return res.status(403).json({ error: 'Token inválido' })
+  try {
+    seed({ force: true })
+    res.json({ ok: true, message: 'DB reseteada' })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
 // Mount all API routes
 app.use('/api', apiRoutes)
 
