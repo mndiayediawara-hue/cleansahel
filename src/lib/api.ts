@@ -17,7 +17,7 @@ if (typeof window !== 'undefined') {
 let realAvailable: boolean | null = null
 let demoMode = false
 
-const BASE = '/api'
+const BASE = 'https://cleansahel.onrender.com/api'
 
 // Heuristic: if we're served from a static CDN (no API at /api/*),
 // skip the probe and go straight to demo mode.
@@ -41,6 +41,9 @@ function isProductionWithBackend(): boolean {
   if (typeof window === 'undefined') return false
   const h = window.location.hostname
   if (h.includes('onrender.com')) return true
+  if (h.includes('surge.sh')) return true  // surge.sh siempre usa backend real
+  if (h.includes('netlify.app')) return true
+  if (h.includes('vercel.app')) return true
   if (h.includes('render.com')) return true
   return false
 }
