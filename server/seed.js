@@ -280,3 +280,4 @@ if (process.argv[1] && process.argv[1].endsWith('seed.js')) {
   const result = seed({ force })
   console.log('Seed:', result)
 }
+// Update for force re-seed: Sun Aug  9 09:38:46 UTC 2026
