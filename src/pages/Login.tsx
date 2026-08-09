@@ -23,13 +23,6 @@ export default function Login() {
       await login(username, password)
       navigate('/')
     } catch (err: any) {
-      // In demo mode, never block the user. Fall back to default admin.
-      console.warn('Login error, falling back to default admin:', err)
-      try {
-        await login('admin', 'admin123')
-        navigate('/')
-        return
-      } catch {}
       setError(err?.message || 'Error de inicio de sesión')
     } finally {
       setLoading(false)

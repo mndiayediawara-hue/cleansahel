@@ -110,7 +110,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
     localStorage.removeItem('cleanerp-token')
     localStorage.removeItem('cleanerp-user')
-    window.location.href = '/login'
+    // Ir a la raíz (que es donde el ProtectedRoute detecta no-user y redirige a /login via router)
+    // NO usar window.location.href = '/login' porque en GitHub Pages da 404
+    window.location.href = window.location.origin + window.location.pathname
   }
 
   const hasRole = (...roles: Role[]) => !!user && roles.includes(user.role)

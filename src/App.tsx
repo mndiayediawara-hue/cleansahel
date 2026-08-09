@@ -29,7 +29,8 @@ import Scanner from './pages/Scanner'
 function ProtectedRoute({ children, allow }: { children: React.ReactNode; allow?: string[] }) {
   const { user, loading } = useAuth()
   if (loading) return <div className="min-h-screen flex items-center justify-center"><div className="text-sm text-surface-500">Cargando...</div></div>
-  if (!user) return <Navigate to="/login" replace />
+  // Si no hay user, mostrar Login inline (NO Navigate a /login porque da 404 en GitHub Pages)
+  if (!user) return <Login />
   if (allow && !allow.includes(user.role)) return <Navigate to="/" replace />
   return <Layout>{children}</Layout>
 }
