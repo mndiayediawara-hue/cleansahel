@@ -20,10 +20,15 @@ function alreadySeeded() {
 }
 
 function clear() {
-  const tables = ['history','notifications','lots','expenses','purchases','orders','customers','recipes','products','packaging','raw_materials','suppliers','users','config']
+  // Deshabilitar foreign keys temporalmente para poder borrar en cualquier orden
+  db.pragma('foreign_keys = OFF')
+  const tables = ['history','notifications','lots','raw_material_lots','expenses','purchases','orders','customers','recipes','products','packaging','raw_materials','machines','recalls','suppliers','users','config']
   for (const t of tables) {
     try { db.prepare(`DELETE FROM ${t}`).run() } catch {}
   }
+  // Re-habilitar foreign keys
+  db.pragma('foreign_keys = ON')
+  return { cleared: tables.length }
 }
 
 export function seed({ force = false } = {}) {
