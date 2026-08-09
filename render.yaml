@@ -1,6 +1,6 @@
 services:
   - type: web
-  - name: cleansahel
+  - name: cleansahel-v2
   - runtime: node
   - plan: free
   - buildCommand: npm install --no-audit && npm run build
