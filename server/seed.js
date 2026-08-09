@@ -7,7 +7,7 @@ const FORCE_USERS = [
   { id: 'u3', username: 'contabilidad', password: 'contabilidad123', fullName: 'Antonio Sánchez', email: 'antonio@cleansahel.com', role: 'contabilidad' },
 ]
 import bcrypt from 'bcryptjs'
-import db, { uid, getConfig, setConfig } from './db.js'
+import db, { uid, getConfig, setConfig, SCHEMA } from './db.js'
 
 const now = new Date()
 const daysAgo = (n) => new Date(now.getTime() - n * 86400000).toISOString()
@@ -20,15 +20,25 @@ function alreadySeeded() {
 }
 
 function clear() {
-  // Deshabilitar foreign keys temporalmente para poder borrar en cualquier orden
-  db.pragma('foreign_keys = OFF')
-  const tables = ['history','notifications','lots','raw_material_lots','expenses','purchases','orders','customers','recipes','products','packaging','raw_materials','machines','recalls','suppliers','users','config']
+  // BORRAR la DB y recrear el schema desde cero
+  console.log('🗑️  Borrando tablas y recreando schema...')
+  // 1. Deshabilitar foreign keys
+  try { db.pragma('foreign_keys = OFF') } catch {}
+  // 2. Borrar todas las tablas
+  const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all()
   for (const t of tables) {
-    try { db.prepare(`DELETE FROM ${t}`).run() } catch {}
+    try { db.prepare(`DROP TABLE IF EXISTS "${t.name}"`).run() } catch (e) { console.error('Drop', t.name, e.message) }
   }
-  // Re-habilitar foreign keys
-  db.pragma('foreign_keys = ON')
-  return { cleared: tables.length }
+  // 3. Re-crear el schema
+  if (SCHEMA) {
+    db.exec(SCHEMA)
+    console.log('✓ Schema recreado')
+  } else {
+    console.error('⚠️ SCHEMA no exportado, no se puede recrear')
+  }
+  // 4. Re-habilitar foreign keys
+  try { db.pragma('foreign_keys = ON') } catch {}
+  return { cleared: tables.length, recreated: !!SCHEMA }
 }
 
 export function seed({ force = false } = {}) {
@@ -205,11 +215,11 @@ export function seed({ force = false } = {}) {
 
   // ---- ORDERS ----
   const orders = [
-    { id: 'o1', number: 'PED-2025-0142', customerId: 'c1', items: [{ productId: 'pr1', quantity: 200, unitPrice: 3.95, discount: 5 }], subtotal: 790, tax: 165.90, discount: 39.50, total: 916.40, status: 'entregado', createdAt: daysAgo(2), deliveryDate: daysAgo(1), createdBy: 'u4' },
-    { id: 'o2', number: 'PED-2025-0143', customerId: 'c2', items: [{ productId: 'pr2', quantity: 500, unitPrice: 4.50, discount: 8 }, { productId: 'pr5', quantity: 300, unitPrice: 3.20, discount: 5 }], subtotal: 3210, tax: 674.10, discount: 304.80, total: 3579.30, status: 'preparando', createdAt: daysAgo(1), createdBy: 'u4' },
-    { id: 'o3', number: 'PED-2025-0144', customerId: 'c3', items: [{ productId: 'pr3', quantity: 150, unitPrice: 5.20, discount: 0 }], subtotal: 780, tax: 163.80, discount: 0, total: 943.80, status: 'confirmado', createdAt: daysAgo(0), createdBy: 'u4' },
-    { id: 'o4', number: 'PED-2025-0145', customerId: 'c4', items: [{ productId: 'pr4', quantity: 80, unitPrice: 7.80, discount: 10 }, { productId: 'pr6', quantity: 120, unitPrice: 4.20, discount: 5 }], subtotal: 1128, tax: 236.88, discount: 138, total: 1226.88, status: 'pendiente', createdAt: daysAgo(0), createdBy: 'u4' },
-    { id: 'o5', number: 'PED-2025-0146', customerId: 'c5', items: [{ productId: 'pr1', quantity: 300, unitPrice: 3.95, discount: 12 }], subtotal: 1185, tax: 248.85, discount: 142.20, total: 1291.65, status: 'pendiente', createdAt: daysAgo(0), createdBy: 'u4' },
+    { id: 'o1', number: 'PED-2025-0142', customerId: 'c1', items: [{ productId: 'pr1', quantity: 200, unitPrice: 3.95, discount: 5 }], subtotal: 790, tax: 165.90, discount: 39.50, total: 916.40, status: 'entregado', createdAt: daysAgo(2), deliveryDate: daysAgo(1), createdBy: 'u1' },
+    { id: 'o2', number: 'PED-2025-0143', customerId: 'c2', items: [{ productId: 'pr2', quantity: 500, unitPrice: 4.50, discount: 8 }, { productId: 'pr5', quantity: 300, unitPrice: 3.20, discount: 5 }], subtotal: 3210, tax: 674.10, discount: 304.80, total: 3579.30, status: 'preparando', createdAt: daysAgo(1), createdBy: 'u1' },
+    { id: 'o3', number: 'PED-2025-0144', customerId: 'c3', items: [{ productId: 'pr3', quantity: 150, unitPrice: 5.20, discount: 0 }], subtotal: 780, tax: 163.80, discount: 0, total: 943.80, status: 'confirmado', createdAt: daysAgo(0), createdBy: 'u1' },
+    { id: 'o4', number: 'PED-2025-0145', customerId: 'c4', items: [{ productId: 'pr4', quantity: 80, unitPrice: 7.80, discount: 10 }, { productId: 'pr6', quantity: 120, unitPrice: 4.20, discount: 5 }], subtotal: 1128, tax: 236.88, discount: 138, total: 1226.88, status: 'pendiente', createdAt: daysAgo(0), createdBy: 'u1' },
+    { id: 'o5', number: 'PED-2025-0146', customerId: 'c5', items: [{ productId: 'pr1', quantity: 300, unitPrice: 3.95, discount: 12 }], subtotal: 1185, tax: 248.85, discount: 142.20, total: 1291.65, status: 'pendiente', createdAt: daysAgo(0), createdBy: 'u1' },
   ]
   const insOrder = db.prepare(`INSERT INTO orders (id, number, customer_id, items_json, subtotal, tax, discount, total, status, created_at, delivery_date, notes, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
   for (const o of orders) insOrder.run(o.id, o.number, o.customerId, JSON.stringify(o.items), o.subtotal, o.tax, o.discount, o.total, o.status, o.createdAt, o.deliveryDate || null, o.notes || null, o.createdBy)
@@ -237,7 +247,7 @@ export function seed({ force = false } = {}) {
     { date: daysAgo(28), category: 'impuestos', amount: 2150.00, description: 'IVA trimestral' },
   ]
   const insExp = db.prepare(`INSERT INTO expenses (id, date, category, amount, description, attachment, created_by) VALUES (?,?,?,?,?,?,?)`)
-  for (const e of expenses) insExp.run(uid('e-'), e.date, e.category, e.amount, e.description, null, 'u5')
+  for (const e of expenses) insExp.run(uid('e-'), e.date, e.category, e.amount, e.description, null, 'u1')
 
   // ---- LOTS ----
   const lots = [
