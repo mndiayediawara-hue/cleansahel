@@ -3,13 +3,19 @@
 <head>
 <meta charset="utf-8">
 <title>CleanSahel</title>
+<meta http-equiv="refresh" content="0; url=/cleansahel/">
 <script>
 // GitHub Pages SPA workaround: redirigir 404 a index.html
 (function(){
-  var path = window.location.pathname.replace(/^\/cleansahel/, '');
+  var path = window.location.pathname;
+  // Si la ruta ya empieza con /cleansahel, quitarlo
+  if (path.indexOf('/cleansahel') === 0) {
+    path = path.replace(/^\/cleansahel/, '');
+  }
   var search = window.location.search;
   var hash = window.location.hash;
-  window.location.replace('/cleansahel/?p=' + encodeURIComponent(path) + (search||'') + (hash||''));
+  var target = '/cleansahel/?p=' + encodeURIComponent(path || '/') + (search || '') + (hash || '');
+  window.location.replace(target);
 })();
 </script>
 </head>
