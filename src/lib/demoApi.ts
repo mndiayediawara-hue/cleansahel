@@ -197,26 +197,40 @@ export const demoApi = {
 
   async login(username: string, password: string) {
     const data = load()
-    // Permissive demo login: accept any input.
+    // Credenciales válidas en modo demo (mismas que el backend)
+    const VALID_CREDS: Record<string, { password: string; role: string; fullName: string; email: string }> = {
+      admin:        { password: '41668585Z',        role: 'admin',         fullName: 'Administrador',        email: 'admin@cleansahel.com' },
+      produccion:   { password: 'produccion2024',    role: 'produccion',    fullName: 'Operario Producción',  email: 'produccion@cleansahel.com' },
+      contabilidad: { password: 'contabilidad2024',  role: 'contabilidad',  fullName: 'Operario Contabilidad', email: 'contabilidad@cleansahel.com' },
+    }
+    const cred = VALID_CREDS[username]
+    if (!cred) throw new Error('Usuario no encontrado')
+    if (cred.password !== password) throw new Error('Contraseña incorrecta')
+    // Buscar/crear el user con el rol correcto
     let user = data.users.find((u: any) => u.username === username)
     if (!user) {
       const id = uid('u-')
-      const newUser = {
+      user = {
         id, username,
-        full_name: (username || 'user').charAt(0).toUpperCase() + (username || 'user').slice(1),
-        email: `${username}@demo.local`, role: 'admin', active: 1,
+        fullName: cred.fullName,
+        email: cred.email, role: cred.role, active: true,
+        createdAt: new Date().toISOString(),
+        lastLogin: new Date().toISOString(),
       }
-      data.users = data.users.concat(newUser as any)
-      user = newUser as any
+      data.users = data.users.concat(user as any)
+    } else {
+      // Forzar rol correcto (por si quedó antiguo)
+      user.role = cred.role
+      user.active = true
+      user.lastLogin = new Date().toISOString()
     }
-    if (user.active === false) user.active = true
-    const safeName = user.full_name || user.username || 'Usuario'
+    const safeName = user.fullName || user.username || 'Usuario'
     currentUser = {
       id: user.id,
       username: user.username,
       fullName: safeName,
       email: user.email || '',
-      role: user.role || 'admin',
+      role: user.role,
     }
     const updated = addHistory(data, currentUser.fullName, 'login', 'Auth', `Inicio de sesión (demo): ${user.username}`)
     save(updated)
