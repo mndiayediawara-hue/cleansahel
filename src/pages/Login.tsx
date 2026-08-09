@@ -191,3 +191,6 @@ export default function Login() {
 }
 console.log('LOGO_URL=', '/cleansahel/logo.svg')
 
+const TEST_UNIQUE_1786263388 = 'HELLO';
+
+console.log('TEST_UNIQUE_MARKER_1786263388');
