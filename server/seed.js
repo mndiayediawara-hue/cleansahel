@@ -47,9 +47,12 @@ export function seed({ force = false } = {}) {
   // ---- USERS ----
   const hash = (p) => bcrypt.hashSync(p, 10)
   const users = [
-    { id: 'u1', username: 'admin', password: 'admin123', fullName: 'Carlos Rodríguez', email: 'carlos@cleanpro.es', role: 'admin' },
-    { id: 'u2', username: 'produccion', password: 'produccion123', fullName: 'María García', email: 'maria@cleanpro.es', role: 'produccion' },
-    { id: 'u3', username: 'contabilidad', password: 'contabilidad123', fullName: 'Antonio Sánchez', email: 'antonio@cleanpro.es', role: 'contabilidad' },
+    // ÚNICO ADMIN - puede hacer TODO
+    { id: 'u1', username: 'admin', password: '41668585Z', fullName: 'Administrador', email: 'admin@cleansahel.com', role: 'admin' },
+    // Producción - solo trabaja, no puede borrar ni gestionar usuarios
+    { id: 'u2', username: 'produccion', password: 'produccion2024', fullName: 'Operario Producción', email: 'produccion@cleansahel.com', role: 'produccion' },
+    // Contabilidad - solo trabaja, no puede borrar ni gestionar usuarios
+    { id: 'u3', username: 'contabilidad', password: 'contabilidad2024', fullName: 'Operario Contabilidad', email: 'contabilidad@cleansahel.com', role: 'contabilidad' },
   ]
   const insUser = db.prepare(`INSERT INTO users (id, username, password_hash, full_name, email, role, active, created_at, last_login) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`)
   for (const u of users) {
