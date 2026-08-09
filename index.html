@@ -6,6 +6,16 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SAHEL - Produits d'Hygiène</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script>
+      // SPA redirect handler: lee ?p= y restaura la URL
+      (function(){
+        var p = new URLSearchParams(window.location.search).get('p');
+        if (p && p.length > 0) {
+          var newUrl = window.location.pathname.replace(/\/$/, '') + p + window.location.hash;
+          window.history.replaceState({}, '', newUrl);
+        }
+      })();
+    </script>
     <script type="module" crossorigin src="./assets/index-CLw-DiDM.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-DlqNEDyB.css">
   </head>
@@ -13,4 +23,3 @@
     <div id="root"></div>
   </body>
 </html>
-<!-- Force cache refresh Sun Aug  9 08:24:39 UTC 2026 -->
