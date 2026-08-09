@@ -40,8 +40,10 @@ function isStaticDeploy(): boolean {
 function isProductionWithBackend(): boolean {
   if (typeof window === 'undefined') return false
   const h = window.location.hostname
+  // GitHub Pages no soporta backend - siempre demo
+  if (h.includes('github.io')) return false
   if (h.includes('onrender.com')) return true
-  if (h.includes('surge.sh')) return true  // surge.sh siempre usa backend real
+  if (h.includes('surge.sh')) return true
   if (h.includes('netlify.app')) return true
   if (h.includes('vercel.app')) return true
   if (h.includes('render.com')) return true

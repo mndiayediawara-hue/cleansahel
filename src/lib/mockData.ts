@@ -46,11 +46,12 @@ export const initialData: AppData = {
   },
 
   users: [
-    { id: 'u1', username: 'admin', fullName: 'Carlos Rodríguez', email: 'carlos@cleanpro.es', role: 'admin', active: true, createdAt: monthsAgo(24), lastLogin: daysAgo(0) },
-    { id: 'u2', username: 'produccion', fullName: 'María García', email: 'maria@cleanpro.es', role: 'produccion', active: true, createdAt: monthsAgo(18), lastLogin: daysAgo(0) },
-    { id: 'u3', username: 'almacen', fullName: 'Javier López', email: 'javier@cleanpro.es', role: 'almacen', active: true, createdAt: monthsAgo(15), lastLogin: daysAgo(1) },
-    { id: 'u4', username: 'comercial', fullName: 'Laura Martínez', email: 'laura@cleanpro.es', role: 'comercial', active: true, createdAt: monthsAgo(12), lastLogin: daysAgo(0) },
-    { id: 'u5', username: 'contabilidad', fullName: 'Antonio Sánchez', email: 'antonio@cleanpro.es', role: 'contabilidad', active: true, createdAt: monthsAgo(10), lastLogin: daysAgo(2) },
+    // ÚNICO ADMIN - todo el poder
+    { id: 'u1', username: 'admin', fullName: 'Administrador', email: 'admin@cleansahel.com', role: 'admin', active: true, createdAt: monthsAgo(24), lastLogin: daysAgo(0) },
+    // Producción - solo trabajar, no borrar, no gestionar usuarios
+    { id: 'u2', username: 'produccion', fullName: 'Operario Producción', email: 'produccion@cleansahel.com', role: 'produccion', active: true, createdAt: monthsAgo(18), lastLogin: daysAgo(0) },
+    // Contabilidad - solo trabajar, no borrar, no gestionar usuarios
+    { id: 'u3', username: 'contabilidad', fullName: 'Operario Contabilidad', email: 'contabilidad@cleansahel.com', role: 'contabilidad', active: true, createdAt: monthsAgo(10), lastLogin: daysAgo(0) },
   ],
 
   suppliers: [
