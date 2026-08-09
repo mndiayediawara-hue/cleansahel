@@ -21,7 +21,9 @@ export default function Login() {
     setError(''); setLoading(true)
     try {
       await login(username, password)
-      navigate('/')
+      // Recargar a la base URL (en GitHub Pages es /cleansahel/)
+      const basePath = window.location.pathname.startsWith('/cleansahel') ? '/cleansahel' : ''
+      window.location.href = window.location.origin + basePath + '/'
     } catch (err: any) {
       setError(err?.message || 'Error de inicio de sesión')
     } finally {
