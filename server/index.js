@@ -10,8 +10,10 @@ import { db } from './db.js'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
-// Initialize DB
+// Initialize DB - SIEMPRE forzar re-seed para corregir datos corruptos
+console.log('🗑️  Forzando re-seed de la DB...')
 seed({ force: true })
+console.log('✓ DB re-seedeada con datos correctos')
 
 const app = express()
 app.use(cors())
