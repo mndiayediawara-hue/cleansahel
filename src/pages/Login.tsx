@@ -21,9 +21,17 @@ export default function Login() {
     setError(''); setLoading(true)
     try {
       await login(username, password)
-      // Recargar a la base URL (en GitHub Pages es /cleansahel/)
-      const basePath = window.location.pathname.startsWith('/cleansahel') ? '/cleansahel' : ''
-      window.location.href = window.location.origin + basePath + '/'
+      // Recargar a la base URL. Detectamos el subpath actual.
+      // El pathname actual en GitHub Pages después del login es '/' (basename aplicado)
+      // Pero queremos volver al base real
+      const currentPath = window.location.pathname
+      const fullPath = sessionStorage.getItem('cleansahel-basepath') || currentPath
+      // Si la URL no contiene /cleansahel, lo añadimos
+      let baseUrl = window.location.origin
+      if (!fullPath.includes('/cleansahel') && window.location.hostname.includes('github.io')) {
+        baseUrl += '/cleansahel'
+      }
+      window.location.href = baseUrl + '/'
     } catch (err: any) {
       setError(err?.message || 'Error de inicio de sesión')
     } finally {

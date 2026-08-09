@@ -18,6 +18,12 @@ function Safe({ name, children }: { name: string; children: React.ReactNode }) {
 }
 
 // Detectar el basename para GitHub Pages (subpath /cleansahel)
+// Guardar el basepath para uso futuro
+const __initialPath = window.location.pathname
+if (__initialPath.startsWith('/cleansahel')) {
+  sessionStorage.setItem('cleansahel-basepath', '/cleansahel')
+}
+
 const getBasename = () => {
   const path = window.location.pathname
   // Si la URL es /cleansahel/ o /cleansahel/login, el basename es /cleansahel
