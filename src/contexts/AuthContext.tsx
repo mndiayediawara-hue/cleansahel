@@ -119,10 +119,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
     localStorage.removeItem('cleanerp-token')
     localStorage.removeItem('cleanerp-user')
-    // Calcular la base path (ej. /cleansahel) desde la URL actual
-    const basePath = window.location.pathname.startsWith('/cleansahel') ? '/cleansahel' : ''
-    // Ir a la base (que es donde el ProtectedRoute detecta no-user y muestra Login)
-    window.location.href = window.location.origin + basePath + '/'
+    // NO recargar la página. El ProtectedRoute ya detecta que no hay user
+    // y muestra el Login inline. Solo cambiamos la URL con replaceState
+    // para que el back button no vuelva a la página protegida.
+    try {
+      const basePath = window.location.pathname.startsWith('/cleansahel') ? '/cleansahel' : ''
+      window.history.replaceState({}, '', window.location.origin + basePath + '/')
+    } catch {}
   }
 
   const hasRole = (...roles: Role[]) => !!user && roles.includes(user.role)
