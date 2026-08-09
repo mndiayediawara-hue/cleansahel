@@ -85,7 +85,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       <div className="px-5 py-5 border-b border-surface-200 dark:border-surface-800">
         <div className="flex items-center gap-2.5">
           <div className="w-24 h-12 flex items-center justify-center">
-            <img src="./logo.svg" alt="SAHEL" className="w-full h-full object-contain" />
+            <img src="/cleansahel/logo.svg" alt="SAHEL" className="w-full h-full object-contain" />
           </div>
           <div className="min-w-0 flex-1">
             <p className="text-sm font-bold text-surface-900 dark:text-surface-50">SAHEL</p>
