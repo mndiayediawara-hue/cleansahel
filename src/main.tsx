@@ -17,10 +17,18 @@ function Safe({ name, children }: { name: string; children: React.ReactNode }) {
   return <ErrorBoundary label={name}>{children}</ErrorBoundary>
 }
 
+// Detectar el basename para GitHub Pages (subpath /cleansahel)
+const getBasename = () => {
+  const path = window.location.pathname
+  // Si la URL es /cleansahel/ o /cleansahel/login, el basename es /cleansahel
+  if (path.startsWith('/cleansahel')) return '/cleansahel'
+  return ''
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <Safe name="root">
-      <BrowserRouter>
+      <BrowserRouter basename={getBasename()}>
         <I18nProvider>
           <Safe name="theme">
             <ThemeProvider>
