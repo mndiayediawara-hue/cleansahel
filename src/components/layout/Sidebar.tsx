@@ -84,12 +84,12 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     <aside className="w-64 shrink-0 h-full bg-white dark:bg-surface-900 border-r border-surface-200 dark:border-surface-800 flex flex-col">
       <div className="px-5 py-5 border-b border-surface-200 dark:border-surface-800">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-glow">
-            <Factory className="w-5 h-5 text-white" />
+          <div className="w-24 h-12 flex items-center justify-center">
+            <img src="./logo.svg" alt="SAHEL" className="w-full h-full object-contain" />
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-bold text-surface-900 dark:text-surface-50">CleanSahel</p>
-            <p className="text-[10px] text-surface-500 uppercase tracking-wider">Gestión Industrial</p>
+            <p className="text-sm font-bold text-surface-900 dark:text-surface-50">SAHEL</p>
+            <p className="text-[10px] text-surface-500 uppercase tracking-wider">Produits d'Hygiène</p>
           </div>
         </div>
         {api.isDemo() && (

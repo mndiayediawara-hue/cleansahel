@@ -13,7 +13,7 @@ const monthsAgo = (n: number) => {
 export const initialData: AppData = {
   config: {
     company: {
-      name: 'CleanSahel S.A.',
+      name: 'SAHEL S.A.',
       cif: 'B-12345678',
       address: 'Polígono Industrial Las Marismas, Nave 14, 41020 Sevilla',
       phone: '+34 954 123 456',

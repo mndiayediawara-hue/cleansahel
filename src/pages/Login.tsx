@@ -53,12 +53,12 @@ export default function Login() {
 
         <div className="relative">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-white/10 backdrop-blur flex items-center justify-center ring-1 ring-white/20">
-              <Factory className="w-6 h-6" />
+            <div className="w-16 h-16 rounded-xl bg-white p-1.5 shadow-lg flex items-center justify-center">
+              <img src="./logo.svg" alt="SAHEL" className="w-full h-full object-contain" />
             </div>
             <div>
-              <p className="text-2xl font-bold">CleanSahel</p>
-              <p className="text-sm text-brand-100">Gestión Industrial</p>
+              <p className="text-2xl font-bold">SAHEL</p>
+              <p className="text-sm text-brand-100">Produits d'Hygiène</p>
             </div>
           </div>
         </div>
@@ -81,7 +81,7 @@ export default function Login() {
           </div>
         </div>
 
-        <div className="relative text-xs text-brand-200">© 2025 CleanSahel · Fábrica de productos de limpieza</div>
+        <div className="relative text-xs text-brand-200">© 2025 SAHEL · Produits d'Hygiène</div>
       </div>
 
       {/* Right form */}
@@ -103,11 +103,9 @@ export default function Login() {
         <div className="flex-1 flex items-center justify-center">
           <div className="w-full max-w-sm space-y-8">
             <div className="lg:hidden text-center mb-8">
-              <div className="w-14 h-14 mx-auto rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-glow mb-3">
-                <Factory className="w-7 h-7 text-white" />
+              <div className="w-40 h-20 mx-auto mb-3 flex items-center justify-center">
+                <img src="./logo.svg" alt="SAHEL" className="w-full h-full object-contain" />
               </div>
-              <h1 className="text-2xl font-bold">CleanSahel</h1>
-              <p className="text-sm text-surface-500">{lang === 'fr' ? 'Gestion Industrielle' : 'Gestión Industrial'}</p>
             </div>
 
             <div>
