@@ -1,4 +1,8 @@
 import { useState, FormEvent } from 'react'
+
+// Logo de la empresa
+const LOGO_URL = '/cleansahel/logo.svg'
+const LOGO_ALT = 'SAHEL'
 import { useNavigate } from 'react-router-dom'
 import { Factory, Sun, Moon, LogIn, Eye, EyeOff, AlertCircle, Loader2, Globe, Coins } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
@@ -54,7 +58,7 @@ export default function Login() {
         <div className="relative">
           <div className="flex items-center gap-3">
             <div className="w-16 h-16 rounded-xl bg-white p-1.5 shadow-lg flex items-center justify-center">
-              <img src="/cleansahel/logo.svg" alt="SAHEL" className="w-full h-full object-contain" />
+              <img src={LOGO_URL} alt={LOGO_ALT} className="w-full h-full object-contain" />
             </div>
             <div>
               <p className="text-2xl font-bold">SAHEL</p>
@@ -104,7 +108,7 @@ export default function Login() {
           <div className="w-full max-w-sm space-y-8">
             <div className="lg:hidden text-center mb-8">
               <div className="w-40 h-20 mx-auto mb-3 flex items-center justify-center">
-                <img src="/cleansahel/logo.svg" alt="SAHEL" className="w-full h-full object-contain" />
+                <img src={LOGO_URL} alt={LOGO_ALT} className="w-full h-full object-contain" />
               </div>
             </div>
 
@@ -185,3 +189,4 @@ export default function Login() {
     </div>
   )
 }
+console.log('LOGO_URL=', '/cleansahel/logo.svg')
