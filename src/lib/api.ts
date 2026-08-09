@@ -69,7 +69,8 @@ async function realFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
     if (!path.startsWith('/auth/')) {
       localStorage.removeItem('cleanerp-token')
       localStorage.removeItem('cleanerp-user')
-      window.location.href = '/login'
+      // NO redirigir a /login porque da 404 en GitHub Pages
+      // Solo limpiar el storage y dejar que el AuthContext se entere
     }
     throw new Error('No autorizado')
   }
