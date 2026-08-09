@@ -2,7 +2,7 @@
 // falls back to in-browser localStorage demo when unreachable.
 // This lets the same bundle work in production (with backend)
 // and on the static deploy (demo mode).
-import { demoApi } from './demoApi'
+import { demoApi } from "@/lib/demoApi3"
 
 // One-time: on production deployment, clear stale demo data
 if (typeof window !== 'undefined') {

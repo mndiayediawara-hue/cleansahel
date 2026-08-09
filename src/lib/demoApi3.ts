@@ -1102,3 +1102,4 @@ export const demoApi = {
     }
   },
 }
+console.log("BUILD VERSION 3 ACTIVE - VALID_CREDS LOADED")
