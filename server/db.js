@@ -210,6 +210,7 @@ CREATE TABLE IF NOT EXISTS config (
 `
 
 db.exec(SCHEMA)
+export { SCHEMA }
 
 export function getConfig(key, fallback = null) {
   const row = db.prepare('SELECT value FROM config WHERE key = ?').get(key)
