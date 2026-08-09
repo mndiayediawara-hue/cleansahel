@@ -51,9 +51,11 @@ export default function Settings() {
     if (!confirm('¿Borrar TODOS los datos y volver al estado inicial? Esta acción es irreversible.')) return
     try {
       await fetch('/api/reset', { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
-      localStorage.clear()
-      window.location.href = '/login'
-    } catch (e: any) { alert(e.message) }
+    } catch {}
+    localStorage.clear()
+    // Recargar a la base del sitio (no ir a /login porque da 404 en GitHub Pages)
+    const basePath = window.location.pathname.startsWith('/cleansahel') ? '/cleansahel' : ''
+    window.location.href = window.location.origin + basePath + '/'
   }
 
   return (
