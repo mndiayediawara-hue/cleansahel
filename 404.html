@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>CleanSahel</title>
+<script>
+// GitHub Pages SPA workaround: redirigir 404 a index.html
+(function(){
+  var path = window.location.pathname.replace(/^\/cleansahel/, '');
+  var search = window.location.search;
+  var hash = window.location.hash;
+  window.location.replace('/cleansahel/?p=' + encodeURIComponent(path) + (search||'') + (hash||''));
+})();
+</script>
+</head>
+<body>Redirigiendo...</body>
+</html>
