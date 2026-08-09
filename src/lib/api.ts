@@ -24,12 +24,10 @@ const BASE = 'https://cleansahel.onrender.com/api'
 function isStaticDeploy(): boolean {
   if (typeof window === 'undefined') return false
   const h = window.location.hostname
-  // Known static-deploy hostnames (no backend available)
+  // Only true statics without backend (preview environments)
   if (h.includes('space.minimax.io')) return true
-  if (h.includes('.vercel.app')) return true
-  if (h.includes('.netlify.app')) return true
-  if (h.includes('.github.io')) return true
   if (h.includes('localhost') && window.location.port === '5173') return true
+  // github.io: try the real backend first, fallback to demo
   // Allow override via localStorage flag
   if (localStorage.getItem('cleanerp-force-real') === '1') return false
   if (localStorage.getItem('cleanerp-force-demo') === '1') return true
@@ -40,8 +38,7 @@ function isStaticDeploy(): boolean {
 function isProductionWithBackend(): boolean {
   if (typeof window === 'undefined') return false
   const h = window.location.hostname
-  // GitHub Pages no soporta backend - siempre demo
-  if (h.includes('github.io')) return false
+  if (h.includes('github.io')) return true
   if (h.includes('onrender.com')) return true
   if (h.includes('surge.sh')) return true
   if (h.includes('netlify.app')) return true
