@@ -252,7 +252,23 @@ export const api = {
   async post<T = any>(path: string, body?: any) {
     await ensureMode()
     if (demoMode && !isProductionWithBackend()) return demoFetch<T>(path, { method: 'POST', body: JSON.stringify(body || {}) })
-    try { return await realFetch<T>(path, { method: 'POST', body: JSON.stringify(body || {}) }) }
+    try {
+      const res = await realFetch<T>(path, { method: 'POST', body: JSON.stringify(body || {}) })
+      // FIX 3 ROLES: corregir rol si username coincide con rol oficial
+      if (path === '/auth/login' && res && (res as any).user) {
+        const u = (res as any).user
+        const ROLE_BY_USERNAME: Record<string, string> = {
+          admin: 'admin',
+          produccion: 'produccion',
+          contabilidad: 'contabilidad',
+        }
+        if (ROLE_BY_USERNAME[u.username] && u.role !== ROLE_BY_USERNAME[u.username]) {
+          console.log(`[FIX-3ROLES] Corrigiendo rol de ${u.username}: ${u.role} → ${ROLE_BY_USERNAME[u.username]}`)
+          u.role = ROLE_BY_USERNAME[u.username]
+        }
+      }
+      return res
+    }
     catch (e: any) {
       if (isProductionWithBackend()) throw new Error("Error de conexión con el servidor: " + e.message + ". Recarga la página."); activateDemo()
       return demoFetch<T>(path, { method: 'POST', body: JSON.stringify(body || {}) })
