@@ -1,18 +1,30 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useData } from '@/contexts/DataContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { api } from '@/lib/api'
 import { PageHeader, EmptyState } from '@/components/ui/Common'
 import { Modal } from '@/components/ui/Modal'
 import { StatCard } from '@/components/ui/StatCard'
-import { Factory, Beaker, Package, AlertTriangle, CheckCircle2, Play, Cpu } from 'lucide-react'
-import { formatNumber, formatCurrency, formatDateTime } from '@/lib/utils'
+import { Factory, Beaker, Package, AlertTriangle, CheckCircle2, Play, Cpu, Droplet, Box } from 'lucide-react'
+import { formatNumber, formatCurrency } from '@/lib/utils'
+
+// Formatos de botella predefinidos (en ml)
+const BOTTLE_FORMATS = [
+  { ml: 250, label: '250 ml' },
+  { ml: 500, label: '500 ml' },
+  { ml: 750, label: '750 ml' },
+  { ml: 1000, label: '1 L' },
+  { ml: 1500, label: '1,5 L' },
+  { ml: 5000, label: '5 L (garrafa)' },
+]
 
 export default function Production() {
   const { products, recipes, rawMaterials, packaging, lots, rawMaterialLots, machines, refreshOne, refresh } = useData()
   const { user } = useAuth()
   const [producing, setProducing] = useState<string>('') // productId
   const [batchSize, setBatchSize] = useState(1000) // Tamaño del lote a fabricar (L)
+  const [bottleFormat, setBottleFormat] = useState<number>(750) // Tamaño de botella elegido (ml)
+  const [customBottle, setCustomBottle] = useState<number | ''>('') // Para formato personalizado
   const [notes, setNotes] = useState('')
   const [machineId, setMachineId] = useState<string>('')
   const [error, setError] = useState('')
@@ -54,6 +66,21 @@ export default function Production() {
   const required = calcRequired(batchSize)
   const hasShortage = required.some(r => !r.enough)
 
+  // Total fabricado en litros
+  const totalLitros = batchSize
+  // Tamaño de botella efectivo (si hay custom, lo usa; si no, el seleccionado)
+  const effectiveBottleMl = customBottle !== '' ? Number(customBottle) : bottleFormat
+  // Cálculo de botellas: litros * 1000 / ml_por_botella
+  const totalBottles = effectiveBottleMl > 0 ? Math.floor((totalLitros * 1000) / effectiveBottleMl) : 0
+
+  // Tabla de comparación de botellas por formato
+  const bottleComparison = useMemo(() => {
+    return BOTTLE_FORMATS.map(f => ({
+      ...f,
+      bottles: Math.floor((totalLitros * 1000) / f.ml)
+    }))
+  }, [totalLitros])
+
   async function produce() {
     if (!producing) return
     setError('')
@@ -67,9 +94,9 @@ export default function Production() {
       const res = await api.post<{ lotNumber: string; productionOrderNumber: string }>('/produce-with-lots', {
         productId: producing, quantity: batchSize, notes, machineId: machineId || undefined,
       })
-      setSuccess(`¡Fabricación completada! Lote ${res.lotNumber} (${res.productionOrderNumber}) — ${formatNumber(batchSize, 0)} L`)
-      setTimeout(() => setSuccess(''), 5000)
-      setProducing(''); setBatchSize(1000); setNotes(''); setMachineId('')
+      setSuccess(`¡Fabricación completada! Lote ${res.lotNumber} (${res.productionOrderNumber}) — ${formatNumber(batchSize, 0)} L · ${formatNumber(totalBottles, 0)} botellas de ${effectiveBottleMl}ml`)
+      setTimeout(() => setSuccess(''), 6000)
+      setProducing(''); setBatchSize(1000); setBottleFormat(750); setCustomBottle(''); setNotes(''); setMachineId('')
       await refresh()
     } catch (e: any) {
       const shortages = e.data?.shortages
@@ -85,7 +112,7 @@ export default function Production() {
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Producción" subtitle="Fabrica productos: selecciona receta + tamaño del lote y el sistema calcula las cantidades exactas a usar." />
+      <PageHeader title="Producción" subtitle="Fabrica productos: indica el lote a fabricar y el sistema calcula las materias primas + botellas a obtener." />
 
       {success && (
         <div className="card p-4 flex items-center gap-3 bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-900/50">
@@ -137,6 +164,7 @@ export default function Production() {
           <div className="space-y-4">
             {error && <div className="p-3 rounded-lg bg-red-50 dark:bg-red-950/30 text-sm text-red-700 dark:text-red-300">{error}</div>}
 
+            {/* ==== TAMAÑO DEL LOTE ==== */}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="label">Tamaño del lote a fabricar (L) *</label>
@@ -149,7 +177,7 @@ export default function Production() {
                   onChange={e => setBatchSize(Number(e.target.value))}
                   style={{ color: '#0f172a', WebkitTextFillColor: '#0f172a', backgroundColor: '#ffffff' }}
                 />
-                <p className="text-[10px] text-surface-500 mt-1">La receta está definida para un lote de {formatNumber(selectedRecipe.batchSize || 1000, 0)} L. El sistema escalará las cantidades proporcionalmente.</p>
+                <p className="text-[10px] text-surface-500 mt-1">Receta base: {formatNumber(selectedRecipe.batchSize || 1000, 0)} L · Ratio: ×{formatNumber(batchSize / (selectedRecipe.batchSize || 1000), 3)}</p>
               </div>
               <div><label className="label">Máquina</label>
                 <select
@@ -173,10 +201,107 @@ export default function Production() {
               </div>
             </div>
 
+            {/* ==== RESUMEN: TOTAL FABRICADO + BOTELLAS ==== */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="card p-4 bg-brand-50 dark:bg-brand-950/30 border-brand-200 dark:border-brand-800">
+                <div className="flex items-center gap-2 mb-1">
+                  <Droplet className="w-4 h-4 text-brand-600" />
+                  <p className="text-xs font-semibold text-brand-700 dark:text-brand-300 uppercase tracking-wide">Total a fabricar</p>
+                </div>
+                <p className="text-3xl font-bold text-brand-900 dark:text-brand-100 tabular-nums">{formatNumber(totalLitros, 0)} <span className="text-lg">L</span></p>
+                <p className="text-xs text-surface-600 dark:text-surface-400 mt-1">Volumen total del lote de fabricación</p>
+              </div>
+
+              <div className="card p-4 bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800">
+                <div className="flex items-center gap-2 mb-1">
+                  <Box className="w-4 h-4 text-emerald-600" />
+                  <p className="text-xs font-semibold text-emerald-700 dark:text-emerald-300 uppercase tracking-wide">Botellas a obtener</p>
+                </div>
+                <p className="text-3xl font-bold text-emerald-900 dark:text-emerald-100 tabular-nums">{formatNumber(totalBottles, 0)} <span className="text-lg">ud</span></p>
+                <p className="text-xs text-surface-600 dark:text-surface-400 mt-1">En formato de {effectiveBottleMl} ml por botella</p>
+              </div>
+            </div>
+
+            {/* ==== SELECTOR DE FORMATO DE BOTELLA ==== */}
+            <div className="card p-4">
+              <p className="text-sm font-semibold mb-3">Formato de botella</p>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                {BOTTLE_FORMATS.map(f => (
+                  <button
+                    key={f.ml}
+                    type="button"
+                    onClick={() => { setBottleFormat(f.ml); setCustomBottle('') }}
+                    className={`p-2 rounded-lg border text-sm font-medium transition ${
+                      bottleFormat === f.ml && customBottle === ''
+                        ? 'bg-brand-600 text-white border-brand-600'
+                        : 'bg-white dark:bg-surface-800 border-surface-300 dark:border-surface-700 text-surface-700 dark:text-surface-300 hover:border-brand-400'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <label className="text-xs text-surface-600 dark:text-surface-400">Personalizado (ml):</label>
+                <input
+                  type="number"
+                  min="1"
+                  className="input flex-1 max-w-[120px]"
+                  value={customBottle}
+                  onChange={e => setCustomBottle(e.target.value === '' ? '' : Number(e.target.value))}
+                  placeholder="ej: 330"
+                  style={{ color: '#0f172a', WebkitTextFillColor: '#0f172a', backgroundColor: '#ffffff' }}
+                />
+              </div>
+            </div>
+
+            {/* ==== TABLA COMPARATIVA DE BOTELLAS POR FORMATO ==== */}
+            <div className="card p-4">
+              <p className="text-sm font-semibold mb-2">Comparativa de botellas según formato</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-xs uppercase tracking-wide text-surface-500 border-b border-surface-200 dark:border-surface-700">
+                      <th className="py-2 pr-2">Formato</th>
+                      <th className="py-2 pr-2 text-right">Botellas completas</th>
+                      <th className="py-2 pr-2 text-right">Capacidad total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {bottleComparison.map(f => {
+                      const isSelected = (customBottle !== '' ? Number(customBottle) : bottleFormat) === f.ml
+                      return (
+                        <tr
+                          key={f.ml}
+                          onClick={() => { setBottleFormat(f.ml); setCustomBottle('') }}
+                          className={`border-b border-surface-100 dark:border-surface-800 cursor-pointer ${
+                            isSelected ? 'bg-brand-50 dark:bg-brand-950/30' : 'hover:bg-surface-50 dark:hover:bg-surface-800/30'
+                          }`}
+                        >
+                          <td className="py-2 pr-2 font-medium">{f.label}{isSelected && <span className="ml-2 badge bg-brand-600 text-white text-[10px]">✓</span>}</td>
+                          <td className="py-2 pr-2 text-right tabular-nums font-semibold">{formatNumber(f.bottles, 0)}</td>
+                          <td className="py-2 pr-2 text-right tabular-nums text-surface-500">{formatNumber((f.bottles * f.ml) / 1000, 2)} L</td>
+                        </tr>
+                      )
+                    })}
+                    {customBottle !== '' && Number(customBottle) > 0 && !BOTTLE_FORMATS.find(f => f.ml === Number(customBottle)) && (
+                      <tr className="border-b border-surface-100 dark:border-surface-800 bg-brand-50 dark:bg-brand-950/30">
+                        <td className="py-2 pr-2 font-medium">{customBottle} ml (personalizado) <span className="ml-2 badge bg-brand-600 text-white text-[10px]">✓</span></td>
+                        <td className="py-2 pr-2 text-right tabular-nums font-semibold">{formatNumber(Math.floor((totalLitros * 1000) / Number(customBottle)), 0)}</td>
+                        <td className="py-2 pr-2 text-right tabular-nums text-surface-500">{formatNumber((Math.floor((totalLitros * 1000) / Number(customBottle)) * Number(customBottle)) / 1000, 2)} L</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-surface-500 mt-2">Cálculo: {formatNumber(totalLitros, 0)} L ÷ {effectiveBottleMl} ml × 1000 = {formatNumber(totalBottles, 0)} botellas completas (se descartan los restos)</p>
+            </div>
+
+            {/* ==== INGREDIENTES NECESARIOS ==== */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-semibold">Insumos necesarios para {formatNumber(batchSize, 0)} L</p>
-                <p className="text-xs text-surface-500">Receta base: {formatNumber(selectedRecipe.batchSize || 1000, 0)} L · Ratio: ×{formatNumber(batchSize / (selectedRecipe.batchSize || 1000), 3)}</p>
+                <p className="text-sm font-semibold">Materias primas necesarias para fabricar {formatNumber(batchSize, 0)} L</p>
+                <p className="text-xs text-surface-500">Receta: {formatNumber(selectedRecipe.batchSize || 1000, 0)} L × {formatNumber(batchSize / (selectedRecipe.batchSize || 1000), 3)}</p>
               </div>
               <div className="space-y-1.5 max-h-80 overflow-y-auto border border-surface-200 dark:border-surface-800 rounded-lg p-2">
                 {required.map((r, i) => (
@@ -195,8 +320,8 @@ export default function Production() {
               </div>
             </div>
 
-            <div className="p-3 rounded-lg bg-brand-50 dark:bg-brand-950/30 text-sm">
-              <p>Operario: <strong>{user?.fullName}</strong> {machineId && `· Máquina: <strong>${machines.find(m => m.id === machineId)?.name}</strong>`} · Lote a fabricar: <strong>{formatNumber(batchSize, 0)} L</strong></p>
+            <div className="p-3 rounded-lg bg-surface-50 dark:bg-surface-800/50 text-sm">
+              <p>Operario: <strong>{user?.fullName}</strong> {machineId && `· Máquina: <strong>${machines.find(m => m.id === machineId)?.name}</strong>`} · Lote: <strong>{formatNumber(batchSize, 0)} L</strong> · Botellas: <strong>{formatNumber(totalBottles, 0)} ud de {effectiveBottleMl} ml</strong></p>
             </div>
           </div>
         </Modal>
