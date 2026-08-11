@@ -10,6 +10,27 @@ const DATA_DIR = path.join(__dirname, '..', 'data')
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
 
 const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'cleanerp.db')
+
+
+// ---------- MIGRATIONS ----------
+// Add batch_size column to recipes if it doesn't exist (safe)
+try {
+  const cols = db.prepare("PRAGMA table_info(recipes)").all()
+  if (!cols.find(c => c.name === 'batch_size')) {
+    db.exec("ALTER TABLE recipes ADD COLUMN batch_size REAL NOT NULL DEFAULT 1000")
+    console.log('✓ Migrated: added batch_size column to recipes')
+  }
+} catch (e) { console.warn('migration check recipes:', e.message) }
+
+// Add machine_id column to lots if it doesn't exist (safe)
+try {
+  const colsLots = db.prepare("PRAGMA table_info(lots)").all()
+  if (!colsLots.find(c => c.name === 'machine_id')) {
+    db.exec("ALTER TABLE lots ADD COLUMN machine_id TEXT")
+    console.log('✓ Migrated: added machine_id column to lots')
+  }
+} catch (e) { console.warn('migration check lots:', e.message) }
+
 export const db = new Database(DB_PATH)
 db.pragma('journal_mode = WAL')
 db.pragma('foreign_keys = ON')
@@ -94,10 +115,11 @@ CREATE TABLE IF NOT EXISTS products (
 CREATE TABLE IF NOT EXISTS recipes (
   id TEXT PRIMARY KEY,
   product_id TEXT NOT NULL,
-  bottle_size REAL NOT NULL,
-  bottles_per_box INTEGER NOT NULL,
-  boxes_per_pallet INTEGER NOT NULL,
-  yield_per_liter REAL NOT NULL,
+  bottle_size REAL NOT NULL DEFAULT 0,
+  bottles_per_box INTEGER NOT NULL DEFAULT 0,
+  boxes_per_pallet INTEGER NOT NULL DEFAULT 0,
+  yield_per_liter REAL NOT NULL DEFAULT 0,
+  batch_size REAL NOT NULL DEFAULT 1000,
   items_json TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
