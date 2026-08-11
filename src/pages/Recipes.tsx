@@ -4,12 +4,13 @@ import { useAuth } from '@/contexts/AuthContext'
 import { api } from '@/lib/api'
 import { PageHeader, EmptyState } from '@/components/ui/Common'
 import { Modal, ConfirmDialog } from '@/components/ui/Modal'
-import { ChefHat, Plus, Edit2, Trash2, Beaker, Package, Search } from 'lucide-react'
+import { ChefHat, Plus, Edit2, Trash2, Beaker, Package } from 'lucide-react'
 import { formatNumber } from '@/lib/utils'
 import type { Recipe } from '@/types'
 
 const empty: any = {
-  productId: '', bottleSize: 750, bottlesPerBox: 12, boxesPerPallet: 60, yieldPerLiter: 1.3,
+  productId: '', productName: '',
+  batchSize: 1000,  // Tamaño del lote de fabricación (litros)
   items: []
 }
 
@@ -32,6 +33,7 @@ export default function Recipes() {
 
   async function save() {
     if (!editing.productName?.trim() && !editing.productId) return alert('Selecciona un producto')
+    if (!editing.batchSize || editing.batchSize <= 0) return alert('Indica el tamaño del lote de fabricación (en litros)')
     if (!editing.items.length) return alert('Añade al menos un ingrediente')
     try {
       // Auto-crear producto si escribimos uno nuevo
@@ -65,7 +67,14 @@ export default function Recipes() {
           }
         }
       }
-      const payload = { ...editing, productId, items }
+      const payload = {
+        ...editing,
+        productId,
+        items,
+        // Mantener campos legacy con valores neutros para no romper el backend
+        bottleSize: 0, bottlesPerBox: 0, boxesPerPallet: 0, yieldPerLiter: 0,
+        batchSize: Number(editing.batchSize) || 1000
+      }
       if (editing.id) await api.put(`/recipes/${editing.id}`, payload)
       else await api.post('/recipes', payload)
       await refreshOne('recipes')
@@ -94,9 +103,12 @@ export default function Recipes() {
     setEditing({ ...editing, items })
   }
 
+  // Pre-cálculo de cantidades por unidad de volumen (para mostrar info útil)
+  const batch = Number(editing?.batchSize) || 0
+
   return (
     <div className="space-y-4">
-      <PageHeader title="Recetas de Fabricación" subtitle="Define la fórmula de cada producto. El sistema calcula automáticamente el consumo."
+      <PageHeader title="Recetas de Fabricación" subtitle="Define la fórmula de cada producto por lote de fabricación (en litros). El sistema calcula automáticamente las cantidades al producir."
         actions={can('recipes.write') && <button onClick={openNew} className="btn-primary"><Plus className="w-4 h-4" /> Nueva receta</button>}
       />
 
@@ -109,7 +121,7 @@ export default function Recipes() {
               <div className="flex items-start justify-between mb-3">
                 <div>
                   <h3 className="font-semibold text-lg">{r.product?.name || 'Producto'}</h3>
-                  <p className="text-xs text-surface-500">{r.product?.code} · {r.bottleSize}ml · {r.bottlesPerBox} ud/caja</p>
+                  <p className="text-xs text-surface-500">{r.product?.code} · Lote tipo: <strong>{formatNumber(r.batchSize || 1000, 0)} L</strong></p>
                 </div>
                 {can('recipes.write') && (
                   <div className="flex gap-1">
@@ -127,7 +139,7 @@ export default function Recipes() {
                         {it.materialType === 'raw' ? <Beaker className="w-3.5 h-3.5 text-cyan-600 shrink-0" /> : <Package className="w-3.5 h-3.5 text-violet-600 shrink-0" />}
                         <span className="truncate">{mat?.name || 'Material'}</span>
                       </div>
-                      <span className="font-mono text-xs tabular-nums shrink-0">{formatNumber(it.quantity, 3)} {it.unit}/botella</span>
+                      <span className="font-mono text-xs tabular-nums shrink-0">{formatNumber(it.quantity, 3)} {it.unit}</span>
                     </div>
                   )
                 })}
@@ -144,54 +156,107 @@ export default function Recipes() {
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div><label className="label">Producto</label>
-                <input className="input" list="recipes-products-list" value={editing.productName || ''} onChange={e => {
-                  const v = e.target.value
-                  const list = editing.id ? products.filter(p => p.id === editing.productId) : productsWithout
-                  const match = list.find((p: any) => p.name.toLowerCase() === v.toLowerCase())
-                  setEditing({ ...editing, productName: v, productId: match?.id || '' })
-                }} placeholder="Selecciona o escribe un producto" disabled={!!editing.id} />
+                <input
+                  className="input"
+                  list="recipes-products-list"
+                  value={editing.productName || ''}
+                  onChange={e => {
+                    const v = e.target.value
+                    const list = editing.id ? products.filter(p => p.id === editing.productId) : productsWithout
+                    const match = list.find((p: any) => p.name.toLowerCase() === v.toLowerCase())
+                    setEditing({ ...editing, productName: v, productId: match?.id || '' })
+                  }}
+                  placeholder="Selecciona o escribe un producto"
+                  disabled={!!editing.id}
+                  style={{ color: '#0f172a', WebkitTextFillColor: '#0f172a', backgroundColor: '#ffffff' }}
+                />
                 <datalist id="recipes-products-list">
                   {(editing.id ? products.filter(p => p.id === editing.productId) : productsWithout).map(p => <option key={p.id} value={p.name} />)}
                 </datalist>
                 {editing.id && <p className="text-[10px] text-surface-500 mt-1">El producto no se puede cambiar en recetas existentes</p>}
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                <div><label className="label">Botella (ml)</label><input type="number" className="input" value={editing.bottleSize || 0} onChange={e => setEditing({ ...editing, bottleSize: Number(e.target.value) })} /></div>
-                <div><label className="label">Botellas/caja</label><input type="number" className="input" value={editing.bottlesPerBox || 0} onChange={e => setEditing({ ...editing, bottlesPerBox: Number(e.target.value) })} /></div>
-                <div><label className="label">Cajas/palet</label><input type="number" className="input" value={editing.boxesPerPallet || 0} onChange={e => setEditing({ ...editing, boxesPerPallet: Number(e.target.value) })} /></div>
+              <div>
+                <label className="label">Tamaño del lote de fabricación (L) *</label>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  className="input"
+                  value={editing.batchSize || 0}
+                  onChange={e => setEditing({ ...editing, batchSize: Number(e.target.value) })}
+                  placeholder="1000"
+                  style={{ color: '#0f172a', WebkitTextFillColor: '#0f172a', backgroundColor: '#ffffff' }}
+                />
+                <p className="text-[10px] text-surface-500 mt-1">Litros del lote que produce esta receta (ej: 500, 1000, 10000)</p>
               </div>
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <p className="text-sm font-semibold">Ingredientes (por botella)</p>
+                <div>
+                  <p className="text-sm font-semibold">Ingredientes (para todo el lote de {formatNumber(batch, 0)} L)</p>
+                  <p className="text-[11px] text-surface-500">Introduce la cantidad TOTAL necesaria para fabricar el lote completo</p>
+                </div>
                 <button onClick={addItem} className="btn-secondary text-xs"><Plus className="w-3 h-3" /> Añadir</button>
               </div>
               <div className="space-y-2 max-h-96 overflow-y-auto">
                 {(editing.items || []).map((it: any, i: number) => (
                   <div key={i} className="grid grid-cols-12 gap-2 items-center p-2 rounded-lg bg-surface-50 dark:bg-surface-800/50">
-                    <select className="input col-span-2" value={it.materialType} onChange={e => updateItem(i, 'materialType', e.target.value)}>
+                    <select
+                      className="input col-span-2"
+                      value={it.materialType}
+                      onChange={e => updateItem(i, 'materialType', e.target.value)}
+                      style={{ color: '#0f172a', WebkitTextFillColor: '#0f172a', backgroundColor: '#ffffff' }}
+                    >
                       <option value="raw">Materia prima</option>
                       <option value="packaging">Embalaje</option>
                     </select>
-                    <input className="input col-span-5" list={`recipes-materials-${i}`} value={it.materialName || ''} onChange={e => {
-                      const v = e.target.value
-                      const list = it.materialType === 'raw' ? rawMaterials : packaging
-                      const match = list.find((m: any) => m.name.toLowerCase() === v.toLowerCase())
-                      updateItem(i, 'materialName', v)
-                      updateItem(i, 'materialId', match?.id || '')
-                    }} placeholder="Escribe o selecciona material" />
-                    <datalist id={`recipes-materials-${i}`}>
-                      {(it.materialType === 'raw' ? rawMaterials : packaging).map(m => <option key={m.id} value={m.name} />)}
-                    </datalist>
-                    <input type="number" step="0.001" className="input col-span-2" placeholder="Cantidad" value={it.quantity || 0} onChange={e => updateItem(i, 'quantity', Number(e.target.value))} />
-                    <select className="input col-span-2" value={it.unit} onChange={e => updateItem(i, 'unit', e.target.value)}>
+                    <div className="col-span-5 relative">
+                      <input
+                        className="input"
+                        list={`recipes-materials-${i}`}
+                        value={it.materialName || ''}
+                        onChange={e => {
+                          const v = e.target.value
+                          const list = it.materialType === 'raw' ? rawMaterials : packaging
+                          const match = list.find((m: any) => m.name.toLowerCase() === v.toLowerCase())
+                          updateItem(i, 'materialName', v)
+                          updateItem(i, 'materialId', match?.id || '')
+                        }}
+                        placeholder="Escribe o selecciona material"
+                        autoComplete="off"
+                        style={{ color: '#0f172a', WebkitTextFillColor: '#0f172a', backgroundColor: '#ffffff' }}
+                      />
+                      <datalist id={`recipes-materials-${i}`}>
+                        {(it.materialType === 'raw' ? rawMaterials : packaging).map(m => <option key={m.id} value={m.name} />)}
+                      </datalist>
+                    </div>
+                    <input
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      className="input col-span-2"
+                      placeholder="Cantidad"
+                      value={it.quantity || 0}
+                      onChange={e => updateItem(i, 'quantity', Number(e.target.value))}
+                      style={{ color: '#0f172a', WebkitTextFillColor: '#0f172a', backgroundColor: '#ffffff' }}
+                    />
+                    <select
+                      className="input col-span-2"
+                      value={it.unit}
+                      onChange={e => updateItem(i, 'unit', e.target.value)}
+                      style={{ color: '#0f172a', WebkitTextFillColor: '#0f172a', backgroundColor: '#ffffff' }}
+                    >
                       {['L','ml','kg','g','ud'].map(u => <option key={u} value={u}>{u}</option>)}
                     </select>
                     <button onClick={() => removeItem(i)} className="btn-ghost p-1.5 text-red-600 col-span-1 justify-center"><Trash2 className="w-3.5 h-3.5" /></button>
                   </div>
                 ))}
               </div>
+            </div>
+
+            <div className="p-3 rounded-lg bg-brand-50 dark:bg-brand-950/30 text-xs text-surface-600 dark:text-surface-400">
+              <p><strong>Ejemplo:</strong> si indicas lote de <strong>1000 L</strong> y necesitas 400 L de agua, al fabricar 5000 L el sistema calculará automáticamente: 400 × (5000/1000) = <strong>2000 L de agua</strong>.</p>
             </div>
           </div>
         </Modal>
