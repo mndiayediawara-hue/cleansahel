@@ -14,42 +14,11 @@ const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'cleanerp.db')
 export const db = new Database(DB_PATH)
 db.pragma('journal_mode = WAL')
 
-// ---------- MIGRATIONS ----------
-// Add batch_size column to recipes if it doesn't exist (safe)
-try {
-  const cols = db.prepare("PRAGMA table_info(recipes)").all()
-  if (!cols.find(c => c.name === 'batch_size')) {
-    db.exec("ALTER TABLE recipes ADD COLUMN batch_size REAL NOT NULL DEFAULT 1000")
-    console.log('✓ Migrated: added batch_size column to recipes')
-  }
-} catch (e) { console.warn('migration recipes:', e.message) }
+// Ejecutar SCHEMA primero para que las tablas existan
+// (Se ejecuta al final también, pero necesitamos las tablas YA para las migraciones)
+// (Esto es un duplicado intencional - CREATE TABLE IF NOT EXISTS es idempotente)
 
-// Add machine_id column to lots if it doesn't exist (safe)
-try {
-  const colsLots = db.prepare("PRAGMA table_info(lots)").all()
-  if (!colsLots.find(c => c.name === 'machine_id')) {
-    db.exec("ALTER TABLE lots ADD COLUMN machine_id TEXT")
-    console.log('✓ Migrated: added machine_id column to lots')
-  }
-} catch (e) { console.warn('migration lots:', e.message) }
 
-// Add production_order_number column to lots if it doesn't exist (safe)
-try {
-  const colsLots2 = db.prepare("PRAGMA table_info(lots)").all()
-  if (!colsLots2.find(c => c.name === 'production_order_number')) {
-    db.exec("ALTER TABLE lots ADD COLUMN production_order_number TEXT")
-    console.log('✓ Migrated: added production_order_number column to lots')
-  }
-} catch (e) { console.warn('migration lots order:', e.message) }
-
-// Add status_safe_check column to lots (no usamos esto, pero por si hay restricciones)
-try {
-  const colsLots3 = db.prepare("PRAGMA table_info(lots)").all()
-  if (!colsLots3.find(c => c.name === 'status') && !colsLots3.find(c => c.name === 'status_safe_check')) {
-    // No hacemos nada, status ya existe en el schema
-  }
-} catch (e) { console.warn('migration status check:', e.message) }
-db.pragma('foreign_keys = ON')
 
 // ---------- SCHEMA ----------
 const SCHEMA = `
@@ -247,7 +216,46 @@ CREATE TABLE IF NOT EXISTS config (
 );
 `
 
+// Ejecutar SCHEMA primero
 db.exec(SCHEMA)
+
+// Ahora ejecutar migraciones (las tablas ya existen)
+// ---------- MIGRATIONS ----------
+// Add batch_size column to recipes if it doesn't exist (safe)
+try {
+  const cols = db.prepare("PRAGMA table_info(recipes)").all()
+  if (!cols.find(c => c.name === 'batch_size')) {
+    db.exec("ALTER TABLE recipes ADD COLUMN batch_size REAL NOT NULL DEFAULT 1000")
+    console.log('✓ Migrated: added batch_size column to recipes')
+  }
+} catch (e) { console.warn('migration recipes:', e.message) }
+
+// Add machine_id column to lots if it doesn't exist (safe)
+try {
+  const colsLots = db.prepare("PRAGMA table_info(lots)").all()
+  if (!colsLots.find(c => c.name === 'machine_id')) {
+    db.exec("ALTER TABLE lots ADD COLUMN machine_id TEXT")
+    console.log('✓ Migrated: added machine_id column to lots')
+  }
+} catch (e) { console.warn('migration lots:', e.message) }
+
+// Add production_order_number column to lots if it doesn't exist (safe)
+try {
+  const colsLots2 = db.prepare("PRAGMA table_info(lots)").all()
+  if (!colsLots2.find(c => c.name === 'production_order_number')) {
+    db.exec("ALTER TABLE lots ADD COLUMN production_order_number TEXT")
+    console.log('✓ Migrated: added production_order_number column to lots')
+  }
+} catch (e) { console.warn('migration lots order:', e.message) }
+
+// Add status_safe_check column to lots (no usamos esto, pero por si hay restricciones)
+try {
+  const colsLots3 = db.prepare("PRAGMA table_info(lots)").all()
+  if (!colsLots3.find(c => c.name === 'status') && !colsLots3.find(c => c.name === 'status_safe_check')) {
+    // No hacemos nada, status ya existe en el schema
+  }
+} catch (e) { console.warn('migration status check:', e.message) }
+db.pragma('foreign_keys = ON')
 export { SCHEMA }
 
 export function getConfig(key, fallback = null) {
@@ -265,5 +273,6 @@ export function uid(prefix = '') {
 }
 
 export default db
+
 
 
