@@ -71,11 +71,13 @@ export interface Recipe {
   id: string
   productId: string
   items: RecipeItem[]
-  // calculated per bottle
+  // Receta definida por lote de fabricación (en litros)
+  batchSize: number  // Tamaño del lote para el que está definida la receta (litros)
+  // Campos legacy mantenidos por compatibilidad
   bottleSize: number // ml per bottle
   bottlesPerBox: number
   boxesPerPallet: number
-  yieldPerLiter: number // number of bottles per liter of mixture
+  yieldPerLiter: number // legacy
   updatedAt: string
 }
 
