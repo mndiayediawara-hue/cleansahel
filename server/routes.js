@@ -490,6 +490,47 @@ router.get('/lots', auth, (_req, res) => {
 router.get('/lots/:id', auth, (req, res) => {
   const l = db.prepare('SELECT * FROM lots WHERE id = ?').get(req.params.id)
   if (!l) return res.status(404).json({ error: 'No encontrado' })
+
+// PATCH /api/lots/:id/status — cambiar estado de una fabricación
+router.patch('/lots/:id/status', auth, (req, res) => {
+  const { status } = req.body
+  const validStatuses = ['pendiente', 'en_curso', 'completado', 'cancelado']
+  if (!status || !validStatuses.includes(status)) {
+    return res.status(400).json({ error: 'Estado inválido. Debe ser: pendiente, en_curso, completado, cancelado' })
+  }
+  const lot = db.prepare('SELECT * FROM lots WHERE id = ?').get(req.params.id)
+  if (!lot) return res.status(404).json({ error: 'Lote no encontrado' })
+  // Si pasa a completado, ya está completado (no hacemos nada extra)
+  // Si pasa de completado a otro, no permitimos (regla de negocio)
+  if (lot.status === 'completado' && status !== 'completado') {
+    return res.status(400).json({ error: 'No se puede cambiar el estado de un lote ya completado' })
+  }
+  db.prepare('UPDATE lots SET status = ? WHERE id = ?').run(status, req.params.id)
+  addHistory(req, { 
+    action: 'cambiar_estado', 
+    module: 'Producción', 
+    entityId: req.params.id, 
+    description: `Lote ${lot.lot_number} → ${status}` 
+  })
+  res.json({ ok: true, id: req.params.id, status })
+})
+
+// POST /api/lots — crear una nueva fabricación con estado 'pendiente' (sin descontar stock todavía)
+router.post('/lots', auth, requireRole('admin', 'produccion'), (req, res) => {
+  const { productId, plannedQuantity, notes, machineId } = req.body
+  if (!productId) return res.status(400).json({ error: 'Falta productId' })
+  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId)
+  if (!product) return res.status(404).json({ error: 'Producto no encontrado' })
+  const lotId = uid('l-')
+  const lotCount = db.prepare("SELECT COUNT(*) c FROM lots WHERE lot_number LIKE 'LOT-%'").get().c
+  const lotNumber = `LOT-${new Date().getFullYear()}-${String(lotCount + 1).padStart(4, '0')}`
+  const orderNumber = `OP-${new Date().getFullYear()}-${String(lotCount + 1).padStart(4, '0')}`
+  db.prepare(`INSERT INTO lots (id, lot_number, product_id, quantity, raw_materials_json, produced_by, produced_at, status, notes, machine_id, production_order_number) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(lotId, lotNumber, productId, plannedQuantity || 0, '[]', req.user.id, new Date().toISOString(), 'pendiente', notes || null, machineId || null, orderNumber)
+  addHistory(req, { action: 'crear', module: 'Producción', entityId: lotId, description: `Nueva fabricación ${lotNumber} (${orderNumber}) en estado pendiente` })
+  res.json({ ok: true, id: lotId, lotNumber, productionOrderNumber: orderNumber, status: 'pendiente' })
+})
+
   res.json(mapLot(l))
 })
 // PRODUCE-WITH-LOTS — alias de /produce con respuesta extendida (mantener compatibilidad frontend)
@@ -820,3 +861,4 @@ router.post('/reset', auth, requireRole('admin'), async (_req, res) => {
   seed({ force: true })
   res.json({ ok: true })
 })
+
