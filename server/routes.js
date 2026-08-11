@@ -328,6 +328,40 @@ router.put('/recipes/:id', auth, requireRole('admin', 'produccion'), (req, res) 
 router.delete('/recipes/:id', auth, requireRole('admin'), (req, res) => {
   db.prepare('DELETE FROM recipes WHERE id = ?').run(req.params.id)
   res.json({ ok: true })
+
+// DELETE /api/lots/:id — eliminar fabricación (SOLO ADMIN)
+router.delete('/lots/:id', auth, requireRole('admin'), (req, res) => {
+  const lot = db.prepare('SELECT * FROM lots WHERE id = ?').get(req.params.id)
+  if (!lot) return res.status(404).json({ error: 'Lote no encontrado' })
+  const tx = db.transaction(() => {
+    // Devolver el stock de las materias primas consumidas
+    const items = JSON.parse(lot.raw_materials_json || '[]')
+    for (const it of items) {
+      if (it.materialType === 'raw') {
+        db.prepare('UPDATE raw_materials SET stock = stock + ?, last_updated = ? WHERE id = ?').run(it.quantity || 0, new Date().toISOString(), it.materialId)
+      } else if (it.materialType === 'packaging') {
+        db.prepare('UPDATE packaging SET stock = stock + ?, last_updated = ? WHERE id = ?').run(it.quantity || 0, new Date().toISOString(), it.materialId)
+      }
+    }
+    // Restar del stock del producto (si se sumó al fabricar)
+    if (lot.status === 'completado') {
+      db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?').run(lot.quantity || 0, lot.product_id)
+    }
+    // Borrar notificaciones relacionadas
+    db.prepare("DELETE FROM notifications WHERE related_id = ?").run('lot:' + req.params.id)
+    // Borrar el lote
+    db.prepare('DELETE FROM lots WHERE id = ?').run(req.params.id)
+  })
+  tx()
+  addHistory(req, { 
+    action: 'eliminar', 
+    module: 'Producción', 
+    entityId: req.params.id, 
+    description: `Eliminado lote ${lot.lot_number} (producto ${lot.product_id}, cantidad ${lot.quantity}L)` 
+  })
+  res.json({ ok: true, id: req.params.id, message: 'Lote eliminado y stock devuelto' })
+})
+
 })
 
 // ---------- CUSTOMERS ----------
@@ -861,4 +895,5 @@ router.post('/reset', auth, requireRole('admin'), async (_req, res) => {
   seed({ force: true })
   res.json({ ok: true })
 })
+
 
