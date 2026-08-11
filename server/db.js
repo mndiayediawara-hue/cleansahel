@@ -12,15 +12,7 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
 const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'cleanerp.db')
 
 
-// ---------- MIGRATIONS ----------
-// Add batch_size column to recipes if it doesn't exist (safe)
-try {
-  const cols = db.prepare("PRAGMA table_info(recipes)").all()
-  if (!cols.find(c => c.name === 'batch_size')) {
-    db.exec("ALTER TABLE recipes ADD COLUMN batch_size REAL NOT NULL DEFAULT 1000")
-    console.log('✓ Migrated: added batch_size column to recipes')
-  }
-} catch (e) { console.warn('migration check recipes:', e.message) }
+ catch (e) { console.warn('migration check recipes:', e.message) }
 
 // Add machine_id column to lots if it doesn't exist (safe)
 try {
@@ -33,6 +25,42 @@ try {
 
 export const db = new Database(DB_PATH)
 db.pragma('journal_mode = WAL')
+
+// ---------- MIGRATIONS ----------
+// Add batch_size column to recipes if it doesn't exist (safe)
+try {
+  const cols = db.prepare("PRAGMA table_info(recipes)").all()
+  if (!cols.find(c => c.name === 'batch_size')) {
+    db.exec("ALTER TABLE recipes ADD COLUMN batch_size REAL NOT NULL DEFAULT 1000")
+    console.log('✓ Migrated: added batch_size column to recipes')
+  }
+} catch (e) { console.warn('migration recipes:', e.message) }
+
+// Add machine_id column to lots if it doesn't exist (safe)
+try {
+  const colsLots = db.prepare("PRAGMA table_info(lots)").all()
+  if (!colsLots.find(c => c.name === 'machine_id')) {
+    db.exec("ALTER TABLE lots ADD COLUMN machine_id TEXT")
+    console.log('✓ Migrated: added machine_id column to lots')
+  }
+} catch (e) { console.warn('migration lots:', e.message) }
+
+// Add production_order_number column to lots if it doesn't exist (safe)
+try {
+  const colsLots2 = db.prepare("PRAGMA table_info(lots)").all()
+  if (!colsLots2.find(c => c.name === 'production_order_number')) {
+    db.exec("ALTER TABLE lots ADD COLUMN production_order_number TEXT")
+    console.log('✓ Migrated: added production_order_number column to lots')
+  }
+} catch (e) { console.warn('migration lots order:', e.message) }
+
+// Add status_safe_check column to lots (no usamos esto, pero por si hay restricciones)
+try {
+  const colsLots3 = db.prepare("PRAGMA table_info(lots)").all()
+  if (!colsLots3.find(c => c.name === 'status') && !colsLots3.find(c => c.name === 'status_safe_check')) {
+    // No hacemos nada, status ya existe en el schema
+  }
+} catch (e) { console.warn('migration status check:', e.message) }
 db.pragma('foreign_keys = ON')
 
 // ---------- SCHEMA ----------
@@ -249,3 +277,4 @@ export function uid(prefix = '') {
 }
 
 export default db
+
