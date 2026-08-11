@@ -286,8 +286,23 @@ router.put('/products/:id', auth, requireRole('admin'), (req, res) => {
   res.json({ ok: true })
 })
 router.delete('/products/:id', auth, requireRole('admin'), (req, res) => {
-  db.prepare('DELETE FROM products WHERE id = ?').run(req.params.id)
-  res.json({ ok: true })
+  try {
+    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id)
+    if (!product) return res.status(404).json({ error: 'Producto no encontrado' })
+    // Comprobar si tiene recetas o lotes asociados
+    const recipes = db.prepare('SELECT COUNT(*) c FROM recipes WHERE product_id = ?').get(req.params.id).c
+    const lots = db.prepare('SELECT COUNT(*) c FROM lots WHERE product_id = ?').get(req.params.id).c
+    if (recipes > 0 || lots > 0) {
+      return res.status(400).json({ 
+        error: `No se puede eliminar: tiene ${recipes} receta(s) y ${lots} lote(s) asociado(s). Elimina primero esos registros.` 
+      })
+    }
+    db.prepare('DELETE FROM products WHERE id = ?').run(req.params.id)
+    addHistory(req, { action: 'eliminar', module: 'Productos', entityId: req.params.id, description: `Eliminado producto ${product.name}` })
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ error: 'Error al eliminar: ' + e.message })
+  }
 })
 
 // ---------- RECIPES ----------
@@ -895,5 +910,6 @@ router.post('/reset', auth, requireRole('admin'), async (_req, res) => {
   seed({ force: true })
   res.json({ ok: true })
 })
+
 
 
