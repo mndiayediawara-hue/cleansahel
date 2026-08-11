@@ -11,18 +11,6 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true })
 
 const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, 'cleanerp.db')
 
-
- catch (e) { console.warn('migration check recipes:', e.message) }
-
-// Add machine_id column to lots if it doesn't exist (safe)
-try {
-  const colsLots = db.prepare("PRAGMA table_info(lots)").all()
-  if (!colsLots.find(c => c.name === 'machine_id')) {
-    db.exec("ALTER TABLE lots ADD COLUMN machine_id TEXT")
-    console.log('✓ Migrated: added machine_id column to lots')
-  }
-} catch (e) { console.warn('migration check lots:', e.message) }
-
 export const db = new Database(DB_PATH)
 db.pragma('journal_mode = WAL')
 
@@ -277,4 +265,5 @@ export function uid(prefix = '') {
 }
 
 export default db
+
 
