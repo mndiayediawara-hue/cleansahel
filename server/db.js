@@ -1,3 +1,4 @@
+
 import Database from 'better-sqlite3'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -273,6 +274,3 @@ export function uid(prefix = '') {
 }
 
 export default db
-
-
-
