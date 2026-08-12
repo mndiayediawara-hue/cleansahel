@@ -1,3 +1,4 @@
+
 import { useEffect, useRef, useState } from 'react'
 import { Bell, Sun, Moon, LogOut, Search, User, Menu, Globe, Coins, Repeat } from 'lucide-react'
 import { useTheme } from '@/contexts/ThemeContext'
