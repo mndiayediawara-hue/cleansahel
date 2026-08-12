@@ -1,3 +1,4 @@
+
 import { useState } from 'react'
 import { useData } from '@/contexts/DataContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -163,3 +164,8 @@ export default function Customers() {
     </div>
   )
 }
+
+
+================================================================================
+ARCHIVO NO ENCONTRADO: src/pages/Suppliers.tsx
+================================================================================
