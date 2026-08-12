@@ -5,7 +5,7 @@
 (function() {
   'use strict';
 
-  const REAL_API = 'https://cleansahel.onrender.com/api';
+  const REAL_API = 'https://cleansahel-production.up.railway.app/api';
 
   function showMessage(text, type) {
     type = type || 'info';
