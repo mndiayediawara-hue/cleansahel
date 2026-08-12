@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from 'react'
 import { useData } from '@/contexts/DataContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -450,5 +451,3 @@ function LotDetailModal({ lot, onClose, rawMaterials, suppliers, users }: any) {
     </Modal>
   )
 }
-
-
