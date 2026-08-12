@@ -45,5 +45,47 @@ export function seed({ force = false } = {}) {
   // Resetear failed_attempts y asegurar active=1
   db.prepare('UPDATE users SET failed_attempts = 0, active = 1').run()
   console.log('✓ Cuentas desbloqueadas')
+  
+  // Si no hay productos, crear datos de muestra
+  const productCount = db.prepare('SELECT COUNT(*) as c FROM products').get().c
+  if (productCount === 0) {
+    console.log('📦 Creando datos de muestra...')
+    
+    const raws = [
+      { id: 'rm-' + Date.now().toString(36) + 'a', code: 'MP-AGUA', name: 'Agua Desionizada', category: 'Base', unit: 'L', stock: 5000, min_stock: 500, max_stock: 10000, price: 0.1 },
+      { id: 'rm-' + Date.now().toString(36) + 'b', code: 'MP-CONC', name: 'Concentrado Limpiador', category: 'Activo', unit: 'L', stock: 500, min_stock: 50, max_stock: 2000, price: 8.5 },
+      { id: 'rm-' + Date.now().toString(36) + 'c', code: 'MP-ALCO', name: 'Alcohol Isopropílico', category: 'Activo', unit: 'L', stock: 200, min_stock: 20, max_stock: 500, price: 4.2 },
+      { id: 'rm-' + Date.now().toString(36) + 'd', code: 'MP-FRAG', name: 'Fragancia Limón', category: 'Aroma', unit: 'L', stock: 50, min_stock: 5, max_stock: 100, price: 25.0 },
+      { id: 'rm-' + Date.now().toString(36) + 'e', code: 'MP-COL', name: 'Colorante Azul', category: 'Color', unit: 'L', stock: 20, min_stock: 2, max_stock: 50, price: 35.0 },
+    ]
+    const insRaw = db.prepare(`INSERT INTO raw_materials (id, code, name, category, unit, stock, min_stock, max_stock, price, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    for (const r of raws) {
+      insRaw.run(r.id, r.code, r.name, r.category, r.unit, r.stock, r.min_stock, r.max_stock, r.price, new Date().toISOString())
+    }
+    
+    const pkgs = [
+      { code: 'ENV-750', name: 'Botella 750ml con atomizador', type: 'Botella', size: '750ml', stock: 500, min_stock: 50, max_stock: 2000, price: 0.85 },
+      { code: 'ENV-1000', name: 'Botella 1L con tapón', type: 'Botella', size: '1L', stock: 400, min_stock: 40, max_stock: 1500, price: 1.10 },
+      { code: 'ENV-500', name: 'Botella 500ml con spray', type: 'Botella', size: '500ml', stock: 300, min_stock: 30, max_stock: 1000, price: 0.70 },
+    ]
+    const insPkg = db.prepare(`INSERT INTO packaging (id, code, name, type, size, stock, min_stock, max_stock, price, last_updated) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    for (const p of pkgs) {
+      insPkg.run('pk-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), p.code, p.name, p.type, p.size, p.stock, p.min_stock, p.max_stock, p.price, new Date().toISOString())
+    }
+    
+    const products = [
+      { code: 'LIM-MULT-1L', name: 'Limpiador Multiusos 1L', category: 'Multiusos', bottle_size: 1000, stock: 0, min_stock: 20, max_stock: 200, price: 4.50, cost: 2.10 },
+      { code: 'LIM-BAN-750', name: 'Limpiador Baños 750ml', category: 'Baños', bottle_size: 750, stock: 0, min_stock: 15, max_stock: 150, price: 4.20, cost: 1.95 },
+      { code: 'LIM-CRIS-500', name: 'Limpiacristales 500ml', category: 'Cristales', bottle_size: 500, stock: 0, min_stock: 10, max_stock: 100, price: 3.50, cost: 1.60 },
+    ]
+    const insProd = db.prepare(`INSERT INTO products (id, code, name, category, bottle_size, stock, min_stock, max_stock, price, cost) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    for (const p of products) {
+      insProd.run('pr-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), p.code, p.name, p.category, p.bottle_size, p.stock, p.min_stock, p.max_stock, p.price, p.cost)
+    }
+    
+    console.log('✓ Datos de muestra creados: 5 MPs, 3 envases, 3 productos')
+  } else {
+    console.log('ℹ Productos ya existen (skip demo data)')
+  }
   return { seeded: true, users: 3 }
 }
