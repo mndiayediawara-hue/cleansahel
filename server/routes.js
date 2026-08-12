@@ -586,6 +586,13 @@ router.patch('/lots/:id/status', auth, requireRole('admin', 'produccion'), (req,
   res.json({ ok: true, id: req.params.id, status })
 })
 
+
+// GET /api/lots/preview-number — previsualizar el próximo número de lote (sin crear)
+router.get('/lots/preview-number', auth, (_req, res) => {
+  const { lotNumber, productionOrderNumber } = nextProductionNumbers()
+  res.json({ lotNumber, productionOrderNumber })
+})
+
 // POST /api/lots — crear una nueva fabricación con estado 'pendiente' (sin descontar stock todavía)
 router.post('/lots', auth, requireRole('admin', 'produccion'), (req, res) => {
   const { productId, plannedQuantity, notes, machineId } = req.body
