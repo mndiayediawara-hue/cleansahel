@@ -1,3 +1,4 @@
+
 import express from 'express'
 import cors from 'cors'
 import path from 'path'
@@ -35,7 +36,7 @@ app.get('/api/health', (_req, res) => {
 // ENDPOINT TEMPORAL: Reset DB (usar para forzar re-seed)
 app.post('/api/reset-db', (req, res) => {
   const token = req.headers['x-reset-token']
-  if (token !== 'sahel2024') return res.status(403).json({ error: 'Token inválido' })
+  if (token !== (process.env.RESET_TOKEN || 'CHANGE_ME_RESET_TOKEN')) return res.status(403).json({ error: 'Token inválido' })
   try {
     seed({ force: true })
     res.json({ ok: true, message: 'DB reseteada' })
@@ -64,5 +65,3 @@ app.listen(PORT, '0.0.0.0', () => {
 })
 // Last update: Sat Aug  8 22:53:22 UTC 2026
 // Force re-deploy Sun Aug  9 09:25:19 UTC 2026
-
-
