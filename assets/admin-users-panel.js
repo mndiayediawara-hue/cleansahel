@@ -383,14 +383,14 @@
       // Re-aplicar permisos en cada cambio de URL
       applyPermissionsToSidebar();
     }
-    // Verificar banner
+    // Banner: SOLO mostrar en /users, eliminar en otras paginas
     const existing = document.getElementById('admin-control-panel-btn');
-    if (existing && !document.body.contains(existing)) {
-      // React lo borro, re-inyectar
-    } else if (existing && isOnUsersPage()) {
-      // Sigue ahi, OK
+    if (isOnUsersPage()) {
+      if (!existing || !document.body.contains(existing)) {
+        injectBanner();
+      }
     } else {
-      injectBanner();
+      if (existing) existing.remove();
     }
   }
 
