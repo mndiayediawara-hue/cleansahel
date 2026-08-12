@@ -1,3 +1,4 @@
+
 import { useState } from 'react'
 import { useData } from '@/contexts/DataContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -13,8 +14,6 @@ import type { User } from '@/types'
 const ROLES: { value: string; label: string; perms: string }[] = [
   { value: 'admin', label: 'Administrador', perms: 'Acceso total al sistema' },
   { value: 'produccion', label: 'Producción', perms: 'Fabricar, ver recetas y materiales' },
-  { value: 'almacen', label: 'Almacén', perms: 'Entradas y salidas de stock' },
-  { value: 'comercial', label: 'Comercial', perms: 'Clientes y pedidos' },
   { value: 'contabilidad', label: 'Contabilidad', perms: 'Gastos, compras, informes' },
 ]
 
@@ -68,9 +67,9 @@ export default function Users() {
     { key: 'lastLogin', label: 'Último acceso', render: (r: User) => r.lastLogin ? <span className="text-xs">{formatDate(r.lastLogin)}</span> : <span className="text-xs text-surface-400">Nunca</span> },
     { key: 'actions', label: '', align: 'right' as const, render: (r: User) => (
         <div className="flex items-center justify-end gap-1">
-          <Can do="users.create"><button onClick={() => { setPwReset(r); setNewPassword('') }} className="btn-ghost p-1.5" title="Reset contraseña"><Key className="w-3.5 h-3.5" /></button></Can>
-          <Can do="users.create"><button onClick={() => setEditing(r)} className="btn-ghost p-1.5 text-xs">Editar</button></Can>
-          <Can do="users.delete"><button onClick={() => setConfirm(r)} className="btn-ghost p-1.5 text-red-600 text-xs">Borrar</button></Can>
+          <Can do="users.admin"><button onClick={() => { setPwReset(r); setNewPassword('') }} className="btn-ghost p-1.5" title="Reset contraseña"><Key className="w-3.5 h-3.5" /></button></Can>
+          <Can do="users.admin"><button onClick={() => setEditing(r)} className="btn-ghost p-1.5 text-xs">Editar</button></Can>
+          <Can do="users.admin"><button onClick={() => setConfirm(r)} className="btn-ghost p-1.5 text-red-600 text-xs">Borrar</button></Can>
         </div>
       )
     },
@@ -79,7 +78,7 @@ export default function Users() {
   return (
     <div className="space-y-4">
       <PageHeader title="Usuarios y Permisos" subtitle="Gestión de cuentas y roles de acceso"
-        actions={<button onClick={() => setEditing({ ...empty })} className="btn-primary"><Plus className="w-4 h-4" /> Nuevo usuario</button>}
+        actions={<Can do="users.admin"><button onClick={() => setEditing({ ...empty })} className="btn-primary"><Plus className="w-4 h-4" /> Nuevo usuario</button></Can>}
       />
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
