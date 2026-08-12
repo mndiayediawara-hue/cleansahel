@@ -77,7 +77,7 @@
     }
     
     try {
-      const res = await fetch('https://cleansahel.onrender.com/api/lots', {
+      const res = await fetch('https://cleansahel-production.up.railway.app/api/lots', {
         headers: { 'Authorization': 'Bearer ' + token }
       });
       
@@ -137,7 +137,7 @@
     if (!token) return;
     
     try {
-      const res = await fetch('https://cleansahel.onrender.com/api/lots/' + encodeURIComponent(lotId), {
+      const res = await fetch('https://cleansahel-production.up.railway.app/api/lots/' + encodeURIComponent(lotId), {
         method: 'DELETE',
         headers: { 'Authorization': 'Bearer ' + token }
       });
