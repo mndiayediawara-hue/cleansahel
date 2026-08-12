@@ -233,23 +233,22 @@
     });
   }
 
-  // Solo ejecutar UNA VEZ, y re-aplicar en cambios de URL
+  // Ejecutar UNA SOLA VEZ al cargar
+  ensureMiniButton();
+  applySidebarPermissions();
+
+  // Re-aplicar permisos SOLO cuando cambia la URL (sin loops)
   let lastUrl = window.location.href;
-  function checkChanges() {
-    const newUrl = window.location.href;
-    if (newUrl !== lastUrl) {
-      lastUrl = newUrl;
+  window.addEventListener('hashchange', () => {
+    if (window.location.href !== lastUrl) {
+      lastUrl = window.location.href;
       applySidebarPermissions();
     }
-    // Solo crear el boton si NO existe (no recrear)
-    if (!document.getElementById('acp-mini-btn')) {
-      ensureMiniButton();
-    }
-  }
-  // Verificar cada 1 segundo (NO cada 200ms - eso causa parpadeo)
-  setInterval(checkChanges, 1000);
-  // Ejecutar al inicio
-  checkChanges();
+  });
+  // Tambien cuando React navega (popstate)
+  window.addEventListener('popstate', () => {
+    setTimeout(applySidebarPermissions, 100);
+  });
   document.addEventListener('click', (e) => {
     if (isAdmin()) return;
     const link = e.target.closest && e.target.closest('a[href]');
