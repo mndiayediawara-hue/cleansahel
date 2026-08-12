@@ -31,14 +31,17 @@ export function seed({ force = false } = {}) {
 
   // Solo los 3 USERS esenciales
   const hash = (p) => bcrypt.hashSync(p, 10)
+  const allPerms = {"home": {"view": true, "create": true, "edit": true, "delete": true}, "raw_materials": {"view": true, "create": true, "edit": true, "delete": true}, "recipes": {"view": true, "create": true, "edit": true, "delete": true}, "production": {"view": true, "create": true, "edit": true, "delete": true}, "lots": {"view": true, "create": true, "edit": true, "delete": true}, "customers": {"view": true, "create": true, "edit": true, "delete": true}, "sales": {"view": true, "create": true, "edit": true, "delete": true}, "inventory": {"view": true, "create": true, "edit": true, "delete": true}, "accounting": {"view": true, "create": true, "edit": true, "delete": true}, "reports": {"view": true, "create": true, "edit": true, "delete": true}, "users": {"view": true, "create": true, "edit": true, "delete": true}, "settings": {"view": true, "create": true, "edit": true, "delete": true}, "recalls": {"view": true, "create": true, "edit": true, "delete": true}, "packaging": {"view": true, "create": true, "edit": true, "delete": true}}
+  const produccionPerms = {"home": {"view": true, "create": false, "edit": false, "delete": false}, "raw_materials": {"view": true, "create": true, "edit": true, "delete": false}, "recipes": {"view": true, "create": true, "edit": true, "delete": false}, "production": {"view": true, "create": true, "edit": true, "delete": false}, "lots": {"view": true, "create": true, "edit": true, "delete": false}, "packaging": {"view": true, "create": true, "edit": true, "delete": false}, "recalls": {"view": true, "create": true, "edit": true, "delete": false}}
+  const contabilidadPerms = {"home": {"view": true, "create": false, "edit": false, "delete": false}, "customers": {"view": true, "create": true, "edit": true, "delete": false}, "sales": {"view": true, "create": true, "edit": true, "delete": false}, "purchases": {"view": true, "create": true, "edit": true, "delete": false}, "expenses": {"view": true, "create": true, "edit": true, "delete": false}, "reports": {"view": true, "create": false, "edit": false, "delete": false}, "inventory": {"view": true, "create": false, "edit": false, "delete": false}, "suppliers": {"view": true, "create": true, "edit": true, "delete": false}}
   const users = [
-    { id: 'u1', username: 'admin', password: process.env.ADMIN_PASSWORD || 'CHANGE_ME_ADMIN_PASSWORD', fullName: 'Administrador', email: 'admin@cleansahel.com', role: 'admin' },
-    { id: 'u2', username: 'produccion', password: process.env.PRODUCCION_PASSWORD || 'CHANGE_ME_PRODUCCION_PASSWORD', fullName: 'Operario Producción', email: 'produccion@cleansahel.com', role: 'produccion' },
-    { id: 'u3', username: 'contabilidad', password: process.env.CONTABILIDAD_PASSWORD || 'CHANGE_ME_CONTABILIDAD_PASSWORD', fullName: 'Operario Contabilidad', email: 'contabilidad@cleansahel.com', role: 'contabilidad' },
+    { id: 'u1', username: 'admin', password: process.env.ADMIN_PASSWORD || 'CHANGE_ME_ADMIN_PASSWORD', fullName: 'Administrador', email: 'admin@cleansahel.com', role: 'admin', permissions: allPerms },
+    { id: 'u2', username: 'produccion', password: process.env.PRODUCCION_PASSWORD || 'CHANGE_ME_PRODUCCION_PASSWORD', fullName: 'Operario Producción', email: 'produccion@cleansahel.com', role: 'produccion', permissions: produccionPerms },
+    { id: 'u3', username: 'contabilidad', password: process.env.CONTABILIDAD_PASSWORD || 'CHANGE_ME_CONTABILIDAD_PASSWORD', fullName: 'Operario Contabilidad', email: 'contabilidad@cleansahel.com', role: 'contabilidad', permissions: contabilidadPerms },
   ]
-  const insUser = db.prepare(`INSERT OR REPLACE INTO users (id, username, password_hash, full_name, email, role, active, created_at, last_login) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`)
+  const insUser = db.prepare(`INSERT OR REPLACE INTO users (id, username, password_hash, full_name, email, role, active, created_at, last_login, permissions) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)`)
   for (const u of users) {
-    insUser.run(u.id, u.username, hash(u.password), u.fullName, u.email, u.role, monthsAgo(12), null)
+    insUser.run(u.id, u.username, hash(u.password), u.fullName, u.email, u.role, monthsAgo(12), null, JSON.stringify(u.permissions || null))
   }
   
   console.log('✓ 3 usuarios creados/actualizados')
