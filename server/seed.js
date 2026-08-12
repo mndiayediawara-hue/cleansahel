@@ -1,3 +1,4 @@
+
 // SEED LIMPIO - Solo crea los 3 usuarios esenciales
 import bcrypt from 'bcryptjs'
 import db, { uid, setConfig } from './db.js'
@@ -44,9 +45,9 @@ export function seed({ force = false } = {}) {
   // Solo los 3 USERS esenciales
   const hash = (p) => bcrypt.hashSync(p, 10)
   const users = [
-    { id: 'u1', username: 'admin', password: '41668585Z', fullName: 'Administrador', email: 'admin@cleansahel.com', role: 'admin' },
-    { id: 'u2', username: 'produccion', password: 'produccion2024', fullName: 'Operario Producción', email: 'produccion@cleansahel.com', role: 'produccion' },
-    { id: 'u3', username: 'contabilidad', password: 'contabilidad2024', fullName: 'Operario Contabilidad', email: 'contabilidad@cleansahel.com', role: 'contabilidad' },
+    { id: 'u1', username: 'admin', password: process.env.ADMIN_PASSWORD || 'CHANGE_ME_ADMIN_PASSWORD', fullName: 'Administrador', email: 'admin@cleansahel.com', role: 'admin' },
+    { id: 'u2', username: 'produccion', password: process.env.PRODUCCION_PASSWORD || 'CHANGE_ME_PRODUCCION_PASSWORD', fullName: 'Operario Producción', email: 'produccion@cleansahel.com', role: 'produccion' },
+    { id: 'u3', username: 'contabilidad', password: process.env.CONTABILIDAD_PASSWORD || 'CHANGE_ME_CONTABILIDAD_PASSWORD', fullName: 'Operario Contabilidad', email: 'contabilidad@cleansahel.com', role: 'contabilidad' },
   ]
   const insUser = db.prepare(`INSERT INTO users (id, username, password_hash, full_name, email, role, active, created_at, last_login) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`)
   for (const u of users) {
@@ -56,3 +57,12 @@ export function seed({ force = false } = {}) {
   console.log('✓ 3 usuarios creados')
   return { seeded: true, users: 3 }
 }
+
+
+================================================================================
+ARCHIVO NO ENCONTRADO: src/i18n.tsx
+================================================================================
+
+================================================================================
+ARCHIVO NO ENCONTRADO: src/index.css
+================================================================================
