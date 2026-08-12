@@ -1,3 +1,4 @@
+
 // Sistema i18n simple para ES/FR
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 
@@ -64,7 +65,6 @@ const translations: Record<Lang, Record<string, string>> = {
     'nav.section_commercial': 'Comercial',
     'nav.section_operations': 'Operaciones',
     'nav.section_analysis': 'Análisis',
-    'nav.demo_banner': 'MODO DEMO · datos en este navegador',
 
     // Header
     'header.search_placeholder': 'Buscar clientes, productos, pedidos, lotes...',
