@@ -1,3 +1,4 @@
+
 // Logo de la empresa
 const LOGO_URL = '/cleansahel/logo.svg'
 const LOGO_ALT = 'SAHEL'
