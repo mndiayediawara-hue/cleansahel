@@ -1,6 +1,5 @@
 // admin-users-panel.js
-// Panel completo de gestion de usuarios y permisos
-// Solo visible para administradores
+// Panel completo de gestion de usuarios - boton integrado en el sidebar
 (function() {
   'use strict';
 
@@ -73,7 +72,8 @@
     if (m) m.remove();
   }
 
-  async function openUsersList() {
+  // Hacer accesible globalmente para que el botón del sidebar pueda llamarlo
+  window.__openUsersPanel = async function() {
     let users;
     try {
       users = await api('/users');
@@ -117,13 +117,13 @@
       </div>
     `;
     buildModal('Gestion de Usuarios', body);
-    document.getElementById('usr-new').addEventListener('click', () => openUserForm(null));
+    document.getElementById('usr-new').addEventListener('click', () => window.__openUserForm(null));
     document.querySelectorAll('.usr-btn').forEach(btn => {
-      btn.addEventListener('click', () => handleUserAction(btn.dataset.act, btn.dataset.id, btn.dataset.name, btn.dataset.active === 'true'));
+      btn.addEventListener('click', () => window.__handleUserAction(btn.dataset.act, btn.dataset.id, btn.dataset.name, btn.dataset.active === 'true'));
     });
-  }
+  };
 
-  async function openUserForm(userId) {
+  window.__openUserForm = async function(userId) {
     let user = { username: '', fullName: '', email: '', role: 'operario' };
     if (userId) {
       try {
@@ -169,7 +169,7 @@
       </form>
     `;
     buildModal(userId ? 'Editar Usuario' : 'Nuevo Usuario', body);
-    document.getElementById('usr-cancel').addEventListener('click', openUsersList);
+    document.getElementById('usr-cancel').addEventListener('click', () => window.__openUsersPanel());
     document.getElementById('usr-form').addEventListener('submit', async e => {
       e.preventDefault();
       const fd = new FormData(e.target);
@@ -182,14 +182,14 @@
           await api('/users', 'POST', data);
           showMessage('Usuario creado', 'success');
         }
-        openUsersList();
+        window.__openUsersPanel();
       } catch (e2) {
         showMessage('Error: ' + e2.message, 'error');
       }
     });
-  }
+  };
 
-  async function openPermsEditor(userId) {
+  window.__openPermsEditor = async function(userId) {
     let user, defaults;
     try {
       const users = await api('/users');
@@ -233,7 +233,7 @@
       </form>
     `;
     buildModal('Permisos de ' + user.username, body);
-    document.getElementById('perms-cancel').addEventListener('click', openUsersList);
+    document.getElementById('perms-cancel').addEventListener('click', () => window.__openUsersPanel());
     document.getElementById('perms-form').addEventListener('submit', async e => {
       e.preventDefault();
       const form = e.target;
@@ -245,14 +245,14 @@
       try {
         await api('/users/' + userId + '/permissions', 'PUT', { permissions: newPerms });
         showMessage('Permisos actualizados', 'success');
-        openUsersList();
+        window.__openUsersPanel();
       } catch (e2) {
         showMessage('Error: ' + e2.message, 'error');
       }
     });
-  }
+  };
 
-  function openPasswordForm(userId, username) {
+  window.__openPasswordForm = function(userId, username) {
     const body = `
       <form id="pwd-form" style="display:grid;gap:14px;max-width:400px;">
         <p style="margin:0;color:#9ca3af;font-size:13px;">Cambiar contrasena de <strong>${username}</strong></p>
@@ -267,29 +267,29 @@
       </form>
     `;
     buildModal('Cambiar contrasena', body);
-    document.getElementById('pwd-cancel').addEventListener('click', openUsersList);
+    document.getElementById('pwd-cancel').addEventListener('click', () => window.__openUsersPanel());
     document.getElementById('pwd-form').addEventListener('submit', async e => {
       e.preventDefault();
       const fd = new FormData(e.target);
       try {
         await api('/users/' + userId + '/password', 'PUT', { newPassword: fd.get('newPassword') });
         showMessage('Contrasena cambiada', 'success');
-        openUsersList();
+        window.__openUsersPanel();
       } catch (e2) {
         showMessage('Error: ' + e2.message, 'error');
       }
     });
-  }
+  };
 
-  async function handleUserAction(action, userId, name, active) {
-    if (action === 'edit') return openUserForm(userId);
-    if (action === 'perms') return openPermsEditor(userId);
-    if (action === 'pwd') return openPasswordForm(userId, name);
+  window.__handleUserAction = async function(action, userId, name, active) {
+    if (action === 'edit') return window.__openUserForm(userId);
+    if (action === 'perms') return window.__openPermsEditor(userId);
+    if (action === 'pwd') return window.__openPasswordForm(userId, name);
     if (action === 'toggle') {
       try {
         await api('/users/' + userId + '/status', 'PUT', { active });
         showMessage(active ? 'Usuario activado' : 'Usuario desactivado', 'success');
-        openUsersList();
+        window.__openUsersPanel();
       } catch (e) { showMessage('Error: ' + e.message, 'error'); }
       return;
     }
@@ -298,29 +298,111 @@
       try {
         await api('/users/' + userId, 'DELETE');
         showMessage('Usuario eliminado', 'success');
-        openUsersList();
+        window.__openUsersPanel();
       } catch (e) { showMessage('Error: ' + e.message, 'error'); }
       return;
     }
-  }
+  };
 
-  function addUsersMenuButton() {
+  // Inyectar boton "Usuarios" en el sidebar
+  function injectSidebarButton() {
     const user = getCurrentUser();
     if (!user || user.role !== 'admin') return;
-    if (document.getElementById('admin-users-btn')) return;
-    const btn = document.createElement('button');
-    btn.id = 'admin-users-btn';
-    btn.textContent = 'Gestion de Usuarios';
-    btn.style.cssText = 'position:fixed;bottom:80px;right:20px;z-index:999997;background:#7c3aed;color:#fff;border:none;padding:12px 20px;border-radius:9999px;cursor:pointer;font-size:14px;font-weight:600;box-shadow:0 4px 16px rgba(124,58,237,.4);';
-    btn.addEventListener('click', openUsersList);
-    document.body.appendChild(btn);
+
+    // Eliminar boton flotante si existe
+    const oldBtn = document.getElementById('admin-users-btn');
+    if (oldBtn) oldBtn.remove();
+
+    // Buscar el sidebar
+    const sidebars = document.querySelectorAll('aside, nav, [class*="sidebar"]');
+    if (sidebars.length === 0) return;
+
+    if (document.getElementById('admin-users-sidebar-btn')) return;
+
+    for (const sidebar of sidebars) {
+      // Buscar el item de Configuracion o Ajustes para insertar despues
+      const links = sidebar.querySelectorAll('a, [role="link"]');
+      let insertAfter = null;
+      for (const link of links) {
+        const text = (link.textContent || '').toLowerCase();
+        if (text.includes('configuraci') || text.includes('ajustes') || text.includes('settings')) {
+          insertAfter = link;
+          break;
+        }
+      }
+      if (!insertAfter) continue;
+
+      // Crear boton
+      const btn = document.createElement('a');
+      btn.id = 'admin-users-sidebar-btn';
+      btn.href = '#users-admin';
+      btn.className = insertAfter.className;
+      btn.style.cssText = 'cursor:pointer;';
+      btn.innerHTML = insertAfter.innerHTML.replace(/Configuraci[oó]n|Ajustes|Settings/gi, 'Usuarios') + ' <span style="color:#a78bfa;font-size:10px;margin-left:6px;">ADMIN</span>';
+      // Reemplazar el texto
+      const textNode = Array.from(btn.childNodes).find(n => n.nodeType === 3);
+      if (textNode) textNode.textContent = 'Usuarios';
+      else {
+        // Buscar span y reemplazar
+        const span = btn.querySelector('span');
+        if (span && !span.textContent.includes('ADMIN')) {
+          // Ya lo cambiamos
+        }
+      }
+      // Si no hay texto, agregar
+      if (!btn.textContent.includes('Usuarios')) {
+        btn.textContent = 'Usuarios ADMIN';
+      }
+      btn.addEventListener('click', e => {
+        e.preventDefault();
+        window.__openUsersPanel();
+      });
+      // Limpiar y reescribir contenido
+      btn.innerHTML = '';
+      const icon = document.createElement('span');
+      icon.textContent = '👥';
+      icon.style.marginRight = '8px';
+      btn.appendChild(icon);
+      const label = document.createElement('span');
+      label.textContent = 'Usuarios';
+      btn.appendChild(label);
+      const adminBadge = document.createElement('span');
+      adminBadge.textContent = 'ADMIN';
+      adminBadge.style.cssText = 'color:#a78bfa;font-size:10px;margin-left:6px;font-weight:600;';
+      btn.appendChild(adminBadge);
+
+      // Insertar despues del item de Configuracion
+      insertAfter.parentNode.insertBefore(btn, insertAfter.nextSibling);
+      return; // solo el primer sidebar
+    }
+  }
+
+  // Observer para re-injectar el boton cuando React re-renderice
+  let lastInject = 0;
+  const observer = new MutationObserver(() => {
+    const now = Date.now();
+    if (now - lastInject < 500) return; // throttle
+    lastInject = now;
+    injectSidebarButton();
+  });
+  if (document.body) {
+    observer.observe(document.body, { childList: true, subtree: true });
+  } else {
+    document.addEventListener('DOMContentLoaded', () => {
+      observer.observe(document.body, { childList: true, subtree: true });
+    });
+  }
+
+  function start() {
+    injectSidebarButton();
+    setTimeout(injectSidebarButton, 1000);
+    setTimeout(injectSidebarButton, 3000);
+    setTimeout(injectSidebarButton, 5000);
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', addUsersMenuButton);
+    document.addEventListener('DOMContentLoaded', start);
   } else {
-    addUsersMenuButton();
+    start();
   }
-  setTimeout(addUsersMenuButton, 2000);
-  setTimeout(addUsersMenuButton, 5000);
 })();
