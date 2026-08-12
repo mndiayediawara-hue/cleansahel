@@ -1,7 +1,7 @@
-// admin-users-panel.js
-// Panel de Control Centralizado - inyeccion robusta dentro de la pantalla de Usuarios
+// admin-users-panel.js v12 - SIMPLIFICADO Y ROBUSTO
 (function() {
   'use strict';
+  console.log('[admin-panel] script cargado');
 
   const API = (window.__API_URL__ || 'https://cleansahel-production.up.railway.app/api');
 
@@ -39,12 +39,11 @@
     setTimeout(() => { try { div.remove(); } catch {} }, 4000);
   }
 
-  // ============================================================
-  // MODAL PRINCIPAL DEL PANEL DE CONTROL
-  // ============================================================
-  function buildPanelModal() {
-    const existing = document.getElementById('admin-control-panel');
-    if (existing) existing.remove();
+  // Modal de gestion
+  function openPanel() {
+    if (document.getElementById('admin-control-panel')) {
+      document.getElementById('admin-control-panel').remove();
+    }
     const overlay = document.createElement('div');
     overlay.id = 'admin-control-panel';
     overlay.style.cssText = 'position:fixed;inset:0;z-index:999998;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:20px;';
@@ -63,68 +62,35 @@
         <button class="acp-tab" data-tab="modules" style="flex:1;padding:14px;background:transparent;color:#94a3b8;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:14px;font-weight:500;">Modulos y Accesos</button>
         <button class="acp-tab" data-tab="actions" style="flex:1;padding:14px;background:transparent;color:#94a3b8;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:14px;font-weight:500;">Acciones Rapidas</button>
       </div>
-      <div id="acp-content" style="flex:1;overflow:auto;padding:24px;"></div>
+      <div id="acp-content" style="flex:1;overflow:auto;padding:24px;"><p style="color:#94a3b8;">Cargando...</p></div>
     `;
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
-    overlay.addEventListener('click', e => { if (e.target === overlay) closePanel(); });
-    document.getElementById('acp-close').addEventListener('click', closePanel);
+    overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+    document.getElementById('acp-close').addEventListener('click', () => overlay.remove());
     modal.querySelectorAll('.acp-tab').forEach(tab => {
       tab.addEventListener('click', () => {
         modal.querySelectorAll('.acp-tab').forEach(t => {
-          t.style.background = 'transparent';
-          t.style.color = '#94a3b8';
-          t.style.borderBottom = '2px solid transparent';
+          t.style.background = 'transparent'; t.style.color = '#94a3b8'; t.style.borderBottom = '2px solid transparent';
         });
-        tab.style.background = '#0f172a';
-        tab.style.color = '#a78bfa';
-        tab.style.borderBottom = '2px solid #7c3aed';
+        tab.style.background = '#0f172a'; tab.style.color = '#a78bfa'; tab.style.borderBottom = '2px solid #7c3aed';
         const t = tab.dataset.tab;
-        if (t === 'users') loadUsersTab();
-        else if (t === 'modules') loadModulesTab();
-        else if (t === 'actions') loadActionsTab();
+        if (t === 'users') loadUsers();
+        else if (t === 'modules') loadModules();
+        else if (t === 'actions') loadActions();
       });
     });
-    return modal;
+    loadUsers();
   }
 
-  function closePanel() {
-    const m = document.getElementById('admin-control-panel');
-    if (m) m.remove();
-  }
-
-  async function loadUsersTab() {
+  async function loadUsers() {
     const content = document.getElementById('acp-content');
-    if (!content) return;
     content.innerHTML = '<p style="color:#94a3b8;">Cargando usuarios...</p>';
     let users;
     try { users = await api('/users'); }
-    catch (e) { content.innerHTML = `<p style="color:#fca5a5;">Error: ${e.message}</p>`; return; }
-    const rows = users.map(u => `
-      <tr style="border-bottom:1px solid #334155;">
-        <td style="padding:12px;font-weight:500;">${u.username}</td>
-        <td style="padding:12px;">${u.fullName || ''}</td>
-        <td style="padding:12px;"><span style="background:${u.role === 'admin' ? '#7c3aed' : u.role === 'produccion' ? '#2563eb' : '#0891b2'};color:#fff;padding:3px 10px;border-radius:4px;font-size:12px;font-weight:500;">${u.role}</span></td>
-        <td style="padding:12px;">${u.active ? '<span style="color:#22c55e;">● Activo</span>' : '<span style="color:#ef4444;">● Inactivo</span>'}</td>
-        <td style="padding:12px;text-align:right;">
-          <button class="acp-btn" data-act="edit" data-id="${u.id}" style="background:#2563eb;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;margin-right:4px;">Editar</button>
-          <button class="acp-btn" data-act="perms" data-id="${u.id}" style="background:#7c3aed;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;margin-right:4px;">Permisos</button>
-          <button class="acp-btn" data-act="pwd" data-id="${u.id}" data-name="${u.username}" style="background:#f59e0b;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;margin-right:4px;">Contrasena</button>
-          <button class="acp-btn" data-act="toggle" data-id="${u.id}" data-active="${!u.active}" style="background:${u.active ? '#64748b' : '#22c55e'};color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;margin-right:4px;">${u.active ? 'Desactivar' : 'Activar'}</button>
-          <button class="acp-btn" data-act="del" data-id="${u.id}" data-name="${u.username}" style="background:#dc2626;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;">Eliminar</button>
-        </td>
-      </tr>
-    `).join('');
-    content.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
-        <p style="margin:0;color:#94a3b8;font-size:14px;">${users.length} usuario(s) en el sistema</p>
-        <button id="acp-new-user" style="background:#16a34a;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:500;">+ Nuevo Usuario</button>
-      </div>
-      <table style="width:100%;border-collapse:collapse;font-size:14px;background:#1e293b;border-radius:8px;overflow:hidden;">
-        <thead><tr style="background:#334155;text-align:left;"><th style="padding:12px;">Usuario</th><th style="padding:12px;">Nombre</th><th style="padding:12px;">Rol</th><th style="padding:12px;">Estado</th><th style="padding:12px;text-align:right;">Acciones</th></tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-    `;
+    catch (e) { content.innerHTML = '<p style="color:#fca5a5;">Error: ' + e.message + '</p>'; return; }
+    const rows = users.map(u => '<tr style="border-bottom:1px solid #334155;"><td style="padding:12px;font-weight:500;">' + u.username + '</td><td style="padding:12px;">' + (u.fullName || '') + '</td><td style="padding:12px;"><span style="background:' + (u.role === 'admin' ? '#7c3aed' : u.role === 'produccion' ? '#2563eb' : '#0891b2') + ';color:#fff;padding:3px 10px;border-radius:4px;font-size:12px;font-weight:500;">' + u.role + '</span></td><td style="padding:12px;">' + (u.active ? '<span style="color:#22c55e;">● Activo</span>' : '<span style="color:#ef4444;">● Inactivo</span>') + '</td><td style="padding:12px;text-align:right;"><button class="acp-btn" data-act="edit" data-id="' + u.id + '" style="background:#2563eb;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;margin-right:4px;">Editar</button><button class="acp-btn" data-act="perms" data-id="' + u.id + '" style="background:#7c3aed;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;margin-right:4px;">Permisos</button><button class="acp-btn" data-act="pwd" data-id="' + u.id + '" data-name="' + u.username + '" style="background:#f59e0b;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;margin-right:4px;">Contrasena</button><button class="acp-btn" data-act="toggle" data-id="' + u.id + '" data-active="' + (!u.active) + '" style="background:' + (u.active ? '#64748b' : '#22c55e') + ';color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;margin-right:4px;">' + (u.active ? 'Desactivar' : 'Activar') + '</button><button class="acp-btn" data-act="del" data-id="' + u.id + '" data-name="' + u.username + '" style="background:#dc2626;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;">Eliminar</button></td></tr>').join('');
+    content.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;"><p style="margin:0;color:#94a3b8;font-size:14px;">' + users.length + ' usuario(s) en el sistema</p><button id="acp-new-user" style="background:#16a34a;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:500;">+ Nuevo Usuario</button></div><table style="width:100%;border-collapse:collapse;font-size:14px;background:#1e293b;border-radius:8px;overflow:hidden;"><thead><tr style="background:#334155;text-align:left;"><th style="padding:12px;">Usuario</th><th style="padding:12px;">Nombre</th><th style="padding:12px;">Rol</th><th style="padding:12px;">Estado</th><th style="padding:12px;text-align:right;">Acciones</th></tr></thead><tbody>' + rows + '</tbody></table>';
     document.getElementById('acp-new-user').addEventListener('click', () => openUserForm());
     content.querySelectorAll('.acp-btn').forEach(btn => {
       btn.addEventListener('click', () => handleUserAction(btn.dataset.act, btn.dataset.id, btn.dataset.name, btn.dataset.active === 'true'));
@@ -132,16 +98,7 @@
   }
 
   function openUserForm(userId) {
-    const body = `
-      <form id="acp-usr-form" style="display:grid;gap:14px;max-width:500px;">
-        <div><label style="display:block;margin-bottom:4px;font-size:13px;color:#94a3b8;">Usuario *</label><input name="username" required ${userId ? 'readonly style="background:#0f172a;cursor:not-allowed;width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;font-size:14px;"' : 'style="width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;font-size:14px;"'}></div>
-        <div><label style="display:block;margin-bottom:4px;font-size:13px;color:#94a3b8;">Nombre Completo *</label><input name="fullName" required style="width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;font-size:14px;"></div>
-        <div><label style="display:block;margin-bottom:4px;font-size:13px;color:#94a3b8;">Email</label><input name="email" type="email" style="width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;font-size:14px;"></div>
-        <div><label style="display:block;margin-bottom:4px;font-size:13px;color:#94a3b8;">Rol *</label><select name="role" required style="width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;font-size:14px;"><option value="operario">Operario</option><option value="produccion">Produccion</option><option value="contabilidad">Contabilidad</option><option value="admin">Administrador</option></select></div>
-        ${!userId ? '<div><label style="display:block;margin-bottom:4px;font-size:13px;color:#94a3b8;">Contrasena *</label><input name="password" type="password" required minlength="4" style="width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;font-size:14px;"></div>' : ''}
-        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;"><button type="button" id="acp-usr-cancel" style="background:#475569;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;">Cancelar</button><button type="submit" style="background:#16a34a;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:500;">' + (userId ? 'Guardar' : 'Crear') + '</button></div>
-      </form>
-    `;
+    const body = '<form id="acp-usr-form" style="display:grid;gap:14px;max-width:500px;"><div><label style="display:block;margin-bottom:4px;font-size:13px;color:#94a3b8;">Usuario *</label><input name="username" required ' + (userId ? 'readonly style="background:#0f172a;cursor:not-allowed;width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;font-size:14px;"' : 'style="width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;font-size:14px;"') + '></div><div><label style="display:block;margin-bottom:4px;font-size:13px;color:#94a3b8;">Nombre Completo *</label><input name="fullName" required style="width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;font-size:14px;"></div><div><label style="display:block;margin-bottom:4px;font-size:13px;color:#94a3b8;">Email</label><input name="email" type="email" style="width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;font-size:14px;"></div><div><label style="display:block;margin-bottom:4px;font-size:13px;color:#94a3b8;">Rol *</label><select name="role" required style="width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;font-size:14px;"><option value="operario">Operario</option><option value="produccion">Produccion</option><option value="contabilidad">Contabilidad</option><option value="admin">Administrador</option></select></div>' + (!userId ? '<div><label style="display:block;margin-bottom:4px;font-size:13px;color:#94a3b8;">Contrasena *</label><input name="password" type="password" required minlength="4" style="width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;font-size:14px;"></div>' : '') + '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;"><button type="button" id="acp-usr-cancel" style="background:#475569;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;">Cancelar</button><button type="submit" style="background:#16a34a;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:500;">' + (userId ? 'Guardar' : 'Crear') + '</button></div></form>';
     showSubModal(userId ? 'Editar Usuario' : 'Nuevo Usuario', body, async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
@@ -150,7 +107,7 @@
         if (userId) { await api('/users/' + userId, 'PUT', data); showMessage('Usuario actualizado', 'success'); }
         else { await api('/users', 'POST', data); showMessage('Usuario creado', 'success'); }
         closeSubModal();
-        loadUsersTab();
+        loadUsers();
       } catch (e2) { showMessage('Error: ' + e2.message, 'error'); }
     });
     if (userId) {
@@ -158,12 +115,7 @@
         const u = users.find(x => x.id === userId);
         if (u) {
           const form = document.getElementById('acp-usr-form');
-          if (form) {
-            form.username.value = u.username;
-            form.fullName.value = u.fullName || '';
-            form.email.value = u.email || '';
-            form.role.value = u.role;
-          }
+          if (form) { form.username.value = u.username; form.fullName.value = u.fullName || ''; form.email.value = u.email || ''; form.role.value = u.role; }
         }
       });
     }
@@ -171,11 +123,8 @@
 
   async function openPermsEditor(userId) {
     let user, defaults;
-    try {
-      const users = await api('/users');
-      user = users.find(u => u.id === userId);
-      defaults = await api('/permissions/defaults');
-    } catch (e) { showMessage('Error: ' + e.message, 'error'); return; }
+    try { const users = await api('/users'); user = users.find(u => u.id === userId); defaults = await api('/permissions/defaults'); }
+    catch (e) { showMessage('Error: ' + e.message, 'error'); return; }
     if (!user) { showMessage('Usuario no encontrado', 'error'); return; }
     const perms = user.permissions || {};
     const actions = defaults.actions;
@@ -184,7 +133,7 @@
       const checks = actions.map(a => '<label style="display:flex;align-items:center;gap:6px;font-size:12px;color:#cbd5e1;cursor:pointer;user-select:none;background:#1e293b;padding:4px 8px;border-radius:4px;"><input type="checkbox" data-mod="' + m.key + '" data-act="' + a.key + '" ' + (mperms[a.key] ? 'checked' : '') + ' style="width:14px;height:14px;cursor:pointer;">' + a.label + '</label>').join('');
       return '<tr style="border-bottom:1px solid #334155;"><td style="padding:10px;font-weight:500;background:#1e293b;">' + m.label + '</td><td style="padding:10px;"><div style="display:flex;gap:8px;flex-wrap:wrap;">' + checks + '</div></td></tr>';
     }).join('');
-    const body = '<p style="margin:0 0 16px;color:#94a3b8;font-size:13px;">Permisos para <strong style="color:#a78bfa;">' + user.username + '</strong>' + (user.role === 'admin' ? ' <span style="color:#a78bfa;">(admin siempre tiene todos los permisos)</span>' : '') + '</p><form id="acp-perms-form"><table style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr style="background:#334155;"><th style="padding:10px;text-align:left;">Modulo</th><th style="padding:10px;text-align:left;">Acciones</th></tr></thead><tbody>' + cells + '</tbody></table><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;"><button type="button" id="acp-perms-cancel" style="background:#475569;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;">Cancelar</button><button type="submit" style="background:#16a34a;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:500;">Guardar</button></div></form>';
+    const body = '<p style="margin:0 0 16px;color:#94a3b8;font-size:13px;">Permisos para <strong style="color:#a78bfa;">' + user.username + '</strong></p><form id="acp-perms-form"><table style="width:100%;border-collapse:collapse;font-size:14px;"><thead><tr style="background:#334155;"><th style="padding:10px;text-align:left;">Modulo</th><th style="padding:10px;text-align:left;">Acciones</th></tr></thead><tbody>' + cells + '</tbody></table><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;"><button type="button" id="acp-perms-cancel" style="background:#475569;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;">Cancelar</button><button type="submit" style="background:#16a34a;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:500;">Guardar</button></div></form>';
     showSubModal('Permisos de ' + user.username, body, async (e) => {
       e.preventDefault();
       const form = e.target;
@@ -193,26 +142,18 @@
         if (!newPerms[cb.dataset.mod]) newPerms[cb.dataset.mod] = {};
         newPerms[cb.dataset.mod][cb.dataset.act] = cb.checked;
       });
-      try {
-        await api('/users/' + userId + '/permissions', 'PUT', { permissions: newPerms });
-        showMessage('Permisos actualizados', 'success');
-        closeSubModal();
-        loadUsersTab();
-      } catch (e2) { showMessage('Error: ' + e2.message, 'error'); }
+      try { await api('/users/' + userId + '/permissions', 'PUT', { permissions: newPerms }); showMessage('Permisos actualizados', 'success'); closeSubModal(); loadUsers(); }
+      catch (e2) { showMessage('Error: ' + e2.message, 'error'); }
     });
   }
 
   function openPasswordForm(userId, username) {
-    const body = '<form id="acp-pwd-form" style="display:grid;gap:14px;max-width:400px;"><p style="margin:0;color:#94a3b8;font-size:13px;">Cambiar contrasena de <strong style="color:#a78bfa;">' + username + '</strong></p><div><label style="display:block;margin-bottom:4px;font-size:13px;color:#94a3b8;">Nueva contrasena *</label><input name="newPassword" type="password" required minlength="4" style="width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;font-size:14px;"></div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;"><button type="button" id="acp-pwd-cancel" style="background:#475569;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;">Cancelar</button><button type="submit" style="background:#f59e0b;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:500;">Cambiar</button></div></form>';
+    const body = '<form id="acp-pwd-form" style="display:grid;gap:14px;max-width:400px;"><p style="margin:0;color:#94a3b8;font-size:13px;">Contrasena de <strong style="color:#a78bfa;">' + username + '</strong></p><div><label style="display:block;margin-bottom:4px;font-size:13px;color:#94a3b8;">Nueva contrasena *</label><input name="newPassword" type="password" required minlength="4" style="width:100%;padding:8px 12px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;font-size:14px;"></div><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px;"><button type="button" id="acp-pwd-cancel" style="background:#475569;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;">Cancelar</button><button type="submit" style="background:#f59e0b;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-weight:500;">Cambiar</button></div></form>';
     showSubModal('Cambiar contrasena', body, async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
-      try {
-        await api('/users/' + userId + '/password', 'PUT', { newPassword: fd.get('newPassword') });
-        showMessage('Contrasena cambiada', 'success');
-        closeSubModal();
-        loadUsersTab();
-      } catch (e2) { showMessage('Error: ' + e2.message, 'error'); }
+      try { await api('/users/' + userId + '/password', 'PUT', { newPassword: fd.get('newPassword') }); showMessage('Contrasena cambiada', 'success'); closeSubModal(); loadUsers(); }
+      catch (e2) { showMessage('Error: ' + e2.message, 'error'); }
     });
   }
 
@@ -221,20 +162,19 @@
     if (action === 'perms') return openPermsEditor(userId);
     if (action === 'pwd') return openPasswordForm(userId, name);
     if (action === 'toggle') {
-      try { await api('/users/' + userId + '/status', 'PUT', { active }); showMessage(active ? 'Usuario activado' : 'Usuario desactivado', 'success'); loadUsersTab(); }
+      try { await api('/users/' + userId + '/status', 'PUT', { active }); showMessage(active ? 'Usuario activado' : 'Usuario desactivado', 'success'); loadUsers(); }
       catch (e) { showMessage('Error: ' + e.message, 'error'); }
       return;
     }
     if (action === 'del') {
-      if (!confirm('Eliminar al usuario "' + name + '"?\n\nEsta accion no se puede deshacer.')) return;
-      try { await api('/users/' + userId, 'DELETE'); showMessage('Usuario eliminado', 'success'); loadUsersTab(); }
+      if (!confirm('Eliminar al usuario "' + name + '"?')) return;
+      try { await api('/users/' + userId, 'DELETE'); showMessage('Usuario eliminado', 'success'); loadUsers(); }
       catch (e) { showMessage('Error: ' + e.message, 'error'); }
     }
   }
 
-  function loadModulesTab() {
+  function loadModules() {
     const content = document.getElementById('acp-content');
-    if (!content) return;
     const modules = [
       { label: 'Inicio / Dashboard', icon: '🏠', path: '/' },
       { label: 'Materias Primas', icon: '🧪', path: '/raw-materials' },
@@ -255,37 +195,25 @@
       { label: 'Configuracion', icon: '⚙️', path: '/settings' },
       { label: 'Usuarios', icon: '👥', path: '/users' },
     ];
-    const moduleCards = modules.map(m => '<a href="#' + m.path + '" data-path="' + m.path + '" class="acp-mod-link" style="display:flex;align-items:center;gap:10px;padding:14px;background:#1e293b;border:1px solid #334155;border-radius:8px;text-decoration:none;color:#f1f5f9;cursor:pointer;transition:all .15s;"><span style="font-size:24px;">' + m.icon + '</span><div style="flex:1;"><div style="font-weight:500;font-size:14px;">' + m.label + '</div><div style="font-size:11px;color:#64748b;">' + m.path + '</div></div><span style="color:#64748b;font-size:18px;">→</span></a>').join('');
-    content.innerHTML = '<div style="margin-bottom:20px;"><label style="display:block;margin-bottom:6px;font-size:13px;color:#94a3b8;">Buscar modulo</label><input id="acp-mod-search" type="search" placeholder="Escribe para buscar: materia prima, produccion, clientes..." style="width:100%;padding:10px 14px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;font-size:14px;"></div><div id="acp-mod-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;">' + moduleCards + '</div>';
+    const cards = modules.map(m => '<a href="#' + m.path + '" data-path="' + m.path + '" class="acp-mod-link" style="display:flex;align-items:center;gap:10px;padding:14px;background:#1e293b;border:1px solid #334155;border-radius:8px;text-decoration:none;color:#f1f5f9;cursor:pointer;"><span style="font-size:24px;">' + m.icon + '</span><div style="flex:1;"><div style="font-weight:500;font-size:14px;">' + m.label + '</div><div style="font-size:11px;color:#64748b;">' + m.path + '</div></div><span style="color:#64748b;font-size:18px;">→</span></a>').join('');
+    content.innerHTML = '<div style="margin-bottom:20px;"><label style="display:block;margin-bottom:6px;font-size:13px;color:#94a3b8;">Buscar modulo</label><input id="acp-mod-search" type="search" placeholder="Buscar..." style="width:100%;padding:10px 14px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;font-size:14px;"></div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;">' + cards + '</div>';
     document.getElementById('acp-mod-search').addEventListener('input', e => {
       const q = (e.target.value || '').toLowerCase();
-      document.querySelectorAll('.acp-mod-link').forEach(c => {
-        c.style.display = c.textContent.toLowerCase().includes(q) ? '' : 'none';
-      });
+      document.querySelectorAll('.acp-mod-link').forEach(c => { c.style.display = c.textContent.toLowerCase().includes(q) ? '' : 'none'; });
     });
     document.querySelectorAll('.acp-mod-link').forEach(link => {
       link.addEventListener('click', e => {
         e.preventDefault();
         const path = link.dataset.path;
-        closePanel();
-        // Intentar varios metodos de navegacion
-        try {
-          // Opcion 1: history.pushState (React Router)
-          history.pushState(null, '', '#' + path);
-          window.dispatchEvent(new PopStateEvent('popstate'));
-        } catch (e) {}
-        // Fallback: location.hash
+        document.getElementById('admin-control-panel').remove();
+        try { history.pushState(null, '', '#' + path); window.dispatchEvent(new PopStateEvent('popstate')); } catch (e) {}
         setTimeout(() => { window.location.hash = '#' + path; }, 100);
-        showMessage('Navegando a: ' + link.textContent.split('→')[0].trim(), 'info');
       });
-      link.addEventListener('mouseenter', () => { link.style.background = '#334155'; link.style.borderColor = '#7c3aed'; });
-      link.addEventListener('mouseleave', () => { link.style.background = '#1e293b'; link.style.borderColor = '#334155'; });
     });
   }
 
-  async function loadActionsTab() {
+  async function loadActions() {
     const content = document.getElementById('acp-content');
-    if (!content) return;
     content.innerHTML = '<p style="color:#94a3b8;">Cargando datos...</p>';
     let products, lots, rawMaterials, recipes;
     try {
@@ -297,17 +225,17 @@
       ]);
     } catch (e) { content.innerHTML = '<p style="color:#fca5a5;">Error: ' + e.message + '</p>'; return; }
     content.innerHTML = '<div style="display:grid;gap:16px;">' +
-      '<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:18px;"><h3 style="margin:0 0 12px;font-size:16px;font-weight:600;">Productos (' + products.length + ')</h3><p style="margin:0 0 12px;color:#94a3b8;font-size:13px;">Borrar un producto tambien borra su receta.</p><div style="display:flex;flex-wrap:wrap;gap:8px;">' +
+      '<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:18px;"><h3 style="margin:0 0 12px;font-size:16px;font-weight:600;">Productos (' + products.length + ')</h3><div style="display:flex;flex-wrap:wrap;gap:8px;">' +
       (products.length === 0 ? '<p style="color:#64748b;font-size:13px;">No hay productos</p>' : products.map(p => '<div style="display:flex;align-items:center;gap:8px;background:#0f172a;padding:6px 10px;border-radius:6px;font-size:13px;"><span>' + p.code + ' - ' + p.name + '</span><button data-action="del-product" data-id="' + p.id + '" data-name="' + p.name + '" style="background:#dc2626;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">Borrar</button></div>').join('')) +
       '</div></div>' +
-      '<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:18px;"><h3 style="margin:0 0 12px;font-size:16px;font-weight:600;">Lotes (' + lots.length + ')</h3><p style="margin:0 0 12px;color:#94a3b8;font-size:13px;">Borrar un lote devuelve el stock consumido.</p><div style="display:flex;flex-wrap:wrap;gap:8px;max-height:300px;overflow:auto;">' +
-      (lots.length === 0 ? '<p style="color:#64748b;font-size:13px;">No hay lotes</p>' : lots.map(l => '<div style="display:flex;align-items:center;gap:8px;background:#0f172a;padding:6px 10px;border-radius:6px;font-size:13px;"><span>' + l.lotNumber + ' - ' + (l.status || '') + '</span><button data-action="del-lot" data-id="' + l.id + '" data-name="' + l.lotNumber + '" style="background:#dc2626;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">Borrar</button></div>').join('')) +
+      '<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:18px;"><h3 style="margin:0 0 12px;font-size:16px;font-weight:600;">Lotes (' + lots.length + ')</h3><div style="display:flex;flex-wrap:wrap;gap:8px;max-height:300px;overflow:auto;">' +
+      (lots.length === 0 ? '<p style="color:#64748b;font-size:13px;">No hay lotes</p>' : lots.map(l => '<div style="display:flex;align-items:center;gap:8px;background:#0f172a;padding:6px 10px;border-radius:6px;font-size:13px;"><span>' + l.lotNumber + '</span><button data-action="del-lot" data-id="' + l.id + '" data-name="' + l.lotNumber + '" style="background:#dc2626;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">Borrar</button></div>').join('')) +
       '</div></div>' +
-      '<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:18px;"><h3 style="margin:0 0 12px;font-size:16px;font-weight:600;">Materias Primas (' + rawMaterials.length + ')</h3><p style="margin:0 0 12px;color:#94a3b8;font-size:13px;">Insumos del almacen.</p><div style="display:flex;flex-wrap:wrap;gap:8px;">' +
+      '<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:18px;"><h3 style="margin:0 0 12px;font-size:16px;font-weight:600;">Materias Primas (' + rawMaterials.length + ')</h3><div style="display:flex;flex-wrap:wrap;gap:8px;">' +
       (rawMaterials.length === 0 ? '<p style="color:#64748b;font-size:13px;">No hay materias primas</p>' : rawMaterials.map(r => '<div style="display:flex;align-items:center;gap:8px;background:#0f172a;padding:6px 10px;border-radius:6px;font-size:13px;"><span>' + r.code + ' - ' + r.name + ' (' + r.stock + ' ' + r.unit + ')</span><button data-action="del-rm" data-id="' + r.id + '" data-name="' + r.name + '" style="background:#dc2626;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">Borrar</button></div>').join('')) +
       '</div></div>' +
-      '<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:18px;"><h3 style="margin:0 0 12px;font-size:16px;font-weight:600;">Recetas (' + recipes.length + ')</h3><p style="margin:0 0 12px;color:#94a3b8;font-size:13px;">Formulas de fabricacion.</p><div style="display:flex;flex-wrap:wrap;gap:8px;">' +
-      (recipes.length === 0 ? '<p style="color:#64748b;font-size:13px;">No hay recetas</p>' : recipes.map(r => '<div style="display:flex;align-items:center;gap:8px;background:#0f172a;padding:6px 10px;border-radius:6px;font-size:13px;"><span>Receta ' + (r.id || '').slice(-6) + ' - Lote ' + r.batchSize + 'L</span><button data-action="del-recipe" data-id="' + r.id + '" data-name="Receta ' + (r.id || '').slice(-6) + '" style="background:#dc2626;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">Borrar</button></div>').join('')) +
+      '<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:18px;"><h3 style="margin:0 0 12px;font-size:16px;font-weight:600;">Recetas (' + recipes.length + ')</h3><div style="display:flex;flex-wrap:wrap;gap:8px;">' +
+      (recipes.length === 0 ? '<p style="color:#64748b;font-size:13px;">No hay recetas</p>' : recipes.map(r => '<div style="display:flex;align-items:center;gap:8px;background:#0f172a;padding:6px 10px;border-radius:6px;font-size:13px;"><span>Receta ' + (r.id || '').slice(-6) + '</span><button data-action="del-recipe" data-id="' + r.id + '" data-name="Receta ' + (r.id || '').slice(-6) + '" style="background:#dc2626;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">Borrar</button></div>').join('')) +
       '</div></div></div>';
     content.querySelectorAll('button[data-action]').forEach(btn => {
       btn.addEventListener('click', () => handleQuickAction(btn.dataset.action, btn.dataset.id, btn.dataset.name));
@@ -316,26 +244,26 @@
 
   async function handleQuickAction(action, id, name) {
     if (action === 'del-lot') {
-      if (!confirm('Borrar el lote "' + name + '"?')) return;
-      try { await api('/lots/' + id, 'DELETE'); showMessage('Lote borrado', 'success'); loadActionsTab(); }
+      if (!confirm('Borrar lote "' + name + '"?')) return;
+      try { await api('/lots/' + id, 'DELETE'); showMessage('Lote borrado', 'success'); loadActions(); }
       catch (e) { showMessage('Error: ' + e.message, 'error'); }
       return;
     }
     if (action === 'del-product') {
-      if (!confirm('Borrar el producto "' + name + '"?')) return;
-      try { await api('/products/' + id, 'DELETE'); showMessage('Producto borrado', 'success'); loadActionsTab(); }
+      if (!confirm('Borrar producto "' + name + '"?')) return;
+      try { await api('/products/' + id, 'DELETE'); showMessage('Producto borrado', 'success'); loadActions(); }
       catch (e) { showMessage('Error: ' + e.message, 'error'); }
       return;
     }
     if (action === 'del-rm') {
-      if (!confirm('Borrar la materia prima "' + name + '"?')) return;
-      try { await api('/raw-materials/' + id, 'DELETE'); showMessage('Materia prima borrada', 'success'); loadActionsTab(); }
+      if (!confirm('Borrar materia prima "' + name + '"?')) return;
+      try { await api('/raw-materials/' + id, 'DELETE'); showMessage('MP borrada', 'success'); loadActions(); }
       catch (e) { showMessage('Error: ' + e.message, 'error'); }
       return;
     }
     if (action === 'del-recipe') {
-      if (!confirm('Borrar la receta "' + name + '"?')) return;
-      try { await api('/recipes/' + id, 'DELETE'); showMessage('Receta borrada', 'success'); loadActionsTab(); }
+      if (!confirm('Borrar receta "' + name + '"?')) return;
+      try { await api('/recipes/' + id, 'DELETE'); showMessage('Receta borrada', 'success'); loadActions(); }
       catch (e) { showMessage('Error: ' + e.message, 'error'); }
     }
   }
@@ -346,80 +274,42 @@
     const sub = document.createElement('div');
     sub.id = 'acp-submodal';
     sub.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:20px;z-index:10;border-radius:14px;';
-    sub.innerHTML = '<div style="background:#0f172a;color:#f1f5f9;border-radius:12px;max-width:600px;width:100%;max-height:90%;overflow:auto;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.6);"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;"><h3 style="margin:0;font-size:18px;font-weight:600;">' + title + '</h3><button id="acp-submodal-close" style="background:none;border:none;color:#94a3b8;font-size:24px;cursor:pointer;padding:0;line-height:1;">x</button></div><div>' + body + '</div></div>';
+    sub.innerHTML = '<div style="background:#0f172a;color:#f1f5f9;border-radius:12px;max-width:600px;width:100%;max-height:90%;overflow:auto;padding:24px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;"><h3 style="margin:0;font-size:18px;font-weight:600;">' + title + '</h3><button id="acp-submodal-close" style="background:none;border:none;color:#94a3b8;font-size:24px;cursor:pointer;">x</button></div><div>' + body + '</div></div>';
     const panel = document.getElementById('admin-control-panel');
-    if (panel) {
-      const modal = panel.querySelector('div');
-      modal.style.position = 'relative';
-      modal.appendChild(sub);
-    } else { document.body.appendChild(sub); }
+    if (panel) { const modal = panel.querySelector('div'); modal.style.position = 'relative'; modal.appendChild(sub); }
+    else { document.body.appendChild(sub); }
     document.getElementById('acp-submodal-close').addEventListener('click', closeSubModal);
     const form = sub.querySelector('form');
     if (form && onSubmit) form.addEventListener('submit', onSubmit);
     const cancelBtn = sub.querySelector('button[id$="cancel"]');
     if (cancelBtn) cancelBtn.addEventListener('click', closeSubModal);
   }
-  function closeSubModal() {
-    const m = document.getElementById('acp-submodal');
-    if (m) m.remove();
-  }
+  function closeSubModal() { const m = document.getElementById('acp-submodal'); if (m) m.remove(); }
 
-  // ============================================================
-  // Inyeccion del banner - MAS AGRESIVA
-  // ============================================================
-  function isOnUsersPage() {
-    const hash = window.location.hash || '';
-    const path = window.location.pathname || '';
-    if (hash.includes('users') || hash.includes('user')) return true;
-    if (path.includes('users') || path.includes('user')) return true;
-    // Buscar en el contenido
-    const all = document.querySelectorAll('h1, h2, h3, [class*="text-2xl"], [class*="text-3xl"], [class*="text-4xl"]');
-    for (const el of all) {
-      if ((el.textContent || '').includes('Usuarios y Permisos')) return true;
-    }
-    return false;
-  }
-
+  // Banner de inyeccion - ULTRA SIMPLE
   function injectBanner() {
     const user = getCurrentUser();
     if (!user || user.role !== 'admin') return;
     if (document.getElementById('admin-control-panel-btn')) return;
 
-    if (!isOnUsersPage()) return;
+    // Detectar si estamos en la pagina de usuarios
+    const allText = document.body.innerText || '';
+    if (!allText.includes('Usuarios y Permisos') && !allText.includes('Permisos por rol')) {
+      return;
+    }
 
-    // Crear banner
     const banner = document.createElement('div');
     banner.id = 'admin-control-panel-btn';
     banner.style.cssText = 'background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;padding:18px 20px;border-radius:10px;margin:0 0 18px;cursor:pointer;box-shadow:0 4px 12px rgba(124,58,237,.3);display:flex;align-items:center;gap:14px;';
-    banner.innerHTML = '<span style="font-size:28px;">⚙️</span><div style="flex:1;"><div style="font-size:16px;font-weight:600;">Panel de Control Centralizado</div><div style="font-size:12px;opacity:.9;margin-top:2px;">Gestion de usuarios, permisos, modulos y acciones rapidas</div></div><span style="background:rgba(255,255,255,.2);padding:6px 14px;border-radius:6px;font-size:13px;font-weight:500;">Abrir →</span>';
-    banner.addEventListener('click', () => {
-      const modal = buildPanelModal();
-      loadUsersTab();
-    });
+    banner.innerHTML = '<span style="font-size:28px;">⚙️</span><div style="flex:1;"><div style="font-size:16px;font-weight:600;">Panel de Control Centralizado</div><div style="font-size:12px;opacity:.9;margin-top:2px;">Toca para abrir gestion de usuarios, modulos y acciones</div></div><span style="background:rgba(255,255,255,.2);padding:6px 14px;border-radius:6px;font-size:13px;font-weight:500;">Abrir →</span>';
+    banner.addEventListener('click', openPanel);
 
-    // Estrategia: encontrar el mejor lugar para insertar
-    // 1. Buscar el contenedor con mas padding/margin (parece la pagina principal)
-    const candidates = [];
-    document.querySelectorAll('main, [class*="p-"], [class*="px-"], [class*="py-"]').forEach(el => {
-      const r = el.getBoundingClientRect();
-      if (r.width > 200 && r.height > 200) {
-        candidates.push({ el, score: r.width * r.height });
-      }
-    });
-    candidates.sort((a, b) => b.score - a.score);
-
-    if (candidates.length > 0) {
-      const target = candidates[0].el;
-      target.insertBefore(banner, target.firstChild);
-    } else {
-      // Fallback: agregar al body en la parte superior
-      banner.style.position = 'relative';
-      banner.style.zIndex = '9999';
-      document.body.insertBefore(banner, document.body.firstChild);
-    }
+    // Insertar como primer hijo del body (GARANTIZADO visible)
+    document.body.insertBefore(banner, document.body.firstChild);
+    console.log('[admin-panel] banner inyectado');
   }
 
-  function removeOldFloatingButton() {
+  function removeOld() {
     const old = document.getElementById('admin-users-btn');
     if (old) old.remove();
   }
@@ -427,20 +317,20 @@
   let lastInject = 0;
   const observer = new MutationObserver(() => {
     const now = Date.now();
-    if (now - lastInject < 1000) return;
+    if (now - lastInject < 1500) return;
     lastInject = now;
-    removeOldFloatingButton();
+    removeOld();
     injectBanner();
   });
   if (document.body) observer.observe(document.body, { childList: true, subtree: true });
 
   function start() {
-    removeOldFloatingButton();
+    removeOld();
     injectBanner();
-    setTimeout(() => { removeOldFloatingButton(); injectBanner(); }, 500);
-    setTimeout(() => { removeOldFloatingButton(); injectBanner(); }, 1500);
-    setTimeout(() => { removeOldFloatingButton(); injectBanner(); }, 3000);
-    setTimeout(() => { removeOldFloatingButton(); injectBanner(); }, 5000);
+    setTimeout(removeOld, 100);
+    setTimeout(() => { removeOld(); injectBanner(); }, 500);
+    setTimeout(() => { removeOld(); injectBanner(); }, 1500);
+    setTimeout(() => { removeOld(); injectBanner(); }, 3000);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
