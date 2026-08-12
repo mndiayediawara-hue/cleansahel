@@ -550,6 +550,8 @@ router.get('/lots', auth, (_req, res) => {
 router.get('/lots/:id', auth, (req, res) => {
   const l = db.prepare('SELECT * FROM lots WHERE id = ?').get(req.params.id)
   if (!l) return res.status(404).json({ error: 'No encontrado' })
+  res.json(mapLot(l))
+})
 
 // PATCH /api/lots/:id/status — cambiar estado de una fabricación
 router.patch('/lots/:id/status', auth, requireRole('admin', 'produccion'), (req, res) => {
@@ -600,9 +602,6 @@ router.post('/lots', auth, requireRole('admin', 'produccion'), (req, res) => {
     .run(lotId, lotNumber, productId, plannedQuantity || 0, '[]', req.user.id, new Date().toISOString(), 'pendiente', notes || null, machineId || null, orderNumber)
   addHistory(req, { action: 'crear', module: 'Producción', entityId: lotId, description: `Nueva fabricación ${lotNumber} (${orderNumber}) en estado pendiente` })
   res.json({ ok: true, id: lotId, lotNumber, productionOrderNumber: orderNumber, status: 'pendiente' })
-})
-
-  res.json(mapLot(l))
 })
 
 function nextProductionNumbers() {
