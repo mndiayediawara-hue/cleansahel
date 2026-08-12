@@ -6,7 +6,7 @@
 
   function getApi() {
     if (window.__API_URL__) return window.__API_URL__;
-    return 'https://cleansahel.onrender.com/api';
+    return 'https://cleansahel-production.up.railway.app/api';
   }
 
   function getToken() {
