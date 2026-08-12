@@ -5,7 +5,7 @@
 
 let realAvailable = true
 const demoMode = false
-const BASE = 'https://cleansahel.onrender.com/api'
+const BASE = 'https://cleansahel-production.up.railway.app/api'
 
 function getToken() { return localStorage.getItem('cleanerp-token') || '' }
 function setToken(t: string) { localStorage.setItem('cleanerp-token', t) }
