@@ -544,6 +544,40 @@ const mapLot = (l) => ({
   notes: l.notes
 })
 
+function mapUser(u) {
+  let permissions = null
+  try { permissions = u.permissions ? JSON.parse(u.permissions) : null } catch {}
+  return {
+    id: u.id,
+    username: u.username,
+    fullName: u.full_name,
+    email: u.email || '',
+    role: u.role,
+    active: !!u.active,
+    failedAttempts: u.failed_attempts || 0,
+    createdAt: u.created_at,
+    lastLogin: u.last_login,
+    permissions
+  }
+}
+
+function hasPermission(user, module, action) {
+  if (user && user.role === 'admin') return true
+  if (!user || !user.permissions) return false
+  const perms = typeof user.permissions === 'string' ? JSON.parse(user.permissions) : user.permissions
+  if (!perms || !perms[module]) return false
+  return perms[module][action] === true
+}
+
+function requirePermission(module, action) {
+  return (req, res, next) => {
+    if (!hasPermission(req.user, module, action)) {
+      return res.status(403).json({ error: `No tiene permiso para ${action} en ${module}` })
+    }
+    next()
+  }
+}
+
 router.get('/lots', auth, (_req, res) => {
   res.json(db.prepare('SELECT * FROM lots ORDER BY produced_at DESC').all().map(mapLot))
 })
@@ -953,6 +987,120 @@ router.get('/barcode/:code', auth, (req, res) => {
 // ---------- TEST ENDPOINT ----------
 router.get('/_test_version', (_req, res) => {
   res.json({ version: 'TEST-v2-2026-08-12', deployed: true })
+})
+
+// ---------- USER MANAGEMENT (admin) ----------
+router.post('/users', auth, requirePermission('users', 'create'), (req, res) => {
+  const { username, password, fullName, email, role, permissions } = req.body || {}
+  if (!username || !password || !fullName) return res.status(400).json({ error: 'Faltan campos requeridos (username, password, fullName)' })
+  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username)
+  if (existing) return res.status(409).json({ error: 'El nombre de usuario ya existe' })
+  const id = uid('u-')
+  const hash = bcrypt.hashSync(password, 10)
+  const permsJson = permissions ? JSON.stringify(permissions) : null
+  db.prepare('INSERT INTO users (id, username, password_hash, full_name, email, role, active, created_at, last_login, permissions) VALUES (?, ?, ?, ?, ?, ?, 1, ?, NULL, ?)')
+    .run(id, username, hash, fullName, email || '', role || 'operario', new Date().toISOString(), permsJson)
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(id)
+  addHistory(req, { action: 'crear', module: 'Usuarios', entityId: id, description: `Usuario creado: ${username} (${role || 'operario'})` })
+  res.json(mapUser(u))
+})
+
+router.put('/users/:id', auth, requirePermission('users', 'edit'), (req, res) => {
+  const { fullName, email, role, username } = req.body || {}
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
+  if (!u) return res.status(404).json({ error: 'Usuario no encontrado' })
+  if (u.id === req.user.id && role && role !== 'admin') {
+    return res.status(400).json({ error: 'No puedes cambiarte tu propio rol de admin' })
+  }
+  db.prepare('UPDATE users SET full_name = ?, email = ?, role = ?, username = COALESCE(?, username) WHERE id = ?')
+    .run(fullName || u.full_name, email !== undefined ? email : u.email, role || u.role, username || null, req.params.id)
+  addHistory(req, { action: 'modificar', module: 'Usuarios', entityId: u.id, description: `Usuario modificado: ${u.username}` })
+  const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
+  res.json(mapUser(updated))
+})
+
+router.put('/users/:id/status', auth, requirePermission('users', 'edit'), (req, res) => {
+  const { active } = req.body || {}
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
+  if (!u) return res.status(404).json({ error: 'Usuario no encontrado' })
+  if (u.id === req.user.id && !active) {
+    return res.status(400).json({ error: 'No puedes desactivarte a ti mismo' })
+  }
+  db.prepare('UPDATE users SET active = ? WHERE id = ?').run(active ? 1 : 0, req.params.id)
+  addHistory(req, { action: active ? 'activar' : 'desactivar', module: 'Usuarios', entityId: u.id, description: `Usuario ${active ? 'activado' : 'desactivado'}: ${u.username}` })
+  res.json({ ok: true, active: !!active })
+})
+
+router.put('/users/:id/password', auth, (req, res) => {
+  const { newPassword, currentPassword } = req.body || {}
+  if (!newPassword) return res.status(400).json({ error: 'Falta newPassword' })
+  if (newPassword.length < 4) return res.status(400).json({ error: 'La contraseña debe tener al menos 4 caracteres' })
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
+  if (!u) return res.status(404).json({ error: 'Usuario no encontrado' })
+  if (req.user.role !== 'admin' && req.user.id !== u.id) {
+    return res.status(403).json({ error: 'No tiene permisos para cambiar esta contraseña' })
+  }
+  if (req.user.id === u.id && req.user.role !== 'admin') {
+    if (!currentPassword) return res.status(400).json({ error: 'Falta currentPassword' })
+    if (!bcrypt.compareSync(currentPassword, u.password_hash)) {
+      return res.status(401).json({ error: 'Contraseña actual incorrecta' })
+    }
+  }
+  const hash = bcrypt.hashSync(newPassword, 10)
+  db.prepare('UPDATE users SET password_hash = ?, failed_attempts = 0 WHERE id = ?').run(hash, req.params.id)
+  addHistory(req, { action: 'cambiar_password', module: 'Usuarios', entityId: u.id, description: `Contraseña cambiada para: ${u.username}` })
+  res.json({ ok: true })
+})
+
+router.put('/users/:id/permissions', auth, requirePermission('users', 'edit'), (req, res) => {
+  const { permissions } = req.body || {}
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
+  if (!u) return res.status(404).json({ error: 'Usuario no encontrado' })
+  const permsJson = permissions ? JSON.stringify(permissions) : null
+  db.prepare('UPDATE users SET permissions = ? WHERE id = ?').run(permsJson, req.params.id)
+  addHistory(req, { action: 'modificar_permisos', module: 'Usuarios', entityId: u.id, description: `Permisos modificados para: ${u.username}` })
+  const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
+  res.json(mapUser(updated))
+})
+
+router.delete('/users/:id', auth, requirePermission('users', 'delete'), (req, res) => {
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
+  if (!u) return res.status(404).json({ error: 'Usuario no encontrado' })
+  if (u.id === req.user.id) return res.status(400).json({ error: 'No puedes eliminarte a ti mismo' })
+  if (u.role === 'admin') {
+    const adminCount = db.prepare("SELECT COUNT(*) as c FROM users WHERE role = 'admin' AND active = 1").get().c
+    if (adminCount <= 1) return res.status(400).json({ error: 'No se puede eliminar al último admin activo' })
+  }
+  db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id)
+  addHistory(req, { action: 'eliminar', module: 'Usuarios', entityId: u.id, description: `Usuario eliminado: ${u.username}` })
+  res.json({ ok: true })
+})
+
+router.get('/permissions/defaults', auth, requirePermission('users', 'view'), (_req, res) => {
+  res.json({
+    modules: [
+      { key: 'home', label: 'Inicio' },
+      { key: 'raw_materials', label: 'Materias primas' },
+      { key: 'recipes', label: 'Recetas' },
+      { key: 'production', label: 'Producción' },
+      { key: 'lots', label: 'Lotes' },
+      { key: 'customers', label: 'Clientes' },
+      { key: 'sales', label: 'Ventas/Pedidos' },
+      { key: 'inventory', label: 'Inventario' },
+      { key: 'accounting', label: 'Contabilidad' },
+      { key: 'reports', label: 'Informes' },
+      { key: 'users', label: 'Usuarios' },
+      { key: 'settings', label: 'Configuración' },
+      { key: 'recalls', label: 'Retiradas' },
+      { key: 'packaging', label: 'Embalaje' },
+    ],
+    actions: [
+      { key: 'view', label: 'Ver' },
+      { key: 'create', label: 'Crear' },
+      { key: 'edit', label: 'Editar' },
+      { key: 'delete', label: 'Eliminar' },
+    ]
+  })
 })
 
 // ---------- EMERGENCY UNLOCK (uses RESET_TOKEN) ----------
