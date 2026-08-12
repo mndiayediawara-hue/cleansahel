@@ -6,123 +6,123 @@
 <title>Panel de Control - CleanSahel</title>
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #f1f5f9; min-height: 100vh; font-size: 14px; }
-.header { background: linear-gradient(135deg, #7c3aed, #2563eb); padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; box-shadow: 0 4px 12px rgba(0,0,0,.3); }
-.header h1 { font-size: 20px; font-weight: 600; }
-.header .links { display: flex; gap: 12px; }
-.header a { color: #fff; text-decoration: none; background: rgba(255,255,255,.2); padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; }
-.header a:hover { background: rgba(255,255,255,.3); }
-.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
-.tabs { display: flex; gap: 2px; background: #1e293b; border-radius: 8px 8px 0 0; padding: 0 4px; border-bottom: 1px solid #334155; }
-.tab { padding: 12px 20px; cursor: pointer; background: transparent; color: #94a3b8; font-weight: 500; border: none; border-bottom: 2px solid transparent; font-size: 14px; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: #0f172a; color: #f1f5f9; font-size: 14px; }
+.header { background: linear-gradient(135deg, #7c3aed, #2563eb); padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; }
+.header h1 { font-size: 18px; font-weight: 600; }
+.header-info { display: flex; gap: 12px; align-items: center; font-size: 12px; }
+.container { max-width: 1100px; margin: 0 auto; padding: 16px; }
+.tabs { display: flex; gap: 2px; background: #1e293b; border-radius: 6px 6px 0 0; padding: 0 4px; border-bottom: 1px solid #334155; }
+.tab { padding: 10px 16px; cursor: pointer; background: transparent; color: #94a3b8; font-weight: 500; border: none; border-bottom: 2px solid transparent; font-size: 13px; }
 .tab.active { background: #0f172a; color: #a78bfa; border-bottom-color: #7c3aed; }
-.tab-content { background: #1e293b; border-radius: 0 0 8px 8px; padding: 24px; min-height: 500px; }
+.tab-content { background: #1e293b; border-radius: 0 0 6px 6px; padding: 16px; min-height: 400px; }
 .section { display: none; }
 .section.active { display: block; }
-h2 { color: #a78bfa; margin: 0 0 16px; font-size: 18px; }
-h3 { color: #f1f5f9; margin: 16px 0 8px; font-size: 15px; }
-table { width: 100%; border-collapse: collapse; background: #0f172a; border-radius: 6px; overflow: hidden; margin-bottom: 16px; }
-th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #334155; font-size: 13px; }
-th { background: #334155; font-weight: 600; }
-tr:last-child td { border-bottom: none; }
-button { background: #7c3aed; color: #fff; border: none; padding: 8px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; font-weight: 500; transition: all .15s; }
+
+/* Lista de usuarios - COMPACTA */
+.user-row { display: flex; align-items: center; gap: 6px; padding: 8px 10px; background: #0f172a; border-radius: 6px; margin-bottom: 6px; border: 1px solid #334155; flex-wrap: wrap; }
+.user-row .avatar { width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, #7c3aed, #2563eb); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 13px; flex-shrink: 0; }
+.user-row .info { flex: 1; min-width: 120px; }
+.user-row .info .name { font-weight: 600; font-size: 13px; }
+.user-row .info .full { font-size: 11px; color: #94a3b8; }
+.user-row .role { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 500; color: #fff; }
+.user-row .role.admin { background: #7c3aed; }
+.user-row .role.produccion { background: #2563eb; }
+.user-row .role.contabilidad { background: #0891b2; }
+.user-row .role.operario { background: #475569; }
+.user-row .status { font-size: 12px; }
+.user-row .status.active { color: #22c55e; }
+.user-row .status.inactive { color: #ef4444; }
+.user-row .actions { display: flex; gap: 4px; flex-wrap: wrap; }
+.user-row .actions button { background: #334155; color: #fff; border: none; padding: 5px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+.user-row .actions button:hover { background: #475569; }
+.user-row .actions button.danger { background: #dc2626; }
+.user-row .actions button.warn { background: #f59e0b; }
+.user-row .actions button.success { background: #16a34a; }
+.user-row .actions button:disabled { opacity: .4; cursor: not-allowed; }
+
+/* Botones globales */
+button { background: #7c3aed; color: #fff; border: none; padding: 7px 12px; border-radius: 5px; cursor: pointer; font-size: 12px; font-weight: 500; }
 button:hover { opacity: .9; }
 button.success { background: #16a34a; }
 button.danger { background: #dc2626; }
 button.warn { background: #f59e0b; }
 button.gray { background: #475569; }
 button.small { padding: 4px 8px; font-size: 11px; }
-input, select, textarea { padding: 8px 10px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #f1f5f9; font-size: 13px; width: 100%; }
-input:focus, select:focus { outline: none; border-color: #7c3aed; }
-label { display: block; font-size: 12px; color: #94a3b8; margin-bottom: 4px; }
-.row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
-.card { background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 16px; margin-bottom: 12px; }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
-.module-card { background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 14px; cursor: pointer; transition: all .15s; }
-.module-card:hover { border-color: #7c3aed; background: #1e293b; }
-.module-card .icon { font-size: 24px; margin-bottom: 6px; }
-.module-card .name { font-weight: 500; font-size: 14px; }
-.module-card .path { font-size: 11px; color: #64748b; margin-top: 2px; }
-.badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 500; color: #fff; }
-.badge.admin { background: #7c3aed; }
-.badge.produccion { background: #2563eb; }
-.badge.contabilidad { background: #0891b2; }
-.badge.operario { background: #475569; }
-.search { width: 100%; padding: 10px 14px; background: #0f172a; border: 1px solid #334155; border-radius: 6px; color: #f1f5f9; font-size: 14px; margin-bottom: 16px; }
-.toast { position: fixed; top: 20px; right: 20px; z-index: 9999; padding: 14px 20px; border-radius: 8px; color: #fff; font-weight: 500; box-shadow: 0 4px 16px rgba(0,0,0,.3); }
+input, select, textarea { padding: 7px 9px; background: #0f172a; border: 1px solid #334155; border-radius: 4px; color: #f1f5f9; font-size: 13px; width: 100%; }
+label { display: block; font-size: 11px; color: #94a3b8; margin-bottom: 3px; }
+
+/* Modal */
+.modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: none; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
+.modal-bg.active { display: flex; }
+.modal { background: #0f172a; border-radius: 10px; max-width: 500px; width: 100%; max-height: 85vh; overflow: auto; padding: 18px; box-shadow: 0 20px 50px rgba(0,0,0,.6); border: 1px solid #334155; }
+.modal h3 { color: #a78bfa; margin: 0 0 12px; font-size: 15px; display: flex; align-items: center; justify-content: space-between; }
+.modal h3 button { background: transparent; color: #94a3b8; font-size: 20px; padding: 0 4px; }
+.modal h3 button:hover { color: #fff; opacity: 1; }
+
+/* Matriz de permisos */
+.perms-grid { display: grid; grid-template-columns: 1fr repeat(4, 50px); gap: 4px; font-size: 12px; }
+.perms-grid .header { background: #334155; padding: 6px; text-align: center; font-weight: 600; }
+.perms-grid .mod { background: #0f172a; padding: 6px; display: flex; align-items: center; gap: 6px; }
+.perms-grid .cell { background: #0f172a; padding: 6px; text-align: center; }
+.perms-grid .cell input { width: 16px; height: 16px; cursor: pointer; }
+.perms-grid .admin-note { background: #0f172a; padding: 8px; text-align: center; color: #a78bfa; font-size: 11px; font-style: italic; }
+
+.toast { position: fixed; top: 16px; right: 16px; z-index: 2000; padding: 10px 16px; border-radius: 6px; color: #fff; font-weight: 500; font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,.3); max-width: 320px; }
 .toast.success { background: #16a34a; }
 .toast.error { background: #dc2626; }
 .toast.info { background: #2563eb; }
-.checkbox-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
-.checkbox-row label { display: flex; align-items: center; gap: 4px; color: #cbd5e1; cursor: pointer; margin: 0; font-size: 12px; }
-.action-buttons { display: flex; gap: 4px; flex-wrap: wrap; }
-.empty { color: #64748b; font-size: 13px; text-align: center; padding: 20px; }
-.modal { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 20px; }
-.modal-content { background: #0f172a; border-radius: 12px; max-width: 600px; width: 100%; max-height: 90vh; overflow: auto; padding: 24px; }
-.modal h3 { color: #a78bfa; margin: 0 0 16px; }
-.modal-close { float: right; background: none; color: #94a3b8; font-size: 20px; padding: 0 8px; }
-.flex-between { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
 .muted { color: #94a3b8; }
-.perms-matrix { width: 100%; border-collapse: collapse; font-size: 13px; }
-.perms-matrix th, .perms-matrix td { padding: 8px; border-bottom: 1px solid #334155; }
-.perms-matrix th { background: #334155; }
-.perms-matrix input[type=checkbox] { width: 16px; height: 16px; }
+.row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+.flex { display: flex; gap: 8px; align-items: center; }
+.flex-between { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.empty { text-align: center; padding: 30px; color: #64748b; }
+.search { width: 100%; padding: 8px 12px; background: #0f172a; border: 1px solid #334155; border-radius: 5px; color: #f1f5f9; font-size: 13px; margin-bottom: 12px; }
+
+/* Buscador de modulos */
+.mod-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+.mod-card { background: #0f172a; border: 1px solid #334155; border-radius: 6px; padding: 10px; cursor: pointer; }
+.mod-card:hover { border-color: #7c3aed; }
+.mod-card .icon { font-size: 20px; }
+.mod-card .name { font-weight: 500; font-size: 13px; margin-top: 4px; }
+.mod-card .path { font-size: 10px; color: #64748b; }
+
+/* Acciones */
+.act-section { background: #0f172a; border-radius: 6px; padding: 12px; margin-bottom: 10px; border: 1px solid #334155; }
+.act-section h4 { color: #f1f5f9; font-size: 13px; margin-bottom: 8px; }
+.act-item { display: inline-flex; align-items: center; gap: 6px; background: #1e293b; padding: 4px 8px; border-radius: 4px; font-size: 12px; margin: 2px; }
+.act-item button { background: #dc2626; padding: 2px 6px; font-size: 10px; }
 </style>
 </head>
 <body>
 <div class="header">
-  <h1>⚙️ Panel de Control CleanSahel</h1>
-  <div class="links">
-    <a href="./?v=24" target="_blank">← Ir a la App</a>
-    <button onclick="logout()" style="background:rgba(255,255,255,.2);">Cerrar sesión</button>
+  <h1>⚙️ Panel de Control</h1>
+  <div class="header-info">
+    <span id="user-info"></span>
+    <button onclick="logout()" class="small gray">Salir</button>
   </div>
 </div>
-<div class="container" id="login-screen" style="display:none;">
-  <div class="card" style="max-width:400px;margin:80px auto;">
-    <h2 style="text-align:center;">Iniciar sesión</h2>
-    <p class="muted" style="text-align:center;margin-bottom:16px;">Ingresa como admin para acceder al panel</p>
-    <div style="margin-bottom:12px;">
-      <label>Usuario</label>
-      <input id="login-user" placeholder="admin">
+<div class="container">
+  <div id="login-screen" class="empty" style="display:none;">
+    <h2 style="color:#a78bfa;">Iniciar sesión</h2>
+    <p class="muted" style="margin:8px 0 16px;">Como admin para gestionar usuarios</p>
+    <div style="max-width:300px;margin:0 auto;">
+      <div style="margin-bottom:8px;"><label>Usuario</label><input id="li-user" value="admin"></div>
+      <div style="margin-bottom:12px;"><label>Contraseña</label><input id="li-pass" type="password"></div>
+      <button onclick="doLogin()" style="width:100%;">Entrar</button>
+      <p id="li-err" style="color:#fca5a5;margin-top:8px;display:none;"></p>
     </div>
-    <div style="margin-bottom:16px;">
-      <label>Contraseña</label>
-      <input id="login-pass" type="password" placeholder="********">
+  </div>
+  <div id="main-screen" style="display:none;">
+    <div class="flex-between" style="margin-bottom:12px;">
+      <h2 style="color:#a78bfa;font-size:16px;margin:0;">Gestión de Usuarios</h2>
+      <button onclick="openNewUser()" class="success">+ Nuevo Usuario</button>
     </div>
-    <button onclick="doLogin()" style="width:100%;">Entrar</button>
-    <p id="login-error" style="color:#fca5a5;margin-top:12px;text-align:center;display:none;"></p>
+    <div id="users-list"></div>
   </div>
-</div>
-<div id="main-screen" style="display:none;">
-<div class="tabs">
-  <button class="tab active" data-tab="users" onclick="showTab('users')">Usuarios y Permisos</button>
-  <button class="tab" data-tab="modules" onclick="showTab('modules')">Módulos y Accesos</button>
-  <button class="tab" data-tab="actions" onclick="showTab('actions')">Acciones Rápidas</button>
-</div>
-<div class="tab-content">
-  <div class="section active" id="section-users">
-    <div class="flex-between">
-      <h2>Usuarios</h2>
-      <button class="success" onclick="openUserForm()">+ Nuevo Usuario</button>
-    </div>
-    <div id="users-list">Cargando...</div>
-  </div>
-  <div class="section" id="section-modules">
-    <h2>Módulos y Accesos</h2>
-    <p class="muted" style="margin-bottom:16px;">Busca un módulo y entra directamente. Se abrirá en la app principal.</p>
-    <input id="mod-search" class="search" placeholder="Buscar módulo (materia prima, producción, clientes...)" oninput="filterMods()">
-    <div class="grid" id="mods-grid"></div>
-  </div>
-  <div class="section" id="section-actions">
-    <h2>Acciones Rápidas</h2>
-    <p class="muted" style="margin-bottom:16px;">Borra productos, lotes, materias primas o recetas.</p>
-    <div id="actions-list">Cargando...</div>
-  </div>
-</div>
 </div>
 
-<div class="modal" id="modal" style="display:none;">
-  <div class="modal-content" id="modal-content"></div>
+<div class="modal-bg" id="modal">
+  <div class="modal" id="modal-content"></div>
 </div>
 
 <script>
@@ -135,6 +135,10 @@ function getUser() {
 function setSession(token, user) {
   localStorage.setItem('admin-token', token);
   localStorage.setItem('admin-user', JSON.stringify(user));
+}
+function clearSession() {
+  localStorage.removeItem('admin-token');
+  localStorage.removeItem('admin-user');
 }
 
 async function api(path, method = 'GET', body = null) {
@@ -158,170 +162,138 @@ function toast(text, type) {
   t.className = 'toast ' + type;
   t.textContent = text;
   document.body.appendChild(t);
-  setTimeout(() => { try { t.remove(); } catch {} }, 3500);
+  setTimeout(() => { try { t.remove(); } catch {} }, 3000);
 }
 
 function logout() {
-  localStorage.removeItem('admin-token');
-  localStorage.removeItem('admin-user');
-  location.reload();
+  clearSession();
+  showLogin();
 }
 
 async function doLogin() {
-  const username = document.getElementById('login-user').value.trim();
-  const password = document.getElementById('login-pass').value;
-  const errEl = document.getElementById('login-error');
-  errEl.style.display = 'none';
+  const u = document.getElementById('li-user').value.trim();
+  const p = document.getElementById('li-pass').value;
+  const err = document.getElementById('li-err');
+  err.style.display = 'none';
   try {
     const r = await fetch(API + '/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({ username: u, password: p })
     });
     if (!r.ok) throw new Error('Credenciales incorrectas');
     const data = await r.json();
     setSession(data.token, data.user);
     showMain();
-  } catch (e) {
-    errEl.textContent = e.message;
-    errEl.style.display = 'block';
-  }
-}
-
-function showMain() {
-  const u = getUser();
-  if (!u) { showLogin(); return; }
-  if (u.role !== 'admin') {
-    alert('Solo administradores pueden acceder al panel');
-    logout();
-    return;
-  }
-  document.getElementById('login-screen').style.display = 'none';
-  document.getElementById('main-screen').style.display = 'block';
-  loadUsers();
-  loadMods();
-  loadActions();
+  } catch (e) { err.textContent = e.message; err.style.display = 'block'; }
 }
 
 function showLogin() {
   document.getElementById('login-screen').style.display = 'block';
   document.getElementById('main-screen').style.display = 'none';
-  document.getElementById('login-user').focus();
+  document.getElementById('li-pass').focus();
 }
 
-function showTab(t) {
-  document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
-  document.querySelector('.tab[data-tab="' + t + '"]').classList.add('active');
-  document.querySelectorAll('.section').forEach(x => x.classList.remove('active'));
-  document.getElementById('section-' + t).classList.add('active');
+function showMain() {
+  const u = getUser();
+  if (!u) { showLogin(); return; }
+  if (u.role !== 'admin') { alert('Solo admin'); clearSession(); showLogin(); return; }
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('main-screen').style.display = 'block';
+  document.getElementById('user-info').innerHTML = '<b>' + u.username + '</b> (admin)';
+  loadUsers();
 }
+
+function showModal(html) {
+  document.getElementById('modal-content').innerHTML = html;
+  document.getElementById('modal').classList.add('active');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('active');
+}
+
+// Click fuera del modal cierra
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target.id === 'modal') closeModal();
+});
 
 async function loadUsers() {
   const el = document.getElementById('users-list');
   el.innerHTML = 'Cargando...';
   try {
     const users = await api('/users');
-    if (users.length === 0) { el.innerHTML = '<div class="empty">No hay usuarios</div>'; return; }
-    let html = '<table><thead><tr><th>Usuario</th><th>Nombre</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>';
+    if (users.length === 0) { el.innerHTML = '<div class="empty">Sin usuarios</div>'; return; }
+    const me = getUser();
+    let html = '';
     for (const u of users) {
-      html += `<tr>
-        <td><b>${u.username}</b></td>
-        <td>${u.fullName || ''}</td>
-        <td><span class="badge ${u.role}">${u.role}</span></td>
-        <td>${u.active ? '🟢 Activo' : '🔴 Inactivo'}</td>
-        <td>
-          <div class="action-buttons">
-            <button class="small" onclick='editUser(${JSON.stringify(u).replace(/'/g, "&apos;")})'>Editar</button>
-            <button class="small" onclick='editPerms("${u.id}", "${u.username}")'>Permisos</button>
-            <button class="small warn" onclick='changePwd("${u.id}", "${u.username}")'>Pwd</button>
-            <button class="small gray" onclick='toggleUser("${u.id}", ${!u.active})'>${u.active ? 'Off' : 'On'}</button>
-            <button class="small danger" onclick='delUser("${u.id}", "${u.username}")'>X</button>
+      const initial = (u.username || '?').charAt(0).toUpperCase();
+      const isMe = me && me.id === u.id;
+      html += `
+        <div class="user-row">
+          <div class="avatar">${initial}</div>
+          <div class="info">
+            <div class="name">${u.username}${isMe ? ' (tú)' : ''}</div>
+            <div class="full">${u.fullName || ''}</div>
           </div>
-        </td>
-      </tr>`;
+          <span class="role ${u.role}">${u.role}</span>
+          <span class="status ${u.active ? 'active' : 'inactive'}">${u.active ? '🟢' : '🔴'}</span>
+          <div class="actions">
+            <button class="${u.active ? 'warn' : 'success'}" onclick="toggleUser('${u.id}', ${!u.active}, '${u.username}')" ${isMe ? 'disabled title="No puedes desactivarte"' : ''}>${u.active ? 'Desactivar' : 'Activar'}</button>
+            <button onclick="openEditUser('${u.id}')">✏️ Editar</button>
+            <button class="warn" onclick="openChangePwd('${u.id}', '${u.username}')">🔑 Pwd</button>
+            <button onclick="openPerms('${u.id}', '${u.username}', '${u.role}')">🔐 Permisos</button>
+            <button class="danger" onclick="delUser('${u.id}', '${u.username}')" ${isMe ? 'disabled title="No puedes eliminarte"' : ''}>🗑️</button>
+          </div>
+        </div>
+      `;
     }
-    html += '</tbody></table>';
     el.innerHTML = html;
-  } catch (e) {
-    el.innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
-  }
+  } catch (e) { el.innerHTML = '<div class="empty">Error: ' + e.message + '</div>'; }
 }
 
-async function openUserForm() {
-  const html = `
-    <h3>Nuevo Usuario</h3>
-    <div class="row">
-      <div><label>Usuario *</label><input id="u-username" required></div>
-      <div><label>Nombre Completo *</label><input id="u-fullname" required></div>
-    </div>
-    <div class="row">
-      <div><label>Email</label><input id="u-email" type="email"></div>
-      <div><label>Rol *</label>
-        <select id="u-role">
-          <option value="operario">Operario</option>
-          <option value="produccion">Producción</option>
-          <option value="contabilidad">Contabilidad</option>
-          <option value="admin">Administrador</option>
-        </select>
-      </div>
-    </div>
-    <div class="row">
-      <div><label>Contraseña * (min 4)</label><input id="u-password" type="password" required minlength="4"></div>
-    </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
-      <button class="gray" onclick="closeModal()">Cancelar</button>
-      <button class="success" onclick="createUser()">Crear</button>
-    </div>
-  `;
-  showModal(html);
-}
-
-async function createUser() {
+async function toggleUser(id, active, username) {
+  if (active && !confirm('¿Activar al usuario ' + username + '?')) return;
+  if (!active && !confirm('¿Desactivar al usuario ' + username + '?')) return;
   try {
-    const data = {
-      username: document.getElementById('u-username').value.trim(),
-      fullName: document.getElementById('u-fullname').value.trim(),
-      email: document.getElementById('u-email').value.trim(),
-      role: document.getElementById('u-role').value,
-      password: document.getElementById('u-password').value
-    };
-    if (!data.username || !data.fullName || !data.password) {
-      toast('Completa todos los campos', 'error');
-      return;
-    }
-    await api('/users', 'POST', data);
-    toast('Usuario creado', 'success');
+    await api('/users/' + id + '/status', 'PUT', { active });
+    toast(active ? 'Activado' : 'Desactivado', 'success');
     closeModal();
     loadUsers();
   } catch (e) { toast('Error: ' + e.message, 'error'); }
 }
 
-async function editUser(u) {
-  const html = `
-    <h3>Editar Usuario: ${u.username}</h3>
-    <div class="row">
-      <div><label>Nombre Completo *</label><input id="e-fullname" value="${(u.fullName || '').replace(/"/g, '&quot;')}"></div>
-      <div><label>Email</label><input id="e-email" value="${(u.email || '').replace(/"/g, '&quot;')}" type="email"></div>
-    </div>
-    <div class="row">
-      <div><label>Rol *</label>
-        <select id="e-role">
-          <option value="operario" ${u.role === 'operario' ? 'selected' : ''}>Operario</option>
-          <option value="produccion" ${u.role === 'produccion' ? 'selected' : ''}>Producción</option>
-          <option value="contabilidad" ${u.role === 'contabilidad' ? 'selected' : ''}>Contabilidad</option>
-          <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Administrador</option>
-        </select>
+async function openEditUser(id) {
+  try {
+    const users = await api('/users');
+    const u = users.find(x => x.id === id);
+    if (!u) return;
+    showModal(`
+      <h3>✏️ Editar Usuario <button onclick="closeModal()">×</button></h3>
+      <div class="row">
+        <div><label>Nombre Completo</label><input id="e-fullname" value="${(u.fullName || '').replace(/"/g, '&quot;')}"></div>
+        <div><label>Email</label><input id="e-email" value="${(u.email || '').replace(/"/g, '&quot;')}" type="email"></div>
       </div>
-    </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
-      <button class="gray" onclick="closeModal()">Cancelar</button>
-      <button class="success" onclick='updateUser("${u.id}")'>Guardar</button>
-    </div>
-  `;
-  showModal(html);
+      <div class="row">
+        <div><label>Rol</label>
+          <select id="e-role">
+            <option value="operario" ${u.role === 'operario' ? 'selected' : ''}>Operario</option>
+            <option value="produccion" ${u.role === 'produccion' ? 'selected' : ''}>Producción</option>
+            <option value="contabilidad" ${u.role === 'contabilidad' ? 'selected' : ''}>Contabilidad</option>
+            <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
+          </select>
+        </div>
+        <div><label>Username (no editable)</label><input value="${u.username}" disabled></div>
+      </div>
+      <div class="flex" style="justify-content:flex-end;margin-top:12px;">
+        <button class="gray" onclick="closeModal()">Cancelar</button>
+        <button class="success" onclick="saveEdit('${id}')">Guardar</button>
+      </div>
+    `);
+  } catch (e) { toast('Error: ' + e.message, 'error'); }
 }
 
-async function updateUser(id) {
+async function saveEdit(id) {
   try {
     const data = {
       fullName: document.getElementById('e-fullname').value.trim(),
@@ -335,237 +307,160 @@ async function updateUser(id) {
   } catch (e) { toast('Error: ' + e.message, 'error'); }
 }
 
-async function editPerms(uid, uname) {
-  try {
-    const users = await api('/users');
-    const u = users.find(x => x.id === uid);
-    if (!u) return;
-    const defs = await api('/permissions/defaults');
-    const perms = u.permissions || {};
-    let html = `<h3>Permisos de ${uname}</h3>`;
-    html += '<p class="muted" style="margin-bottom:12px;font-size:12px;">Marca qué puede hacer (Ver/Crear/Editar/Eliminar) en cada módulo. Para módulos no listados, el usuario NO tiene acceso.</p>';
-    html += '<form id="perms-form">';
-    html += '<table class="perms-matrix"><thead><tr><th>Módulo</th>';
-    for (const a of defs.actions) html += '<th style="text-align:center;">' + a.label + '</th>';
-    html += '</tr></thead><tbody>';
-    for (const m of defs.modules) {
-      const mp = perms[m.key] || {};
-      html += '<tr><td><b>' + m.label + '</b><br><small class="muted">' + m.key + '</small></td>';
-      for (const a of defs.actions) {
-        const checked = mp[a.key] ? 'checked' : '';
-        html += '<td style="text-align:center;"><input type="checkbox" data-mod="' + m.key + '" data-act="' + a.key + '" ' + checked + '></td>';
-      }
-      html += '</tr>';
-    }
-    html += '</tbody></table>';
-    html += '<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">';
-    html += '<button type="button" class="gray" onclick="closeModal()">Cancelar</button>';
-    html += '<button type="button" class="success" onclick="savePerms(\'' + uid + '\')">Guardar Permisos</button>';
-    html += '</div></form>';
-    showModal(html);
-  } catch (e) { toast('Error: ' + e.message, 'error'); }
+function openNewUser() {
+  showModal(`
+    <h3>+ Nuevo Usuario <button onclick="closeModal()">×</button></h3>
+    <div class="row">
+      <div><label>Usuario *</label><input id="n-username" required></div>
+      <div><label>Nombre Completo *</label><input id="n-fullname" required></div>
+    </div>
+    <div class="row">
+      <div><label>Email</label><input id="n-email" type="email"></div>
+      <div><label>Rol *</label>
+        <select id="n-role">
+          <option value="operario">Operario</option>
+          <option value="produccion">Producción</option>
+          <option value="contabilidad">Contabilidad</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+    </div>
+    <div class="row">
+      <div><label>Contraseña * (min 4)</label><input id="n-password" type="password" required minlength="4"></div>
+    </div>
+    <div class="flex" style="justify-content:flex-end;margin-top:12px;">
+      <button class="gray" onclick="closeModal()">Cancelar</button>
+      <button class="success" onclick="saveNewUser()">Crear</button>
+    </div>
+  `);
 }
 
-async function savePerms(uid) {
+async function saveNewUser() {
   try {
-    const form = document.getElementById('perms-form');
-    const newPerms = {};
-    form.querySelectorAll('input[type=checkbox]').forEach(cb => {
-      if (!newPerms[cb.dataset.mod]) newPerms[cb.dataset.mod] = {};
-      newPerms[cb.dataset.mod][cb.dataset.act] = cb.checked;
-    });
-    await api('/users/' + uid + '/permissions', 'PUT', { permissions: newPerms });
-    toast('Permisos guardados en la BD', 'success');
+    const data = {
+      username: document.getElementById('n-username').value.trim(),
+      fullName: document.getElementById('n-fullname').value.trim(),
+      email: document.getElementById('n-email').value.trim(),
+      role: document.getElementById('n-role').value,
+      password: document.getElementById('n-password').value
+    };
+    if (!data.username || !data.fullName || !data.password) { toast('Completa los campos requeridos', 'error'); return; }
+    await api('/users', 'POST', data);
+    toast('Usuario creado', 'success');
     closeModal();
     loadUsers();
   } catch (e) { toast('Error: ' + e.message, 'error'); }
 }
 
-function changePwd(uid, uname) {
+function openChangePwd(id, username) {
   showModal(`
-    <h3>Cambiar contraseña: ${uname}</h3>
-    <div style="margin-bottom:16px;">
-      <label>Nueva contraseña * (min 4)</label>
-      <input id="p-new" type="password" required minlength="4">
+    <h3>🔑 Cambiar contraseña: ${username} <button onclick="closeModal()">×</button></h3>
+    <div class="row">
+      <div><label>Nueva contraseña (min 4)</label><input id="p-new" type="password" required minlength="4" autofocus></div>
     </div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;">
+    <div class="flex" style="justify-content:flex-end;margin-top:12px;">
       <button class="gray" onclick="closeModal()">Cancelar</button>
-      <button class="warn" onclick="savePwd('${uid}')">Cambiar</button>
+      <button class="warn" onclick="savePwd('${id}')">Cambiar</button>
     </div>
   `);
 }
 
-async function savePwd(uid) {
+async function savePwd(id) {
   try {
     const np = document.getElementById('p-new').value;
     if (!np || np.length < 4) { toast('Mínimo 4 caracteres', 'error'); return; }
-    await api('/users/' + uid + '/password', 'PUT', { newPassword: np });
+    await api('/users/' + id + '/password', 'PUT', { newPassword: np });
     toast('Contraseña cambiada', 'success');
     closeModal();
   } catch (e) { toast('Error: ' + e.message, 'error'); }
 }
 
-async function toggleUser(uid, active) {
-  try {
-    await api('/users/' + uid + '/status', 'PUT', { active });
-    toast(active ? 'Activado' : 'Desactivado', 'success');
-    loadUsers();
-  } catch (e) { toast('Error: ' + e.message, 'error'); }
-}
-
-async function delUser(uid, uname) {
-  if (!confirm('¿Eliminar al usuario "' + uname + '"?')) return;
-  try {
-    await api('/users/' + uid, 'DELETE');
-    toast('Eliminado', 'success');
-    loadUsers();
-  } catch (e) { toast('Error: ' + e.message, 'error'); }
-}
-
-const MODULES = [
-  { l: 'Inicio / Dashboard', i: '🏠', p: '/' },
-  { l: 'Materias Primas', i: '🧪', p: '/raw-materials' },
-  { l: 'Recetas', i: '📋', p: '/recipes' },
-  { l: 'Producción', i: '🏭', p: '/production' },
-  { l: 'Lotes', i: '📦', p: '/lots' },
-  { l: 'Lotes de Materia Prima', i: '🧬', p: '/raw-material-lots' },
-  { l: 'Embalaje', i: '📦', p: '/packaging' },
-  { l: 'Clientes', i: '👥', p: '/customers' },
-  { l: 'Ventas / Pedidos', i: '💰', p: '/orders' },
-  { l: 'Compras', i: '🛒', p: '/purchases' },
-  { l: 'Gastos', i: '💸', p: '/expenses' },
-  { l: 'Proveedores', i: '🚚', p: '/suppliers' },
-  { l: 'Inventario', i: '📊', p: '/inventory' },
-  { l: 'Contabilidad', i: '📈', p: '/accounting' },
-  { l: 'Informes', i: '📑', p: '/reports' },
-  { l: 'Retiradas', i: '⚠️', p: '/recalls' },
-  { l: 'Configuración', i: '⚙️', p: '/settings' },
-  { l: 'Usuarios', i: '👥', p: '/users' }
-];
-
-function loadMods() {
-  const grid = document.getElementById('mods-grid');
-  grid.innerHTML = MODULES.map(m => `
-    <div class="module-card" onclick="goToApp('${m.p}')">
-      <div class="icon">${m.i}</div>
-      <div class="name">${m.l}</div>
-      <div class="path">${m.p}</div>
-    </div>
-  `).join('');
-}
-
-function filterMods() {
-  const q = document.getElementById('mod-search').value.toLowerCase();
-  document.querySelectorAll('.module-card').forEach(c => {
-    c.style.display = c.textContent.toLowerCase().includes(q) ? '' : 'none';
-  });
-}
-
-function goToApp(path) {
-  // Abrir la app principal con la ruta
-  window.open('./?v=24#' + path, '_blank');
-}
-
-async function loadActions() {
-  const el = document.getElementById('actions-list');
-  el.innerHTML = 'Cargando...';
-  try {
-    const [products, lots, rms, recipes] = await Promise.all([
-      api('/products').catch(() => []),
-      api('/lots').catch(() => []),
-      api('/raw-materials').catch(() => []),
-      api('/recipes').catch(() => [])
-    ]);
-    let html = '';
-    html += '<div class="card"><h3>Productos (' + products.length + ')</h3><div class="grid">';
-    if (products.length === 0) html += '<p class="empty">Vacío</p>';
-    for (const p of products) {
-      html += '<div class="module-card"><div class="name">' + p.code + ' - ' + p.name + '</div><button class="small danger" style="margin-top:8px;" onclick=\'delProduct("' + p.id + '", "' + p.name + '")\'>Borrar</button></div>';
-    }
-    html += '</div></div>';
-
-    html += '<div class="card"><h3>Lotes (' + lots.length + ')</h3><div class="grid">';
-    if (lots.length === 0) html += '<p class="empty">Vacío</p>';
-    for (const l of lots.slice(0, 30)) {
-      html += '<div class="module-card"><div class="name">' + l.lotNumber + '</div><button class="small danger" style="margin-top:8px;" onclick=\'delLot("' + l.id + '", "' + l.lotNumber + '")\'>Borrar</button></div>';
-    }
-    html += '</div></div>';
-
-    html += '<div class="card"><h3>Materias Primas (' + rms.length + ')</h3><div class="grid">';
-    if (rms.length === 0) html += '<p class="empty">Vacío</p>';
-    for (const r of rms) {
-      html += '<div class="module-card"><div class="name">' + r.code + ' - ' + r.name + '</div><button class="small danger" style="margin-top:8px;" onclick=\'delRM("' + r.id + '", "' + r.name + '")\'>Borrar</button></div>';
-    }
-    html += '</div></div>';
-
-    html += '<div class="card"><h3>Recetas (' + recipes.length + ')</h3><div class="grid">';
-    if (recipes.length === 0) html += '<p class="empty">Vacío</p>';
-    for (const r of recipes) {
-      html += '<div class="module-card"><div class="name">Receta ' + (r.id || '').slice(-6) + '</div><button class="small danger" style="margin-top:8px;" onclick=\'delRecipe("' + r.id + '")\'>Borrar</button></div>';
-    }
-    html += '</div></div>';
-
-    el.innerHTML = html;
-  } catch (e) {
-    el.innerHTML = '<div class="empty">Error: ' + e.message + '</div>';
+async function openPerms(id, username, role) {
+  if (role === 'admin') {
+    showModal(`
+      <h3>🔐 Permisos de ${username} <button onclick="closeModal()">×</button></h3>
+      <div class="admin-note">Los administradores tienen TODOS los permisos automáticamente. No se puede editar.</div>
+      <div class="flex" style="justify-content:flex-end;margin-top:12px;">
+        <button class="gray" onclick="closeModal()">Cerrar</button>
+      </div>
+    `);
+    return;
   }
-}
-
-async function delProduct(id, name) {
-  if (!confirm('¿Borrar producto "' + name + '"?\n\nSi tiene lotes, fallará. Borra lotes primero.')) return;
   try {
-    await api('/recipes/' + id, 'DELETE').catch(() => {});
-    await api('/products/' + id, 'DELETE');
-    toast('Producto borrado', 'success');
-    loadActions();
+    const users = await api('/users');
+    const u = users.find(x => x.id === id);
+    if (!u) return;
+    const defs = await api('/permissions/defaults');
+    const perms = u.permissions || {};
+    let rows = '';
+    for (const m of defs.modules) {
+      const mp = perms[m.key] || {};
+      rows += `
+        <div class="mod">${m.label}</div>
+        <div class="cell"><input type="checkbox" data-mod="${m.key}" data-act="view" ${mp.view ? 'checked' : ''}></div>
+        <div class="cell"><input type="checkbox" data-mod="${m.key}" data-act="create" ${mp.create ? 'checked' : ''}></div>
+        <div class="cell"><input type="checkbox" data-mod="${m.key}" data-act="edit" ${mp.edit ? 'checked' : ''}></div>
+        <div class="cell"><input type="checkbox" data-mod="${m.key}" data-act="delete" ${mp.delete ? 'checked' : ''}></div>
+      `;
+    }
+    showModal(`
+      <h3>🔐 Permisos de ${username} <button onclick="closeModal()">×</button></h3>
+      <p class="muted" style="font-size:11px;margin-bottom:8px;">Marca qué puede hacer (Ver/Crear/Editar/Eliminar) en cada módulo.</p>
+      <div class="perms-grid">
+        <div class="header">Módulo</div>
+        <div class="header">Ver</div>
+        <div class="header">Crear</div>
+        <div class="header">Editar</div>
+        <div class="header">Eliminar</div>
+        ${rows}
+      </div>
+      <div class="flex" style="justify-content:space-between;margin-top:12px;">
+        <button class="gray small" onclick="selectAllPerms()">Seleccionar todo</button>
+        <div>
+          <button class="gray" onclick="closeModal()">Cancelar</button>
+          <button class="success" onclick="savePerms('${id}')">Guardar Permisos</button>
+        </div>
+      </div>
+    `);
   } catch (e) { toast('Error: ' + e.message, 'error'); }
 }
 
-async function delLot(id, name) {
-  if (!confirm('¿Borrar lote "' + name + '"?')) return;
+function selectAllPerms() {
+  document.querySelectorAll('#modal-content input[type=checkbox]').forEach(cb => cb.checked = true);
+}
+
+async function savePerms(id) {
   try {
-    await api('/lots/' + id, 'DELETE');
-    toast('Lote borrado', 'success');
-    loadActions();
+    const newPerms = {};
+    document.querySelectorAll('#modal-content input[type=checkbox]').forEach(cb => {
+      if (!newPerms[cb.dataset.mod]) newPerms[cb.dataset.mod] = {};
+      newPerms[cb.dataset.mod][cb.dataset.act] = cb.checked;
+    });
+    await api('/users/' + id + '/permissions', 'PUT', { permissions: newPerms });
+    toast('Permisos guardados', 'success');
+    closeModal();
+    loadUsers();
   } catch (e) { toast('Error: ' + e.message, 'error'); }
 }
 
-async function delRM(id, name) {
-  if (!confirm('¿Borrar materia prima "' + name + '"?')) return;
+async function delUser(id, username) {
+  if (!confirm('¿Eliminar al usuario "' + username + '"?\n\nEsta acción no se puede deshacer.')) return;
   try {
-    await api('/raw-materials/' + id, 'DELETE');
-    toast('MP borrada', 'success');
-    loadActions();
+    await api('/users/' + id, 'DELETE');
+    toast('Eliminado', 'success');
+    closeModal();
+    loadUsers();
   } catch (e) { toast('Error: ' + e.message, 'error'); }
 }
 
-async function delRecipe(id) {
-  if (!confirm('¿Borrar receta?')) return;
-  try {
-    await api('/recipes/' + id, 'DELETE');
-    toast('Receta borrada', 'success');
-    loadActions();
-  } catch (e) { toast('Error: ' + e.message, 'error'); }
-}
-
-function showModal(html) {
-  document.getElementById('modal-content').innerHTML = '<button class="modal-close" onclick="closeModal()">×</button>' + html;
-  document.getElementById('modal').style.display = 'flex';
-}
-
-function closeModal() {
-  document.getElementById('modal').style.display = 'none';
-}
+// Login on enter
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+});
 
 // Inicializar
-const _user = getUser();
-if (_user && getToken()) {
-  showMain();
-} else {
-  showLogin();
-}
-
-document.getElementById('login-pass').addEventListener('keypress', e => { if (e.key === 'Enter') doLogin(); });
+if (getUser() && getToken()) showMain();
+else showLogin();
 </script>
 </body>
 </html>
