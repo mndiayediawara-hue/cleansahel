@@ -1,7 +1,7 @@
-// admin-users-panel.js v13 - Fix: detecta navegacion del sidebar
+// admin-users-panel.js v14 - Banner PERMANENTE con MutationObserver
 (function() {
   'use strict';
-  console.log('[admin-panel v13] script cargado');
+  console.log('[admin-panel v14] cargado');
 
   const API = (window.__API_URL__ || 'https://cleansahel-production.up.railway.app/api');
 
@@ -40,17 +40,14 @@
   }
 
   function isOnUsersPage() {
-    const hash = window.location.hash || '';
-    const path = window.location.pathname || '';
-    return hash.includes('users') || hash.includes('user') ||
-           path.includes('users') || path.includes('user');
+    const hash = (window.location.hash || '').toLowerCase();
+    const path = (window.location.pathname || '').toLowerCase();
+    return hash.includes('user') || path.includes('user');
   }
 
-  // Modal de gestion
+  // Modal (mismo de antes)
   function openPanel() {
-    if (document.getElementById('admin-control-panel')) {
-      document.getElementById('admin-control-panel').remove();
-    }
+    if (document.getElementById('admin-control-panel')) document.getElementById('admin-control-panel').remove();
     const overlay = document.createElement('div');
     overlay.id = 'admin-control-panel';
     overlay.style.cssText = 'position:fixed;inset:0;z-index:999998;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:20px;';
@@ -83,9 +80,7 @@
     const rows = users.map(u => '<tr style="border-bottom:1px solid #334155;"><td style="padding:12px;font-weight:500;">' + u.username + '</td><td style="padding:12px;">' + (u.fullName || '') + '</td><td style="padding:12px;"><span style="background:' + (u.role === 'admin' ? '#7c3aed' : u.role === 'produccion' ? '#2563eb' : '#0891b2') + ';color:#fff;padding:3px 10px;border-radius:4px;font-size:12px;font-weight:500;">' + u.role + '</span></td><td style="padding:12px;">' + (u.active ? '<span style="color:#22c55e;">● Activo</span>' : '<span style="color:#ef4444;">● Inactivo</span>') + '</td><td style="padding:12px;text-align:right;"><button class="acp-btn" data-act="edit" data-id="' + u.id + '" style="background:#2563eb;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;margin-right:4px;">Editar</button><button class="acp-btn" data-act="perms" data-id="' + u.id + '" style="background:#7c3aed;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;margin-right:4px;">Permisos</button><button class="acp-btn" data-act="pwd" data-id="' + u.id + '" data-name="' + u.username + '" style="background:#f59e0b;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;margin-right:4px;">Contrasena</button><button class="acp-btn" data-act="toggle" data-id="' + u.id + '" data-active="' + (!u.active) + '" style="background:' + (u.active ? '#64748b' : '#22c55e') + ';color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;margin-right:4px;">' + (u.active ? 'Desactivar' : 'Activar') + '</button><button class="acp-btn" data-act="del" data-id="' + u.id + '" data-name="' + u.username + '" style="background:#dc2626;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;">Eliminar</button></td></tr>').join('');
     content.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;"><p style="margin:0;color:#94a3b8;font-size:14px;">' + users.length + ' usuario(s)</p><button id="acp-new-user" style="background:#16a34a;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:500;">+ Nuevo Usuario</button></div><table style="width:100%;border-collapse:collapse;font-size:14px;background:#1e293b;border-radius:8px;overflow:hidden;"><thead><tr style="background:#334155;text-align:left;"><th style="padding:12px;">Usuario</th><th style="padding:12px;">Nombre</th><th style="padding:12px;">Rol</th><th style="padding:12px;">Estado</th><th style="padding:12px;text-align:right;">Acciones</th></tr></thead><tbody>' + rows + '</tbody></table>';
     document.getElementById('acp-new-user').addEventListener('click', () => openUserForm());
-    content.querySelectorAll('.acp-btn').forEach(btn => {
-      btn.addEventListener('click', () => handleUserAction(btn.dataset.act, btn.dataset.id, btn.dataset.name, btn.dataset.active === 'true'));
-    });
+    content.querySelectorAll('.acp-btn').forEach(btn => { btn.addEventListener('click', () => handleUserAction(btn.dataset.act, btn.dataset.id, btn.dataset.name, btn.dataset.active === 'true')); });
   }
 
   function openUserForm(userId) {
@@ -94,20 +89,12 @@
       e.preventDefault();
       const fd = new FormData(e.target);
       const data = Object.fromEntries(fd);
-      try {
-        if (userId) { await api('/users/' + userId, 'PUT', data); showMessage('Usuario actualizado', 'success'); }
-        else { await api('/users', 'POST', data); showMessage('Usuario creado', 'success'); }
-        closeSubModal();
-        loadUsers();
-      } catch (e2) { showMessage('Error: ' + e2.message, 'error'); }
+      try { if (userId) { await api('/users/' + userId, 'PUT', data); showMessage('Actualizado', 'success'); } else { await api('/users', 'POST', data); showMessage('Creado', 'success'); } closeSubModal(); loadUsers(); } catch (e2) { showMessage('Error: ' + e2.message, 'error'); }
     });
     if (userId) {
       api('/users').then(users => {
         const u = users.find(x => x.id === userId);
-        if (u) {
-          const form = document.getElementById('acp-usr-form');
-          if (form) { form.username.value = u.username; form.fullName.value = u.fullName || ''; form.email.value = u.email || ''; form.role.value = u.role; }
-        }
+        if (u) { const form = document.getElementById('acp-usr-form'); if (form) { form.username.value = u.username; form.fullName.value = u.fullName || ''; form.email.value = u.email || ''; form.role.value = u.role; } }
       });
     }
   }
@@ -116,7 +103,7 @@
     let user, defaults;
     try { const users = await api('/users'); user = users.find(u => u.id === userId); defaults = await api('/permissions/defaults'); }
     catch (e) { showMessage('Error: ' + e.message, 'error'); return; }
-    if (!user) { showMessage('Usuario no encontrado', 'error'); return; }
+    if (!user) return;
     const perms = user.permissions || {};
     const actions = defaults.actions;
     const cells = defaults.modules.map(m => {
@@ -129,12 +116,8 @@
       e.preventDefault();
       const form = e.target;
       const newPerms = {};
-      form.querySelectorAll('input[type=checkbox]').forEach(cb => {
-        if (!newPerms[cb.dataset.mod]) newPerms[cb.dataset.mod] = {};
-        newPerms[cb.dataset.mod][cb.dataset.act] = cb.checked;
-      });
-      try { await api('/users/' + userId + '/permissions', 'PUT', { permissions: newPerms }); showMessage('Permisos actualizados', 'success'); closeSubModal(); loadUsers(); }
-      catch (e2) { showMessage('Error: ' + e2.message, 'error'); }
+      form.querySelectorAll('input[type=checkbox]').forEach(cb => { if (!newPerms[cb.dataset.mod]) newPerms[cb.dataset.mod] = {}; newPerms[cb.dataset.mod][cb.dataset.act] = cb.checked; });
+      try { await api('/users/' + userId + '/permissions', 'PUT', { permissions: newPerms }); showMessage('Permisos actualizados', 'success'); closeSubModal(); loadUsers(); } catch (e2) { showMessage('Error: ' + e2.message, 'error'); }
     });
   }
 
@@ -143,8 +126,7 @@
     showSubModal('Cambiar contrasena', body, async (e) => {
       e.preventDefault();
       const fd = new FormData(e.target);
-      try { await api('/users/' + userId + '/password', 'PUT', { newPassword: fd.get('newPassword') }); showMessage('Contrasena cambiada', 'success'); closeSubModal(); loadUsers(); }
-      catch (e2) { showMessage('Error: ' + e2.message, 'error'); }
+      try { await api('/users/' + userId + '/password', 'PUT', { newPassword: fd.get('newPassword') }); showMessage('Contrasena cambiada', 'success'); closeSubModal(); loadUsers(); } catch (e2) { showMessage('Error: ' + e2.message, 'error'); }
     });
   }
 
@@ -152,16 +134,8 @@
     if (action === 'edit') return openUserForm(userId);
     if (action === 'perms') return openPermsEditor(userId);
     if (action === 'pwd') return openPasswordForm(userId, name);
-    if (action === 'toggle') {
-      try { await api('/users/' + userId + '/status', 'PUT', { active }); showMessage(active ? 'Activado' : 'Desactivado', 'success'); loadUsers(); }
-      catch (e) { showMessage('Error: ' + e.message, 'error'); }
-      return;
-    }
-    if (action === 'del') {
-      if (!confirm('Eliminar "' + name + '"?')) return;
-      try { await api('/users/' + userId, 'DELETE'); showMessage('Eliminado', 'success'); loadUsers(); }
-      catch (e) { showMessage('Error: ' + e.message, 'error'); }
-    }
+    if (action === 'toggle') { try { await api('/users/' + userId + '/status', 'PUT', { active }); showMessage(active ? 'Activado' : 'Desactivado', 'success'); loadUsers(); } catch (e) { showMessage('Error: ' + e.message, 'error'); } return; }
+    if (action === 'del') { if (!confirm('Eliminar "' + name + '"?')) return; try { await api('/users/' + userId, 'DELETE'); showMessage('Eliminado', 'success'); loadUsers(); } catch (e) { showMessage('Error: ' + e.message, 'error'); } }
   }
 
   function loadModules() {
@@ -188,10 +162,7 @@
     ];
     const cards = modules.map(m => '<a href="#' + m.path + '" data-path="' + m.path + '" class="acp-mod-link" style="display:flex;align-items:center;gap:10px;padding:14px;background:#1e293b;border:1px solid #334155;border-radius:8px;text-decoration:none;color:#f1f5f9;cursor:pointer;"><span style="font-size:24px;">' + m.icon + '</span><div style="flex:1;"><div style="font-weight:500;font-size:14px;">' + m.label + '</div><div style="font-size:11px;color:#64748b;">' + m.path + '</div></div><span style="color:#64748b;font-size:18px;">→</span></a>').join('');
     content.innerHTML = '<div style="margin-bottom:20px;"><label style="display:block;margin-bottom:6px;font-size:13px;color:#94a3b8;">Buscar modulo</label><input id="acp-mod-search" type="search" placeholder="Buscar..." style="width:100%;padding:10px 14px;background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;font-size:14px;"></div><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px;">' + cards + '</div>';
-    document.getElementById('acp-mod-search').addEventListener('input', e => {
-      const q = (e.target.value || '').toLowerCase();
-      document.querySelectorAll('.acp-mod-link').forEach(c => { c.style.display = c.textContent.toLowerCase().includes(q) ? '' : 'none'; });
-    });
+    document.getElementById('acp-mod-search').addEventListener('input', e => { const q = (e.target.value || '').toLowerCase(); document.querySelectorAll('.acp-mod-link').forEach(c => { c.style.display = c.textContent.toLowerCase().includes(q) ? '' : 'none'; }); });
     document.querySelectorAll('.acp-mod-link').forEach(link => {
       link.addEventListener('click', e => {
         e.preventDefault();
@@ -207,107 +178,93 @@
     const content = document.getElementById('acp-content');
     content.innerHTML = '<p style="color:#94a3b8;">Cargando datos...</p>';
     let products, lots, rawMaterials, recipes;
-    try {
-      [products, lots, rawMaterials, recipes] = await Promise.all([
-        api('/products').catch(() => []),
-        api('/lots').catch(() => []),
-        api('/raw-materials').catch(() => []),
-        api('/recipes').catch(() => []),
-      ]);
-    } catch (e) { content.innerHTML = '<p style="color:#fca5a5;">Error: ' + e.message + '</p>'; return; }
+    try { [products, lots, rawMaterials, recipes] = await Promise.all([api('/products').catch(() => []), api('/lots').catch(() => []), api('/raw-materials').catch(() => []), api('/recipes').catch(() => [])]); }
+    catch (e) { content.innerHTML = '<p style="color:#fca5a5;">Error: ' + e.message + '</p>'; return; }
     content.innerHTML = '<div style="display:grid;gap:16px;">' +
-      '<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:18px;"><h3 style="margin:0 0 12px;font-size:16px;font-weight:600;">Productos (' + products.length + ')</h3><div style="display:flex;flex-wrap:wrap;gap:8px;">' +
-      (products.length === 0 ? '<p style="color:#64748b;font-size:13px;">No hay productos</p>' : products.map(p => '<div style="display:flex;align-items:center;gap:8px;background:#0f172a;padding:6px 10px;border-radius:6px;font-size:13px;"><span>' + p.code + ' - ' + p.name + '</span><button data-action="del-product" data-id="' + p.id + '" data-name="' + p.name + '" style="background:#dc2626;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">Borrar</button></div>').join('')) +
-      '</div></div>' +
-      '<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:18px;"><h3 style="margin:0 0 12px;font-size:16px;font-weight:600;">Lotes (' + lots.length + ')</h3><div style="display:flex;flex-wrap:wrap;gap:8px;max-height:300px;overflow:auto;">' +
-      (lots.length === 0 ? '<p style="color:#64748b;font-size:13px;">No hay lotes</p>' : lots.map(l => '<div style="display:flex;align-items:center;gap:8px;background:#0f172a;padding:6px 10px;border-radius:6px;font-size:13px;"><span>' + l.lotNumber + '</span><button data-action="del-lot" data-id="' + l.id + '" data-name="' + l.lotNumber + '" style="background:#dc2626;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">Borrar</button></div>').join('')) +
-      '</div></div>' +
-      '<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:18px;"><h3 style="margin:0 0 12px;font-size:16px;font-weight:600;">Materias Primas (' + rawMaterials.length + ')</h3><div style="display:flex;flex-wrap:wrap;gap:8px;">' +
-      (rawMaterials.length === 0 ? '<p style="color:#64748b;font-size:13px;">No hay materias primas</p>' : rawMaterials.map(r => '<div style="display:flex;align-items:center;gap:8px;background:#0f172a;padding:6px 10px;border-radius:6px;font-size:13px;"><span>' + r.code + ' - ' + r.name + ' (' + r.stock + ' ' + r.unit + ')</span><button data-action="del-rm" data-id="' + r.id + '" data-name="' + r.name + '" style="background:#dc2626;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">Borrar</button></div>').join('')) +
-      '</div></div>' +
-      '<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:18px;"><h3 style="margin:0 0 12px;font-size:16px;font-weight:600;">Recetas (' + recipes.length + ')</h3><div style="display:flex;flex-wrap:wrap;gap:8px;">' +
-      (recipes.length === 0 ? '<p style="color:#64748b;font-size:13px;">No hay recetas</p>' : recipes.map(r => '<div style="display:flex;align-items:center;gap:8px;background:#0f172a;padding:6px 10px;border-radius:6px;font-size:13px;"><span>Receta ' + (r.id || '').slice(-6) + '</span><button data-action="del-recipe" data-id="' + r.id + '" data-name="Receta ' + (r.id || '').slice(-6) + '" style="background:#dc2626;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">Borrar</button></div>').join('')) +
-      '</div></div></div>';
-    content.querySelectorAll('button[data-action]').forEach(btn => {
-      btn.addEventListener('click', () => handleQuickAction(btn.dataset.action, btn.dataset.id, btn.dataset.name));
-    });
+      '<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:18px;"><h3 style="margin:0 0 12px;font-size:16px;font-weight:600;">Productos (' + products.length + ')</h3><div style="display:flex;flex-wrap:wrap;gap:8px;">' + (products.length === 0 ? '<p style="color:#64748b;font-size:13px;">No hay productos</p>' : products.map(p => '<div style="display:flex;align-items:center;gap:8px;background:#0f172a;padding:6px 10px;border-radius:6px;font-size:13px;"><span>' + p.code + ' - ' + p.name + '</span><button data-action="del-product" data-id="' + p.id + '" data-name="' + p.name + '" style="background:#dc2626;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">Borrar</button></div>').join('')) + '</div></div>' +
+      '<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:18px;"><h3 style="margin:0 0 12px;font-size:16px;font-weight:600;">Lotes (' + lots.length + ')</h3><div style="display:flex;flex-wrap:wrap;gap:8px;max-height:300px;overflow:auto;">' + (lots.length === 0 ? '<p style="color:#64748b;font-size:13px;">No hay lotes</p>' : lots.map(l => '<div style="display:flex;align-items:center;gap:8px;background:#0f172a;padding:6px 10px;border-radius:6px;font-size:13px;"><span>' + l.lotNumber + '</span><button data-action="del-lot" data-id="' + l.id + '" data-name="' + l.lotNumber + '" style="background:#dc2626;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">Borrar</button></div>').join('')) + '</div></div>' +
+      '<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:18px;"><h3 style="margin:0 0 12px;font-size:16px;font-weight:600;">Materias Primas (' + rawMaterials.length + ')</h3><div style="display:flex;flex-wrap:wrap;gap:8px;">' + (rawMaterials.length === 0 ? '<p style="color:#64748b;font-size:13px;">No hay materias primas</p>' : rawMaterials.map(r => '<div style="display:flex;align-items:center;gap:8px;background:#0f172a;padding:6px 10px;border-radius:6px;font-size:13px;"><span>' + r.code + ' - ' + r.name + '</span><button data-action="del-rm" data-id="' + r.id + '" data-name="' + r.name + '" style="background:#dc2626;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">Borrar</button></div>').join('')) + '</div></div>' +
+      '<div style="background:#1e293b;border:1px solid #334155;border-radius:8px;padding:18px;"><h3 style="margin:0 0 12px;font-size:16px;font-weight:600;">Recetas (' + recipes.length + ')</h3><div style="display:flex;flex-wrap:wrap;gap:8px;">' + (recipes.length === 0 ? '<p style="color:#64748b;font-size:13px;">No hay recetas</p>' : recipes.map(r => '<div style="display:flex;align-items:center;gap:8px;background:#0f172a;padding:6px 10px;border-radius:6px;font-size:13px;"><span>Receta ' + (r.id || '').slice(-6) + '</span><button data-action="del-recipe" data-id="' + r.id + '" data-name="Receta ' + (r.id || '').slice(-6) + '" style="background:#dc2626;color:#fff;border:none;padding:3px 8px;border-radius:4px;cursor:pointer;font-size:11px;">Borrar</button></div>').join('')) + '</div></div></div>';
+    content.querySelectorAll('button[data-action]').forEach(btn => { btn.addEventListener('click', () => handleQuickAction(btn.dataset.action, btn.dataset.id, btn.dataset.name)); });
   }
 
   async function handleQuickAction(action, id, name) {
-    if (action === 'del-lot') { if (!confirm('Borrar lote "' + name + '"?')) return; try { await api('/lots/' + id, 'DELETE'); showMessage('Lote borrado', 'success'); loadActions(); } catch (e) { showMessage('Error: ' + e.message, 'error'); } return; }
-    if (action === 'del-product') { if (!confirm('Borrar producto "' + name + '"?')) return; try { await api('/products/' + id, 'DELETE'); showMessage('Producto borrado', 'success'); loadActions(); } catch (e) { showMessage('Error: ' + e.message, 'error'); } return; }
-    if (action === 'del-rm') { if (!confirm('Borrar materia prima "' + name + '"?')) return; try { await api('/raw-materials/' + id, 'DELETE'); showMessage('MP borrada', 'success'); loadActions(); } catch (e) { showMessage('Error: ' + e.message, 'error'); } return; }
-    if (action === 'del-recipe') { if (!confirm('Borrar receta "' + name + '"?')) return; try { await api('/recipes/' + id, 'DELETE'); showMessage('Receta borrada', 'success'); loadActions(); } catch (e) { showMessage('Error: ' + e.message, 'error'); } }
+    if (action === 'del-lot') { if (!confirm('Borrar "' + name + '"?')) return; try { await api('/lots/' + id, 'DELETE'); showMessage('Borrado', 'success'); loadActions(); } catch (e) { showMessage('Error: ' + e.message, 'error'); } return; }
+    if (action === 'del-product') { if (!confirm('Borrar "' + name + '"?')) return; try { await api('/products/' + id, 'DELETE'); showMessage('Borrado', 'success'); loadActions(); } catch (e) { showMessage('Error: ' + e.message, 'error'); } return; }
+    if (action === 'del-rm') { if (!confirm('Borrar "' + name + '"?')) return; try { await api('/raw-materials/' + id, 'DELETE'); showMessage('Borrado', 'success'); loadActions(); } catch (e) { showMessage('Error: ' + e.message, 'error'); } return; }
+    if (action === 'del-recipe') { if (!confirm('Borrar "' + name + '"?')) return; try { await api('/recipes/' + id, 'DELETE'); showMessage('Borrado', 'success'); loadActions(); } catch (e) { showMessage('Error: ' + e.message, 'error'); } }
   }
 
   function showSubModal(title, body, onSubmit) {
-    const existing = document.getElementById('acp-submodal');
-    if (existing) existing.remove();
-    const sub = document.createElement('div');
-    sub.id = 'acp-submodal';
+    const existing = document.getElementById('acp-submodal'); if (existing) existing.remove();
+    const sub = document.createElement('div'); sub.id = 'acp-submodal';
     sub.style.cssText = 'position:absolute;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:20px;z-index:10;border-radius:14px;';
     sub.innerHTML = '<div style="background:#0f172a;color:#f1f5f9;border-radius:12px;max-width:600px;width:100%;max-height:90%;overflow:auto;padding:24px;"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;"><h3 style="margin:0;font-size:18px;font-weight:600;">' + title + '</h3><button id="acp-submodal-close" style="background:none;border:none;color:#94a3b8;font-size:24px;cursor:pointer;">x</button></div><div>' + body + '</div></div>';
     const panel = document.getElementById('admin-control-panel');
-    if (panel) { const modal = panel.querySelector('div'); modal.style.position = 'relative'; modal.appendChild(sub); }
-    else { document.body.appendChild(sub); }
+    if (panel) { const modal = panel.querySelector('div'); modal.style.position = 'relative'; modal.appendChild(sub); } else { document.body.appendChild(sub); }
     document.getElementById('acp-submodal-close').addEventListener('click', closeSubModal);
-    const form = sub.querySelector('form');
-    if (form && onSubmit) form.addEventListener('submit', onSubmit);
-    const cancelBtn = sub.querySelector('button[id$="cancel"]');
-    if (cancelBtn) cancelBtn.addEventListener('click', closeSubModal);
+    const form = sub.querySelector('form'); if (form && onSubmit) form.addEventListener('submit', onSubmit);
+    const cancelBtn = sub.querySelector('button[id$="cancel"]'); if (cancelBtn) cancelBtn.addEventListener('click', closeSubModal);
   }
   function closeSubModal() { const m = document.getElementById('acp-submodal'); if (m) m.remove(); }
 
-  // Banner - SIMPLE: inyectar cuando estamos en /users
-  function injectBanner() {
+  // ============================================================
+  // BANNER PERMANENTE con position:fixed
+  // Se inyecta UNA VEZ en documentElement (no en body) para que
+  // React no lo borre al re-renderizar
+  // ============================================================
+  let bannerElement = null;
+  function ensureBanner() {
     const user = getCurrentUser();
-    if (!user || user.role !== 'admin') return;
-    if (document.getElementById('admin-control-panel-btn')) return;
-    if (!isOnUsersPage()) {
-      // Eliminar banner si ya existe y NO estamos en users
-      const existing = document.getElementById('admin-control-panel-btn');
-      if (existing) existing.remove();
+    if (!user || user.role !== 'admin') {
+      if (bannerElement) { bannerElement.remove(); bannerElement = null; }
       return;
     }
+    if (!isOnUsersPage()) {
+      if (bannerElement) { bannerElement.remove(); bannerElement = null; }
+      return;
+    }
+    if (bannerElement && document.documentElement.contains(bannerElement)) return;
 
-    const banner = document.createElement('div');
-    banner.id = 'admin-control-panel-btn';
-    banner.style.cssText = 'background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;padding:18px 20px;border-radius:10px;margin:0 0 18px;cursor:pointer;box-shadow:0 4px 12px rgba(124,58,237,.3);display:flex;align-items:center;gap:14px;';
-    banner.innerHTML = '<span style="font-size:28px;">⚙️</span><div style="flex:1;"><div style="font-size:16px;font-weight:600;">Panel de Control Centralizado</div><div style="font-size:12px;opacity:.9;margin-top:2px;">Toca para abrir gestion de usuarios, modulos y acciones</div></div><span style="background:rgba(255,255,255,.2);padding:6px 14px;border-radius:6px;font-size:13px;font-weight:500;">Abrir →</span>';
-    banner.addEventListener('click', openPanel);
-    document.body.insertBefore(banner, document.body.firstChild);
-    console.log('[admin-panel] banner inyectado en /users');
+    bannerElement = document.createElement('div');
+    bannerElement.id = 'admin-control-panel-btn';
+    bannerElement.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;padding:14px 20px;cursor:pointer;box-shadow:0 4px 16px rgba(124,58,237,.4);display:flex;align-items:center;gap:14px;font-family:system-ui,-apple-system,sans-serif;';
+    bannerElement.innerHTML = '<span style="font-size:24px;">⚙️</span><div style="flex:1;"><div style="font-size:15px;font-weight:600;">Panel de Control Centralizado</div><div style="font-size:11px;opacity:.9;margin-top:2px;">Toca para abrir gestion de usuarios, modulos y acciones</div></div><span style="background:rgba(255,255,255,.25);padding:6px 14px;border-radius:6px;font-size:13px;font-weight:500;">Abrir →</span>';
+    bannerElement.addEventListener('click', openPanel);
+    // Inyectar en documentElement (mas alla del body donde React opera)
+    document.documentElement.insertBefore(bannerElement, document.body);
+    console.log('[admin-panel] banner PERMANENTE inyectado');
   }
+
+  // ============================================================
+  // Watcher: detecta cambios de URL y re-inyecta si es necesario
+  // ============================================================
+  let lastUrl = window.location.href;
+  function checkAndUpdate() {
+    if (window.location.href !== lastUrl) {
+      lastUrl = window.location.href;
+      ensureBanner();
+    } else {
+      // Verificar si el banner sigue existiendo (React no lo borro)
+      if (bannerElement && !document.documentElement.contains(bannerElement)) {
+        ensureBanner();
+      } else if (!bannerElement) {
+        ensureBanner();
+      }
+    }
+  }
+
+  // Verificar cada 200ms
+  setInterval(checkAndUpdate, 200);
 
   function removeOld() {
     const old = document.getElementById('admin-users-btn');
     if (old) old.remove();
   }
 
-  // Re-inyectar al cambiar de URL (React Router navega sin recargar)
-  let lastUrl = window.location.href;
-  function checkUrlChange() {
-    if (window.location.href !== lastUrl) {
-      lastUrl = window.location.href;
-      console.log('[admin-panel] URL cambio a:', lastUrl);
-      removeOld();
-      // Limpiar banner existente
-      const old = document.getElementById('admin-control-panel-btn');
-      if (old) old.remove();
-      setTimeout(injectBanner, 100);
-      setTimeout(injectBanner, 500);
-      setTimeout(injectBanner, 1500);
-    }
-  }
-
-  setInterval(checkUrlChange, 500);
-
   function start() {
     removeOld();
-    injectBanner();
-    setTimeout(injectBanner, 500);
-    setTimeout(injectBanner, 1500);
-    setTimeout(injectBanner, 3000);
+    ensureBanner();
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
