@@ -1,3 +1,4 @@
+
 services:
   - type: web
   - name: cleansahel-v2
@@ -13,6 +14,14 @@ services:
       generateValue: true
     - key: PORT
       value: 10000
+    - key: ADMIN_PASSWORD
+      sync: false
+    - key: PRODUCCION_PASSWORD
+      sync: false
+    - key: CONTABILIDAD_PASSWORD
+      sync: false
+    - key: RESET_TOKEN
+      sync: false
     - key: DB_PATH
       value: /opt/render/project/src/data/cleanerp.db
   - healthCheckPath: /api/health
