@@ -943,6 +943,12 @@ router.get('/barcode/:code', auth, (req, res) => {
 })
 
 
+
+// ---------- TEST ENDPOINT ----------
+router.get('/_test_version', (_req, res) => {
+  res.json({ version: 'TEST-v2-2026-08-12', deployed: true })
+})
+
 // ---------- EMERGENCY UNLOCK (uses RESET_TOKEN) ----------
 // Resetea failed_attempts de TODOS los usuarios para desbloquear cuentas.
 // Tambien permite cambiar la password de un usuario concreto.
