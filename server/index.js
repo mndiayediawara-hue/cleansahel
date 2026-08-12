@@ -60,10 +60,6 @@ if (fs.existsSync(distPath)) {
 const PORT = process.env.PORT || 3001
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`✓ CleanERP API running on http://0.0.0.0:${PORT}`)
-// DEBUG: Print all registered /api/lots routes
-apiRoutes.stack.filter(l => l.route && l.route.path && l.route.path.includes('lots')).forEach(l => {
-  console.log(`  [LOT-ROUTE] ${Object.keys(l.route.methods).join(',').toUpperCase()} /api${l.route.path}`)
-})
   console.log(`  Database: ${path.join(__dirname, '..', 'data', 'cleanerp.db')}`)
   console.log(`  Static dist: ${fs.existsSync(distPath) ? 'found' : 'NOT FOUND — run npm run build'}`)
 })
