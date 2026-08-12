@@ -1,4 +1,3 @@
-
 // SEED LIMPIO - Solo crea los 3 usuarios esenciales
 import bcrypt from 'bcryptjs'
 import db, { uid, setConfig } from './db.js'
@@ -11,20 +10,8 @@ function alreadySeeded() {
   return row.c > 0
 }
 
-function clear() {
-  console.log('🗑️  Borrando tablas y recreando schema...')
-  try { db.pragma('foreign_keys = OFF') } catch {}
-  const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").all()
-  for (const t of tables) {
-    try { db.prepare(`DROP TABLE IF EXISTS "${t.name}"`).run() } catch (e) { console.error('Drop', t.name, e.message) }
-  }
-  try { db.pragma('foreign_keys = ON') } catch {}
-  console.log('✓ Tablas borradas')
-}
-
 export function seed({ force = false } = {}) {
   if (alreadySeeded() && !force) return { seeded: false }
-  if (force) clear()
   
   console.log('🌱 Sembrando solo usuarios esenciales...')
   
@@ -49,11 +36,11 @@ export function seed({ force = false } = {}) {
     { id: 'u2', username: 'produccion', password: process.env.PRODUCCION_PASSWORD || 'CHANGE_ME_PRODUCCION_PASSWORD', fullName: 'Operario Producción', email: 'produccion@cleansahel.com', role: 'produccion' },
     { id: 'u3', username: 'contabilidad', password: process.env.CONTABILIDAD_PASSWORD || 'CHANGE_ME_CONTABILIDAD_PASSWORD', fullName: 'Operario Contabilidad', email: 'contabilidad@cleansahel.com', role: 'contabilidad' },
   ]
-  const insUser = db.prepare(`INSERT INTO users (id, username, password_hash, full_name, email, role, active, created_at, last_login) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`)
+  const insUser = db.prepare(`INSERT OR REPLACE INTO users (id, username, password_hash, full_name, email, role, active, created_at, last_login) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)`)
   for (const u of users) {
     insUser.run(u.id, u.username, hash(u.password), u.fullName, u.email, u.role, monthsAgo(12), null)
   }
   
-  console.log('✓ 3 usuarios creados')
+  console.log('✓ 3 usuarios creados/actualizados')
   return { seeded: true, users: 3 }
 }
