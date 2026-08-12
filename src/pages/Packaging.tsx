@@ -1,3 +1,4 @@
+
 import { useState } from 'react'
 import { useData } from '@/contexts/DataContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -81,7 +82,7 @@ export default function PackagingPage() {
         <div className="flex items-center justify-end gap-1">
           {can('packaging.write') && <button onClick={() => setEntryFor(r)} className="btn-ghost p-1.5" title="Entrada"><Truck className="w-3.5 h-3.5" /></button>}
           {can('packaging.write') && <button onClick={() => setEditing(r)} className="btn-ghost p-1.5 text-xs">Editar</button>}
-          {can('packaging.write') && <button onClick={() => setConfirm(r)} className="btn-ghost p-1.5 text-red-600 text-xs">Borrar</button>}
+          {can('admin') && <button onClick={() => setConfirm(r)} className="btn-ghost p-1.5 text-red-600 text-xs">Borrar</button>}
         </div>
       )
     },
