@@ -1,6 +1,7 @@
+
 // Core domain types for CleanERP
 
-export type Role = 'admin' | 'produccion' | 'almacen' | 'comercial' | 'contabilidad'
+export type Role = 'admin' | 'produccion' | 'contabilidad'
 
 export interface User {
   id: string
@@ -110,7 +111,7 @@ export interface ProductionLot {
   machineId?: string
   producedAt: string
   expiryDate?: string
-  status: 'completado' | 'en-proceso' | 'cancelado' | 'bloqueado' | 'retirado'
+  status: 'pendiente' | 'en_curso' | 'completado' | 'cancelado' | 'bloqueado' | 'retirado'
   notes?: string
 }
 
