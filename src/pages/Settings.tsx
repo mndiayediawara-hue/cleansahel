@@ -1,3 +1,4 @@
+
 import { useState, useRef } from 'react'
 import { useData } from '@/contexts/DataContext'
 import { useAuth } from '@/contexts/AuthContext'
@@ -8,7 +9,7 @@ import { Settings as SettingsIcon, Save, Building2, DollarSign, Shield, Database
 
 export default function Settings() {
   const { config, refresh } = useData()
-  const { can, token } = useAuth()
+  const { can } = useAuth()
   const [form, setForm] = useState<any>(config)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -26,12 +27,12 @@ export default function Settings() {
   }
 
   async function downloadBackup() {
-    const res = await fetch('/api/backup', { headers: { Authorization: `Bearer ${token}` } })
-    const blob = await res.blob()
+    const backup = await api.get<any>('/backup')
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
-    a.download = `cleanerp-backup-${new Date().toISOString().slice(0, 10)}.json`
+    a.download = `cleansahel-backup-${new Date().toISOString().slice(0, 10)}.json`
     a.click()
     URL.revokeObjectURL(url)
   }
@@ -50,9 +51,10 @@ export default function Settings() {
   async function resetDB() {
     if (!confirm('¿Borrar TODOS los datos y volver al estado inicial? Esta acción es irreversible.')) return
     try {
-      await fetch('/api/reset', { method: 'POST', headers: { Authorization: `Bearer ${token}` } })
-      localStorage.clear()
-      window.location.href = '/login'
+      await api.post('/reset')
+      localStorage.removeItem('cleanerp-token')
+      localStorage.removeItem('cleanerp-user')
+      window.location.reload()
     } catch (e: any) { alert(e.message) }
   }
 
