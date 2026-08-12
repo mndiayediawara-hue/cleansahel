@@ -1,7 +1,7 @@
-// admin-users-panel.js v12 - SIMPLIFICADO Y ROBUSTO
+// admin-users-panel.js v13 - Fix: detecta navegacion del sidebar
 (function() {
   'use strict';
-  console.log('[admin-panel] script cargado');
+  console.log('[admin-panel v13] script cargado');
 
   const API = (window.__API_URL__ || 'https://cleansahel-production.up.railway.app/api');
 
@@ -39,6 +39,13 @@
     setTimeout(() => { try { div.remove(); } catch {} }, 4000);
   }
 
+  function isOnUsersPage() {
+    const hash = window.location.hash || '';
+    const path = window.location.pathname || '';
+    return hash.includes('users') || hash.includes('user') ||
+           path.includes('users') || path.includes('user');
+  }
+
   // Modal de gestion
   function openPanel() {
     if (document.getElementById('admin-control-panel')) {
@@ -49,30 +56,14 @@
     overlay.style.cssText = 'position:fixed;inset:0;z-index:999998;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;padding:20px;';
     const modal = document.createElement('div');
     modal.style.cssText = 'background:#0f172a;color:#f1f5f9;border-radius:14px;max-width:1100px;width:100%;max-height:92vh;overflow:hidden;box-shadow:0 25px 80px rgba(0,0,0,.6);display:flex;flex-direction:column;';
-    modal.innerHTML = `
-      <div style="padding:18px 24px;border-bottom:1px solid #334155;display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,#1e293b,#0f172a);">
-        <div>
-          <h2 style="margin:0;font-size:20px;font-weight:600;">Panel de Control</h2>
-          <p style="margin:4px 0 0;font-size:12px;color:#94a3b8;">Gestion centralizada: usuarios, modulos y acciones</p>
-        </div>
-        <button id="acp-close" style="background:none;border:none;color:#94a3b8;font-size:28px;cursor:pointer;padding:0;line-height:1;">x</button>
-      </div>
-      <div style="display:flex;background:#1e293b;border-bottom:1px solid #334155;">
-        <button class="acp-tab active" data-tab="users" style="flex:1;padding:14px;background:#0f172a;color:#a78bfa;border:none;border-bottom:2px solid #7c3aed;cursor:pointer;font-size:14px;font-weight:500;">Usuarios y Permisos</button>
-        <button class="acp-tab" data-tab="modules" style="flex:1;padding:14px;background:transparent;color:#94a3b8;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:14px;font-weight:500;">Modulos y Accesos</button>
-        <button class="acp-tab" data-tab="actions" style="flex:1;padding:14px;background:transparent;color:#94a3b8;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:14px;font-weight:500;">Acciones Rapidas</button>
-      </div>
-      <div id="acp-content" style="flex:1;overflow:auto;padding:24px;"><p style="color:#94a3b8;">Cargando...</p></div>
-    `;
+    modal.innerHTML = '<div style="padding:18px 24px;border-bottom:1px solid #334155;display:flex;align-items:center;justify-content:space-between;background:linear-gradient(135deg,#1e293b,#0f172a);"><div><h2 style="margin:0;font-size:20px;font-weight:600;">Panel de Control</h2><p style="margin:4px 0 0;font-size:12px;color:#94a3b8;">Gestion centralizada: usuarios, modulos y acciones</p></div><button id="acp-close" style="background:none;border:none;color:#94a3b8;font-size:28px;cursor:pointer;padding:0;line-height:1;">x</button></div><div style="display:flex;background:#1e293b;border-bottom:1px solid #334155;"><button class="acp-tab active" data-tab="users" style="flex:1;padding:14px;background:#0f172a;color:#a78bfa;border:none;border-bottom:2px solid #7c3aed;cursor:pointer;font-size:14px;font-weight:500;">Usuarios y Permisos</button><button class="acp-tab" data-tab="modules" style="flex:1;padding:14px;background:transparent;color:#94a3b8;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:14px;font-weight:500;">Modulos y Accesos</button><button class="acp-tab" data-tab="actions" style="flex:1;padding:14px;background:transparent;color:#94a3b8;border:none;border-bottom:2px solid transparent;cursor:pointer;font-size:14px;font-weight:500;">Acciones Rapidas</button></div><div id="acp-content" style="flex:1;overflow:auto;padding:24px;"><p style="color:#94a3b8;">Cargando...</p></div>';
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
     overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
     document.getElementById('acp-close').addEventListener('click', () => overlay.remove());
     modal.querySelectorAll('.acp-tab').forEach(tab => {
       tab.addEventListener('click', () => {
-        modal.querySelectorAll('.acp-tab').forEach(t => {
-          t.style.background = 'transparent'; t.style.color = '#94a3b8'; t.style.borderBottom = '2px solid transparent';
-        });
+        modal.querySelectorAll('.acp-tab').forEach(t => { t.style.background = 'transparent'; t.style.color = '#94a3b8'; t.style.borderBottom = '2px solid transparent'; });
         tab.style.background = '#0f172a'; tab.style.color = '#a78bfa'; tab.style.borderBottom = '2px solid #7c3aed';
         const t = tab.dataset.tab;
         if (t === 'users') loadUsers();
@@ -90,7 +81,7 @@
     try { users = await api('/users'); }
     catch (e) { content.innerHTML = '<p style="color:#fca5a5;">Error: ' + e.message + '</p>'; return; }
     const rows = users.map(u => '<tr style="border-bottom:1px solid #334155;"><td style="padding:12px;font-weight:500;">' + u.username + '</td><td style="padding:12px;">' + (u.fullName || '') + '</td><td style="padding:12px;"><span style="background:' + (u.role === 'admin' ? '#7c3aed' : u.role === 'produccion' ? '#2563eb' : '#0891b2') + ';color:#fff;padding:3px 10px;border-radius:4px;font-size:12px;font-weight:500;">' + u.role + '</span></td><td style="padding:12px;">' + (u.active ? '<span style="color:#22c55e;">● Activo</span>' : '<span style="color:#ef4444;">● Inactivo</span>') + '</td><td style="padding:12px;text-align:right;"><button class="acp-btn" data-act="edit" data-id="' + u.id + '" style="background:#2563eb;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;margin-right:4px;">Editar</button><button class="acp-btn" data-act="perms" data-id="' + u.id + '" style="background:#7c3aed;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;margin-right:4px;">Permisos</button><button class="acp-btn" data-act="pwd" data-id="' + u.id + '" data-name="' + u.username + '" style="background:#f59e0b;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;margin-right:4px;">Contrasena</button><button class="acp-btn" data-act="toggle" data-id="' + u.id + '" data-active="' + (!u.active) + '" style="background:' + (u.active ? '#64748b' : '#22c55e') + ';color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;margin-right:4px;">' + (u.active ? 'Desactivar' : 'Activar') + '</button><button class="acp-btn" data-act="del" data-id="' + u.id + '" data-name="' + u.username + '" style="background:#dc2626;color:#fff;border:none;padding:6px 12px;border-radius:4px;cursor:pointer;font-size:12px;">Eliminar</button></td></tr>').join('');
-    content.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;"><p style="margin:0;color:#94a3b8;font-size:14px;">' + users.length + ' usuario(s) en el sistema</p><button id="acp-new-user" style="background:#16a34a;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:500;">+ Nuevo Usuario</button></div><table style="width:100%;border-collapse:collapse;font-size:14px;background:#1e293b;border-radius:8px;overflow:hidden;"><thead><tr style="background:#334155;text-align:left;"><th style="padding:12px;">Usuario</th><th style="padding:12px;">Nombre</th><th style="padding:12px;">Rol</th><th style="padding:12px;">Estado</th><th style="padding:12px;text-align:right;">Acciones</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    content.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;"><p style="margin:0;color:#94a3b8;font-size:14px;">' + users.length + ' usuario(s)</p><button id="acp-new-user" style="background:#16a34a;color:#fff;border:none;padding:8px 16px;border-radius:6px;cursor:pointer;font-size:14px;font-weight:500;">+ Nuevo Usuario</button></div><table style="width:100%;border-collapse:collapse;font-size:14px;background:#1e293b;border-radius:8px;overflow:hidden;"><thead><tr style="background:#334155;text-align:left;"><th style="padding:12px;">Usuario</th><th style="padding:12px;">Nombre</th><th style="padding:12px;">Rol</th><th style="padding:12px;">Estado</th><th style="padding:12px;text-align:right;">Acciones</th></tr></thead><tbody>' + rows + '</tbody></table>';
     document.getElementById('acp-new-user').addEventListener('click', () => openUserForm());
     content.querySelectorAll('.acp-btn').forEach(btn => {
       btn.addEventListener('click', () => handleUserAction(btn.dataset.act, btn.dataset.id, btn.dataset.name, btn.dataset.active === 'true'));
@@ -162,13 +153,13 @@
     if (action === 'perms') return openPermsEditor(userId);
     if (action === 'pwd') return openPasswordForm(userId, name);
     if (action === 'toggle') {
-      try { await api('/users/' + userId + '/status', 'PUT', { active }); showMessage(active ? 'Usuario activado' : 'Usuario desactivado', 'success'); loadUsers(); }
+      try { await api('/users/' + userId + '/status', 'PUT', { active }); showMessage(active ? 'Activado' : 'Desactivado', 'success'); loadUsers(); }
       catch (e) { showMessage('Error: ' + e.message, 'error'); }
       return;
     }
     if (action === 'del') {
-      if (!confirm('Eliminar al usuario "' + name + '"?')) return;
-      try { await api('/users/' + userId, 'DELETE'); showMessage('Usuario eliminado', 'success'); loadUsers(); }
+      if (!confirm('Eliminar "' + name + '"?')) return;
+      try { await api('/users/' + userId, 'DELETE'); showMessage('Eliminado', 'success'); loadUsers(); }
       catch (e) { showMessage('Error: ' + e.message, 'error'); }
     }
   }
@@ -176,7 +167,7 @@
   function loadModules() {
     const content = document.getElementById('acp-content');
     const modules = [
-      { label: 'Inicio / Dashboard', icon: '🏠', path: '/' },
+      { label: 'Inicio', icon: '🏠', path: '/' },
       { label: 'Materias Primas', icon: '🧪', path: '/raw-materials' },
       { label: 'Recetas', icon: '📋', path: '/recipes' },
       { label: 'Produccion', icon: '🏭', path: '/production' },
@@ -184,7 +175,7 @@
       { label: 'Lotes de Materia Prima', icon: '🧬', path: '/raw-material-lots' },
       { label: 'Embalaje', icon: '📦', path: '/packaging' },
       { label: 'Clientes', icon: '👥', path: '/customers' },
-      { label: 'Ventas / Pedidos', icon: '💰', path: '/orders' },
+      { label: 'Ventas', icon: '💰', path: '/orders' },
       { label: 'Compras', icon: '🛒', path: '/purchases' },
       { label: 'Gastos', icon: '💸', path: '/expenses' },
       { label: 'Proveedores', icon: '🚚', path: '/suppliers' },
@@ -243,29 +234,10 @@
   }
 
   async function handleQuickAction(action, id, name) {
-    if (action === 'del-lot') {
-      if (!confirm('Borrar lote "' + name + '"?')) return;
-      try { await api('/lots/' + id, 'DELETE'); showMessage('Lote borrado', 'success'); loadActions(); }
-      catch (e) { showMessage('Error: ' + e.message, 'error'); }
-      return;
-    }
-    if (action === 'del-product') {
-      if (!confirm('Borrar producto "' + name + '"?')) return;
-      try { await api('/products/' + id, 'DELETE'); showMessage('Producto borrado', 'success'); loadActions(); }
-      catch (e) { showMessage('Error: ' + e.message, 'error'); }
-      return;
-    }
-    if (action === 'del-rm') {
-      if (!confirm('Borrar materia prima "' + name + '"?')) return;
-      try { await api('/raw-materials/' + id, 'DELETE'); showMessage('MP borrada', 'success'); loadActions(); }
-      catch (e) { showMessage('Error: ' + e.message, 'error'); }
-      return;
-    }
-    if (action === 'del-recipe') {
-      if (!confirm('Borrar receta "' + name + '"?')) return;
-      try { await api('/recipes/' + id, 'DELETE'); showMessage('Receta borrada', 'success'); loadActions(); }
-      catch (e) { showMessage('Error: ' + e.message, 'error'); }
-    }
+    if (action === 'del-lot') { if (!confirm('Borrar lote "' + name + '"?')) return; try { await api('/lots/' + id, 'DELETE'); showMessage('Lote borrado', 'success'); loadActions(); } catch (e) { showMessage('Error: ' + e.message, 'error'); } return; }
+    if (action === 'del-product') { if (!confirm('Borrar producto "' + name + '"?')) return; try { await api('/products/' + id, 'DELETE'); showMessage('Producto borrado', 'success'); loadActions(); } catch (e) { showMessage('Error: ' + e.message, 'error'); } return; }
+    if (action === 'del-rm') { if (!confirm('Borrar materia prima "' + name + '"?')) return; try { await api('/raw-materials/' + id, 'DELETE'); showMessage('MP borrada', 'success'); loadActions(); } catch (e) { showMessage('Error: ' + e.message, 'error'); } return; }
+    if (action === 'del-recipe') { if (!confirm('Borrar receta "' + name + '"?')) return; try { await api('/recipes/' + id, 'DELETE'); showMessage('Receta borrada', 'success'); loadActions(); } catch (e) { showMessage('Error: ' + e.message, 'error'); } }
   }
 
   function showSubModal(title, body, onSubmit) {
@@ -286,15 +258,15 @@
   }
   function closeSubModal() { const m = document.getElementById('acp-submodal'); if (m) m.remove(); }
 
-  // Banner de inyeccion - ULTRA SIMPLE
+  // Banner - SIMPLE: inyectar cuando estamos en /users
   function injectBanner() {
     const user = getCurrentUser();
     if (!user || user.role !== 'admin') return;
     if (document.getElementById('admin-control-panel-btn')) return;
-
-    // Detectar si estamos en la pagina de usuarios
-    const allText = document.body.innerText || '';
-    if (!allText.includes('Usuarios y Permisos') && !allText.includes('Permisos por rol')) {
+    if (!isOnUsersPage()) {
+      // Eliminar banner si ya existe y NO estamos en users
+      const existing = document.getElementById('admin-control-panel-btn');
+      if (existing) existing.remove();
       return;
     }
 
@@ -303,10 +275,8 @@
     banner.style.cssText = 'background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;padding:18px 20px;border-radius:10px;margin:0 0 18px;cursor:pointer;box-shadow:0 4px 12px rgba(124,58,237,.3);display:flex;align-items:center;gap:14px;';
     banner.innerHTML = '<span style="font-size:28px;">⚙️</span><div style="flex:1;"><div style="font-size:16px;font-weight:600;">Panel de Control Centralizado</div><div style="font-size:12px;opacity:.9;margin-top:2px;">Toca para abrir gestion de usuarios, modulos y acciones</div></div><span style="background:rgba(255,255,255,.2);padding:6px 14px;border-radius:6px;font-size:13px;font-weight:500;">Abrir →</span>';
     banner.addEventListener('click', openPanel);
-
-    // Insertar como primer hijo del body (GARANTIZADO visible)
     document.body.insertBefore(banner, document.body.firstChild);
-    console.log('[admin-panel] banner inyectado');
+    console.log('[admin-panel] banner inyectado en /users');
   }
 
   function removeOld() {
@@ -314,23 +284,30 @@
     if (old) old.remove();
   }
 
-  let lastInject = 0;
-  const observer = new MutationObserver(() => {
-    const now = Date.now();
-    if (now - lastInject < 1500) return;
-    lastInject = now;
-    removeOld();
-    injectBanner();
-  });
-  if (document.body) observer.observe(document.body, { childList: true, subtree: true });
+  // Re-inyectar al cambiar de URL (React Router navega sin recargar)
+  let lastUrl = window.location.href;
+  function checkUrlChange() {
+    if (window.location.href !== lastUrl) {
+      lastUrl = window.location.href;
+      console.log('[admin-panel] URL cambio a:', lastUrl);
+      removeOld();
+      // Limpiar banner existente
+      const old = document.getElementById('admin-control-panel-btn');
+      if (old) old.remove();
+      setTimeout(injectBanner, 100);
+      setTimeout(injectBanner, 500);
+      setTimeout(injectBanner, 1500);
+    }
+  }
+
+  setInterval(checkUrlChange, 500);
 
   function start() {
     removeOld();
     injectBanner();
-    setTimeout(removeOld, 100);
-    setTimeout(() => { removeOld(); injectBanner(); }, 500);
-    setTimeout(() => { removeOld(); injectBanner(); }, 1500);
-    setTimeout(() => { removeOld(); injectBanner(); }, 3000);
+    setTimeout(injectBanner, 500);
+    setTimeout(injectBanner, 1500);
+    setTimeout(injectBanner, 3000);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
