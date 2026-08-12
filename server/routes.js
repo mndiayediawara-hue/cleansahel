@@ -1,3 +1,4 @@
+
 import express from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
@@ -183,7 +184,7 @@ const mapRaw = (r) => ({
 router.get('/raw-materials', auth, (_req, res) => {
   res.json(db.prepare('SELECT * FROM raw_materials ORDER BY name').all().map(mapRaw))
 })
-router.post('/raw-materials', auth, requireRole('admin', 'almacen', 'contabilidad'), (req, res) => {
+router.post('/raw-materials', auth, requireRole('admin', 'produccion', 'contabilidad'), (req, res) => {
   const b = req.body
   const id = uid('rm-')
   db.prepare(`INSERT INTO raw_materials (id, code, name, category, unit, stock, min_stock, max_stock, price, supplier_id, location, expiry_date, lot, last_updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
@@ -191,7 +192,7 @@ router.post('/raw-materials', auth, requireRole('admin', 'almacen', 'contabilida
   addHistory(req, { action: 'crear', module: 'Materias Primas', entityId: id, description: `Creada materia prima ${b.name}` })
   res.json({ id })
 })
-router.put('/raw-materials/:id', auth, requireRole('admin', 'almacen', 'contabilidad'), (req, res) => {
+router.put('/raw-materials/:id', auth, requireRole('admin', 'produccion', 'contabilidad'), (req, res) => {
   const b = req.body
   const before = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(req.params.id)
   if (!before) return res.status(404).json({ error: 'No encontrado' })
@@ -208,7 +209,7 @@ router.delete('/raw-materials/:id', auth, requireRole('admin'), (req, res) => {
 })
 
 // Stock entry (compra / entrada almacén)
-router.post('/raw-materials/:id/entry', auth, requireRole('admin', 'almacen', 'contabilidad'), (req, res) => {
+router.post('/raw-materials/:id/entry', auth, requireRole('admin', 'contabilidad'), (req, res) => {
   const { quantity, lot, expiryDate, price, invoice } = req.body
   const m = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(req.params.id)
   if (!m) return res.status(404).json({ error: 'No encontrado' })
@@ -230,7 +231,7 @@ const mapPkg = (p) => ({
 router.get('/packaging', auth, (_req, res) => {
   res.json(db.prepare('SELECT * FROM packaging ORDER BY name').all().map(mapPkg))
 })
-router.post('/packaging', auth, requireRole('admin', 'almacen', 'contabilidad'), (req, res) => {
+router.post('/packaging', auth, requireRole('admin', 'produccion', 'contabilidad'), (req, res) => {
   const b = req.body
   const id = uid('pk-')
   db.prepare('INSERT INTO packaging (id, code, name, type, size, stock, min_stock, max_stock, price, supplier_id, location, last_updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
@@ -238,7 +239,7 @@ router.post('/packaging', auth, requireRole('admin', 'almacen', 'contabilidad'),
   addHistory(req, { action: 'crear', module: 'Embalaje', entityId: id, description: `Creado material ${b.name}` })
   res.json({ id })
 })
-router.put('/packaging/:id', auth, requireRole('admin', 'almacen', 'contabilidad'), (req, res) => {
+router.put('/packaging/:id', auth, requireRole('admin', 'produccion', 'contabilidad'), (req, res) => {
   const b = req.body
   db.prepare('UPDATE packaging SET code=?, name=?, type=?, size=?, min_stock=?, max_stock=?, price=?, supplier_id=?, location=?, last_updated=? WHERE id=?')
     .run(b.code, b.name, b.type, b.size || null, b.minStock, b.maxStock, b.price, b.supplierId || null, b.location, new Date().toISOString(), req.params.id)
@@ -249,7 +250,7 @@ router.delete('/packaging/:id', auth, requireRole('admin'), (req, res) => {
   db.prepare('DELETE FROM packaging WHERE id = ?').run(req.params.id)
   res.json({ ok: true })
 })
-router.post('/packaging/:id/entry', auth, requireRole('admin', 'almacen', 'contabilidad'), (req, res) => {
+router.post('/packaging/:id/entry', auth, requireRole('admin', 'contabilidad'), (req, res) => {
   const { quantity, price, invoice } = req.body
   const m = db.prepare('SELECT * FROM packaging WHERE id = ?').get(req.params.id)
   if (!m) return res.status(404).json({ error: 'No encontrado' })
@@ -528,9 +529,19 @@ router.delete('/expenses/:id', auth, requireRole('admin', 'contabilidad'), (req,
 
 // ---------- LOTS ----------
 const mapLot = (l) => ({
-  id: l.id, lotNumber: l.lot_number, productId: l.product_id, recipeId: l.recipe_id,
-  quantity: l.quantity, rawMaterials: JSON.parse(l.raw_materials_json || '[]'),
-  producedBy: l.produced_by, producedAt: l.produced_at, status: l.status, notes: l.notes
+  id: l.id,
+  lotNumber: l.lot_number,
+  productionOrderNumber: l.production_order_number || '',
+  productId: l.product_id,
+  recipeId: l.recipe_id || '',
+  quantity: l.quantity || 0,
+  rawMaterialsUsed: JSON.parse(l.raw_materials_json || '[]'),
+  producedBy: l.produced_by,
+  machineId: l.machine_id || undefined,
+  producedAt: l.produced_at,
+  expiryDate: l.expiry_date || undefined,
+  status: l.status,
+  notes: l.notes
 })
 
 router.get('/lots', auth, (_req, res) => {
@@ -541,7 +552,7 @@ router.get('/lots/:id', auth, (req, res) => {
   if (!l) return res.status(404).json({ error: 'No encontrado' })
 
 // PATCH /api/lots/:id/status — cambiar estado de una fabricación
-router.patch('/lots/:id/status', auth, (req, res) => {
+router.patch('/lots/:id/status', auth, requireRole('admin', 'produccion'), (req, res) => {
   const { status } = req.body
   const validStatuses = ['pendiente', 'en_curso', 'completado', 'cancelado']
   if (!status || !validStatuses.includes(status)) {
@@ -553,6 +564,15 @@ router.patch('/lots/:id/status', auth, (req, res) => {
   // Si pasa de completado a otro, no permitimos (regla de negocio)
   if (lot.status === 'completado' && status !== 'completado') {
     return res.status(400).json({ error: 'No se puede cambiar el estado de un lote ya completado' })
+  }
+  const allowedTransitions: Record<string, string[]> = {
+    pendiente: ['pendiente', 'en_curso', 'cancelado'],
+    en_curso: ['en_curso', 'completado', 'cancelado'],
+    completado: ['completado'],
+    cancelado: ['cancelado'],
+  }
+  if (!(allowedTransitions[lot.status] || []).includes(status)) {
+    return res.status(400).json({ error: `Transición no permitida: ${lot.status} → ${status}` })
   }
   db.prepare('UPDATE lots SET status = ? WHERE id = ?').run(status, req.params.id)
   addHistory(req, { 
@@ -571,9 +591,11 @@ router.post('/lots', auth, requireRole('admin', 'produccion'), (req, res) => {
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId)
   if (!product) return res.status(404).json({ error: 'Producto no encontrado' })
   const lotId = uid('l-')
-  const lotCount = db.prepare("SELECT COUNT(*) c FROM lots WHERE lot_number LIKE 'LOT-%'").get().c
-  const lotNumber = `LOT-${new Date().getFullYear()}-${String(lotCount + 1).padStart(4, '0')}`
-  const orderNumber = `OP-${new Date().getFullYear()}-${String(lotCount + 1).padStart(4, '0')}`
+  const year = new Date().getFullYear()
+  const row = db.prepare("SELECT MAX(CAST(substr(lot_number, 10) AS INTEGER)) AS max_no FROM lots WHERE lot_number LIKE ?").get(`LOT-${year}-%`)
+  const nextNo = Number(row?.max_no || 0) + 1
+  const lotNumber = `LOT-${year}-${String(nextNo).padStart(4, '0')}`
+  const orderNumber = `OP-${year}-${String(nextNo).padStart(4, '0')}`
   db.prepare(`INSERT INTO lots (id, lot_number, product_id, quantity, raw_materials_json, produced_by, produced_at, status, notes, machine_id, production_order_number) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
     .run(lotId, lotNumber, productId, plannedQuantity || 0, '[]', req.user.id, new Date().toISOString(), 'pendiente', notes || null, machineId || null, orderNumber)
   addHistory(req, { action: 'crear', module: 'Producción', entityId: lotId, description: `Nueva fabricación ${lotNumber} (${orderNumber}) en estado pendiente` })
@@ -582,6 +604,14 @@ router.post('/lots', auth, requireRole('admin', 'produccion'), (req, res) => {
 
   res.json(mapLot(l))
 })
+
+function nextProductionNumbers() {
+  const year = new Date().getFullYear()
+  const row = db.prepare("SELECT MAX(CAST(substr(lot_number, 10) AS INTEGER)) AS max_no FROM lots WHERE lot_number LIKE ?").get(`LOT-${year}-%`)
+  const nextNo = Number(row?.max_no || 0) + 1
+  return { lotNumber: `LOT-${year}-${String(nextNo).padStart(4, '0')}`, productionOrderNumber: `OP-${year}-${String(nextNo).padStart(4, '0')}` }
+}
+
 // PRODUCE-WITH-LOTS — alias de /produce con respuesta extendida (mantener compatibilidad frontend)
 router.post('/produce-with-lots', auth, requireRole('admin', 'produccion'), (req, res) => {
   const { productId, quantity, notes, machineId } = req.body
@@ -591,7 +621,13 @@ router.post('/produce-with-lots', auth, requireRole('admin', 'produccion'), (req
   if (!recipe) return res.status(400).json({ error: 'El producto no tiene receta definida' })
   const items = JSON.parse(recipe.items_json)
   const recipeBatch = recipe.batch_size || 1000
-  const ratio = quantity / recipeBatch
+  const liters = Number(quantity)
+  if (!Number.isFinite(liters) || liters <= 0) return res.status(400).json({ error: 'La cantidad de fabricación debe ser mayor que 0 litros' })
+  const bottleMl = Number(product.bottle_size || 0)
+  if (bottleMl <= 0) return res.status(400).json({ error: 'El producto no tiene un tamaño de botella válido' })
+  const producedBottles = Math.floor((liters * 1000) / bottleMl)
+  if (producedBottles <= 0) return res.status(400).json({ error: 'El lote no produce ninguna botella con el formato configurado' })
+  const ratio = liters / recipeBatch
   const needed = items.map(it => {
     const totalQty = it.quantity * ratio
     if (it.materialType === 'raw') {
@@ -607,22 +643,20 @@ router.post('/produce-with-lots', auth, requireRole('admin', 'produccion'), (req
     return res.status(400).json({ error: 'Stock insuficiente para fabricar', shortages: shortages.map(s => ({ name: s.name, needed: s.totalQty, available: s.available, unit: s.unit })) })
   }
   const lotId = uid('l-')
-  const lotCount = db.prepare("SELECT COUNT(*) c FROM lots WHERE lot_number LIKE 'LOT-%'").get().c
-  const lotNumber = `LOT-${new Date().getFullYear()}-${String(lotCount + 1).padStart(4, '0')}`
-  const orderNumber = `OP-${new Date().getFullYear()}-${String(lotCount + 1).padStart(4, '0')}`
+  const { lotNumber, productionOrderNumber: orderNumber } = nextProductionNumbers()
   const tx = db.transaction(() => {
     for (const n of needed) {
       if (n.materialType === 'raw') db.prepare('UPDATE raw_materials SET stock = stock - ?, last_updated = ? WHERE id = ?').run(n.totalQty, new Date().toISOString(), n.materialId)
       else db.prepare('UPDATE packaging SET stock = stock - ?, last_updated = ? WHERE id = ?').run(n.totalQty, new Date().toISOString(), n.materialId)
     }
-    db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(Math.round(quantity), productId)
-    db.prepare('INSERT INTO lots (id, lot_number, product_id, recipe_id, quantity, raw_materials_json, produced_by, produced_at, status, notes, machine_id) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
-      .run(lotId, lotNumber, productId, recipe.id, quantity, JSON.stringify(needed.map(n => ({ materialId: n.materialId, materialType: n.materialType, quantity: n.totalQty, unit: n.unit }))), req.user.id, new Date().toISOString(), 'completado', notes || null, machineId || null)
+    db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(producedBottles, productId)
+    db.prepare('INSERT INTO lots (id, lot_number, product_id, recipe_id, quantity, raw_materials_json, produced_by, produced_at, status, notes, machine_id, production_order_number) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+      .run(lotId, lotNumber, productId, recipe.id, producedBottles, JSON.stringify(needed.map(n => ({ materialId: n.materialId, materialType: n.materialType, quantity: n.totalQty, unit: n.unit }))), req.user.id, new Date().toISOString(), 'completado', notes || null, machineId || null, orderNumber)
     db.prepare('INSERT INTO notifications (id, type, title, message, severity, read, created_at, related_id) VALUES (?,?,?,?,?,0,?,?)')
-      .run(uid('n-'), 'produccion', 'Producción completada', `Fabricado lote de ${quantity}L de ${product.name} — Lote ${lotNumber} (${orderNumber})`, 'success', new Date().toISOString(), 'lot:'+lotId)
+      .run(uid('n-'), 'produccion', 'Producción completada', `Fabricado lote de ${liters}L de ${product.name} (${producedBottles} botellas) — Lote ${lotNumber} (${orderNumber})`, 'success', new Date().toISOString(), 'lot:'+lotId)
   })
   tx()
-  addHistory(req, { action: 'produccion', module: 'Producción', entityId: lotId, description: `Fabricado lote de ${quantity}L de ${product.name} — Lote ${lotNumber}` })
+  addHistory(req, { action: 'produccion', module: 'Producción', entityId: lotId, description: `Fabricado lote de ${liters}L de ${product.name} (${producedBottles} botellas) — Lote ${lotNumber}` })
   maybeAddStockNotifications()
   res.json({ ok: true, lotId, lotNumber, productionOrderNumber: orderNumber })
 })
@@ -637,7 +671,13 @@ router.post('/produce', auth, requireRole('admin', 'produccion'), (req, res) => 
   if (!recipe) return res.status(400).json({ error: 'El producto no tiene receta definida' })
   const items = JSON.parse(recipe.items_json)
   const recipeBatch = recipe.batch_size || 1000
-  const ratio = quantity / recipeBatch  // ratio de escala
+  const liters = Number(quantity)
+  if (!Number.isFinite(liters) || liters <= 0) return res.status(400).json({ error: 'La cantidad de fabricación debe ser mayor que 0 litros' })
+  const bottleMl = Number(product.bottle_size || 0)
+  if (bottleMl <= 0) return res.status(400).json({ error: 'El producto no tiene un tamaño de botella válido' })
+  const producedBottles = Math.floor((liters * 1000) / bottleMl)
+  if (producedBottles <= 0) return res.status(400).json({ error: 'El lote no produce ninguna botella con el formato configurado' })
+  const ratio = liters / recipeBatch  // ratio de escala
   // Cada item: cantidad = item.quantity * ratio (la receta está definida para recipeBatch litros)
   const needed = items.map(it => {
     const totalQty = it.quantity * ratio
@@ -910,6 +950,3 @@ router.post('/reset', auth, requireRole('admin'), async (_req, res) => {
   seed({ force: true })
   res.json({ ok: true })
 })
-
-
-
