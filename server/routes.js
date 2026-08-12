@@ -544,11 +544,15 @@ const mapLot = (l) => ({
   notes: l.notes
 })
 
-console.log('DEBUG: registering GET /lots')
 router.get('/lots', auth, (_req, res) => {
   res.json(db.prepare('SELECT * FROM lots ORDER BY produced_at DESC').all().map(mapLot))
 })
-console.log('DEBUG: registering GET /lots/:id')
+// GET /api/lots/preview-number — previsualizar el próximo número de lote (sin crear)
+router.get('/lots/preview-number', auth, (_req, res) => {
+  const { lotNumber, productionOrderNumber } = nextProductionNumbers()
+  res.json({ lotNumber, productionOrderNumber })
+})
+
 router.get('/lots/:id', auth, (req, res) => {
   const l = db.prepare('SELECT * FROM lots WHERE id = ?').get(req.params.id)
   if (!l) return res.status(404).json({ error: 'No encontrado' })
@@ -589,15 +593,7 @@ router.patch('/lots/:id/status', auth, requireRole('admin', 'produccion'), (req,
 })
 
 
-// GET /api/lots/preview-number — previsualizar el próximo número de lote (sin crear)
-console.log('DEBUG: registering GET /lots/preview-number')
-router.get('/lots/preview-number', auth, (_req, res) => {
-  const { lotNumber, productionOrderNumber } = nextProductionNumbers()
-  res.json({ lotNumber, productionOrderNumber })
-})
-
 // POST /api/lots — crear una nueva fabricación con estado 'pendiente' (sin descontar stock todavía)
-console.log('DEBUG: registering POST /lots')
 router.post('/lots', auth, requireRole('admin', 'produccion'), (req, res) => {
   const { productId, plannedQuantity, notes, machineId } = req.body
   if (!productId) return res.status(400).json({ error: 'Falta productId' })
