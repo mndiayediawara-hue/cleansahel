@@ -1,8 +1,555 @@
+
+import express from 'express'
+import bcrypt from 'bcryptjs'
+import jwt from 'jsonwebtoken'
+import db, { uid, getConfig, setConfig } from './db.js'
+
+const router = express.Router()
+const JWT_SECRET = process.env.JWT_SECRET || 'cleanerp-dev-secret-change-in-production-9f8e7d6c5b4a3210'
+
+// ---------- MIDDLEWARE ----------
+function auth(req, res, next) {
+  const header = req.headers.authorization
+  if (!header || !header.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'No autorizado' })
+  }
+  try {
+    const token = header.slice(7)
+    req.user = jwt.verify(token, JWT_SECRET)
+    next()
+  } catch {
+    return res.status(401).json({ error: 'Token inválido o expirado' })
+  }
+}
+
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      return res.status(403).json({ error: 'No tiene permisos para esta acción' })
+    }
+    next()
+  }
+}
+
+function addHistory(req, { action, module, entityId = null, description, before = null, after = null }) {
+  db.prepare(`INSERT INTO history (id, user_id, user_name, action, module, entity_id, description, before_json, after_json, timestamp) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .run(uid('h-'), req.user?.id || null, req.user?.fullName || 'Sistema', action, module, entityId, description, before ? JSON.stringify(before) : null, after ? JSON.stringify(after) : null, new Date().toISOString())
+}
+
+function maybeAddStockNotifications() {
+  // Auto-generate stock-low notifications
+  const lowRaw = db.prepare(`SELECT id, name, stock, min_stock, unit FROM raw_materials WHERE stock < min_stock`).all()
+  const lowPkg = db.prepare(`SELECT id, name, stock, min_stock FROM packaging WHERE stock < min_stock`).all()
+  const lowProd = db.prepare(`SELECT id, name, stock, min_stock FROM products WHERE stock < min_stock AND active = 1`).all()
+  const ins = db.prepare(`INSERT INTO notifications (id, type, title, message, severity, read, created_at, related_id) VALUES (?,?,?,?,?,0,?,?)`)
+  const now = new Date().toISOString()
+  for (const r of lowRaw) {
+    // dedupe
+    const exists = db.prepare(`SELECT id FROM notifications WHERE type='stock-bajo' AND related_id=? AND read=0`).get('raw:'+r.id)
+    if (!exists) ins.run(uid('n-'), 'stock-bajo', 'Stock bajo materia prima', `${r.name} por debajo del mínimo (${r.stock} ${r.unit} / ${r.min_stock} ${r.unit})`, 'warning', now, 'raw:'+r.id)
+  }
+  for (const r of lowPkg) {
+    const exists = db.prepare(`SELECT id FROM notifications WHERE type='stock-bajo' AND related_id=? AND read=0`).get('pkg:'+r.id)
+    if (!exists) ins.run(uid('n-'), 'stock-bajo', 'Stock bajo material de embalaje', `${r.name} por debajo del mínimo (${r.stock} / ${r.min_stock})`, 'critical', now, 'pkg:'+r.id)
+  }
+  for (const r of lowProd) {
+    const exists = db.prepare(`SELECT id FROM notifications WHERE type='stock-bajo' AND related_id=? AND read=0`).get('prd:'+r.id)
+    if (!exists) ins.run(uid('n-'), 'stock-bajo', 'Stock bajo producto terminado', `${r.name} por debajo del mínimo (${r.stock} / ${r.min_stock})`, 'warning', now, 'prd:'+r.id)
+  }
+}
+
+// ---------- AUTH ----------
+router.post('/auth/login', (req, res) => {
+  const { username, password } = req.body || {}
+  if (!username || !password) return res.status(400).json({ error: 'Usuario y contraseña requeridos' })
+  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username)
+  if (!user) return res.status(401).json({ error: 'Credenciales incorrectas' })
+  if (!user.active) return res.status(403).json({ error: 'Usuario desactivado' })
+  const security = getConfig('security', { maxFailedAttempts: 5 })
+  if ((user.failed_attempts || 0) >= security.maxFailedAttempts) {
+    return res.status(403).json({ error: 'Cuenta bloqueada por múltiples intentos. Contacte al administrador.' })
+  }
+  const ok = bcrypt.compareSync(password, user.password_hash)
+  if (!ok) {
+    db.prepare('UPDATE users SET failed_attempts = COALESCE(failed_attempts,0) + 1 WHERE id = ?').run(user.id)
+    return res.status(401).json({ error: 'Credenciales incorrectas' })
+  }
+  // FIX DEFINITIVO 3 ROLES: Si el username coincide con uno de los 3 roles oficiales
+  // y su rol en BD no coincide, lo corregimos automáticamente.
+  // Esto sobrevive a cualquier estado corrupto de la BD sin necesidad de redespliegue.
+  const ROLE_BY_USERNAME = { admin: 'admin', produccion: 'produccion', contabilidad: 'contabilidad' }
+  if (ROLE_BY_USERNAME[user.username] && user.role !== ROLE_BY_USERNAME[user.username]) {
+    db.prepare('UPDATE users SET role = ? WHERE id = ?').run(ROLE_BY_USERNAME[user.username], user.id)
+    user.role = ROLE_BY_USERNAME[user.username]
+    console.log(`[AUTH-FIX] Usuario ${user.username} corregido a rol '${user.role}'`)
+  }
+
+  db.prepare('UPDATE users SET failed_attempts = 0, last_login = ? WHERE id = ?').run(new Date().toISOString(), user.id)
+  const token = jwt.sign({ id: user.id, username: user.username, role: user.role, fullName: user.full_name }, JWT_SECRET, { expiresIn: '8h' })
+  res.json({
+    token,
+    user: { id: user.id, username: user.username, fullName: user.full_name, email: user.email, role: user.role }
+  })
+  addHistory({ user: { id: user.id, fullName: user.full_name } }, { action: 'login', module: 'Auth', description: `Inicio de sesión: ${user.username}` })
+})
+
+router.get('/auth/me', auth, (req, res) => {
+  const u = db.prepare('SELECT id, username, full_name, email, role, active, created_at, last_login FROM users WHERE id = ?').get(req.user.id)
+  if (!u) return res.status(404).json({ error: 'No encontrado' })
+  res.json({ id: u.id, username: u.username, fullName: u.full_name, email: u.email, role: u.role, active: !!u.active, createdAt: u.created_at, lastLogin: u.last_login })
+})
+
+// ---------- USERS ----------
+router.get('/users', auth, (_req, res) => {
+  const rows = db.prepare('SELECT id, username, full_name, email, role, active, created_at, last_login FROM users ORDER BY full_name').all()
+  res.json(rows.map(u => ({
+    id: u.id, username: u.username, fullName: u.full_name, email: u.email, role: u.role,
+    active: !!u.active, createdAt: u.created_at, lastLogin: u.last_login
+  })))
+})
+
+router.post('/users', auth, requireRole('admin'), (req, res) => {
+  const { username, password, fullName, email, role } = req.body
+  if (!username || !password || !fullName) return res.status(400).json({ error: 'Datos incompletos' })
+  // Only allow 3 roles
+  const validRoles = ['admin', 'produccion', 'contabilidad']
+  const finalRole = validRoles.includes(role) ? role : 'produccion'
+  try {
+    const id = uid('u-')
+    db.prepare('INSERT INTO users (id, username, password_hash, full_name, email, role, active, created_at) VALUES (?,?,?,?,?,?,1,?)')
+      .run(id, username, bcrypt.hashSync(password, 10), fullName, email || '', finalRole, new Date().toISOString())
+    addHistory(req, { action: 'crear', module: 'Usuarios', entityId: id, description: `Creado usuario ${username} (${finalRole})` })
+    res.json({ id, username, fullName, email, role: finalRole })
+  } catch (e) {
+    res.status(400).json({ error: 'Usuario ya existe' })
+  }
+})
+
+router.put('/users/:id', auth, requireRole('admin'), (req, res) => {
+  const { id } = req.params
+  const { fullName, email, role, active, password } = req.body
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(id)
+  if (!u) return res.status(404).json({ error: 'No encontrado' })
+  db.prepare('UPDATE users SET full_name = ?, email = ?, role = ?, active = ? WHERE id = ?')
+    .run(fullName || u.full_name, email ?? u.email, role || u.role, active === false ? 0 : 1, id)
+  if (password) db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(password, 10), id)
+  addHistory(req, { action: 'modificar', module: 'Usuarios', entityId: id, description: `Modificado usuario ${u.username}`, before: u })
+  res.json({ ok: true })
+})
+
+router.delete('/users/:id', auth, requireRole('admin'), (req, res) => {
+  const { id } = req.params
+  if (id === req.user.id) return res.status(400).json({ error: 'No puede eliminarse a sí mismo' })
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(id)
+  if (!u) return res.status(404).json({ error: 'No encontrado' })
+  db.prepare('DELETE FROM users WHERE id = ?').run(id)
+  addHistory(req, { action: 'borrar', module: 'Usuarios', entityId: id, description: `Eliminado usuario ${u.username}`, before: u })
+  res.json({ ok: true })
+})
+
+// ---------- SUPPLIERS ----------
+router.get('/suppliers', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM suppliers ORDER BY name').all().map(s => ({
+    id: s.id, name: s.name, cif: s.cif, email: s.email, phone: s.phone, contact: s.contact, address: s.address, city: s.city, country: s.country
+  })))
+})
+router.post('/suppliers', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+  const b = req.body
+  const id = uid('s-')
+  db.prepare('INSERT INTO suppliers (id, name, cif, email, phone, contact, address, city, country) VALUES (?,?,?,?,?,?,?,?,?)')
+    .run(id, b.name, b.cif || '', b.email || '', b.phone || '', b.contact || '', b.address || '', b.city || '', b.country || 'España')
+  addHistory(req, { action: 'crear', module: 'Proveedores', entityId: id, description: `Creado proveedor ${b.name}` })
+  res.json({ id })
+})
+router.put('/suppliers/:id', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+  const b = req.body
+  db.prepare('UPDATE suppliers SET name=?, cif=?, email=?, phone=?, contact=?, address=?, city=?, country=? WHERE id=?')
+    .run(b.name, b.cif, b.email, b.phone, b.contact, b.address, b.city, b.country, req.params.id)
+  addHistory(req, { action: 'modificar', module: 'Proveedores', entityId: req.params.id, description: `Modificado proveedor ${b.name}` })
+  res.json({ ok: true })
+})
+router.delete('/suppliers/:id', auth, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM suppliers WHERE id = ?').run(req.params.id)
+  addHistory(req, { action: 'borrar', module: 'Proveedores', entityId: req.params.id, description: 'Proveedor eliminado' })
+  res.json({ ok: true })
+})
+
+// ---------- RAW MATERIALS ----------
+const mapRaw = (r) => ({
+  id: r.id, code: r.code, name: r.name, category: r.category, unit: r.unit,
+  stock: r.stock, minStock: r.min_stock, maxStock: r.max_stock, price: r.price,
+  supplierId: r.supplier_id, location: r.location, expiryDate: r.expiry_date, lot: r.lot, lastUpdated: r.last_updated
+})
+
+router.get('/raw-materials', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM raw_materials ORDER BY name').all().map(mapRaw))
+})
+router.post('/raw-materials', auth, requireRole('admin', 'produccion', 'contabilidad'), (req, res) => {
+  const b = req.body
+  const id = uid('rm-')
+  db.prepare(`INSERT INTO raw_materials (id, code, name, category, unit, stock, min_stock, max_stock, price, supplier_id, location, expiry_date, lot, last_updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(id, b.code, b.name, b.category, b.unit, b.stock || 0, b.minStock || 0, b.maxStock || 0, b.price || 0, b.supplierId || null, b.location || '', b.expiryDate || null, b.lot || null, new Date().toISOString())
+  addHistory(req, { action: 'crear', module: 'Materias Primas', entityId: id, description: `Creada materia prima ${b.name}` })
+  res.json({ id })
+})
+router.put('/raw-materials/:id', auth, requireRole('admin', 'produccion', 'contabilidad'), (req, res) => {
+  const b = req.body
+  const before = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(req.params.id)
+  if (!before) return res.status(404).json({ error: 'No encontrado' })
+  db.prepare(`UPDATE raw_materials SET code=?, name=?, category=?, unit=?, min_stock=?, max_stock=?, price=?, supplier_id=?, location=?, expiry_date=?, lot=?, last_updated=? WHERE id=?`)
+    .run(b.code, b.name, b.category, b.unit, b.minStock, b.maxStock, b.price, b.supplierId || null, b.location, b.expiryDate || null, b.lot || null, new Date().toISOString(), req.params.id)
+  addHistory(req, { action: 'modificar', module: 'Materias Primas', entityId: req.params.id, description: `Modificada materia prima ${b.name}`, before: mapRaw(before), after: b })
+  res.json({ ok: true })
+})
+router.delete('/raw-materials/:id', auth, requireRole('admin'), (req, res) => {
+  const before = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(req.params.id)
+  db.prepare('DELETE FROM raw_materials WHERE id = ?').run(req.params.id)
+  addHistory(req, { action: 'borrar', module: 'Materias Primas', entityId: req.params.id, description: `Eliminada materia prima ${before?.name || ''}`, before: before ? mapRaw(before) : null })
+  res.json({ ok: true })
+})
+
+// Stock entry (compra / entrada almacén)
+router.post('/raw-materials/:id/entry', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+  const { quantity, lot, expiryDate, price, invoice } = req.body
+  const m = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(req.params.id)
+  if (!m) return res.status(404).json({ error: 'No encontrado' })
+  const newStock = m.stock + Number(quantity)
+  db.prepare('UPDATE raw_materials SET stock = ?, last_updated = ?, lot = COALESCE(?, lot), expiry_date = COALESCE(?, expiry_date), price = COALESCE(?, price) WHERE id = ?')
+    .run(newStock, new Date().toISOString(), lot, expiryDate, price, req.params.id)
+  addHistory(req, { action: 'compra', module: 'Almacén', entityId: req.params.id, description: `Entrada de ${quantity} ${m.unit} de ${m.name}${invoice ? ' — Factura ' + invoice : ''}` })
+  maybeAddStockNotifications()
+  res.json({ ok: true, newStock })
+})
+
+// ---------- PACKAGING ----------
+const mapPkg = (p) => ({
+  id: p.id, code: p.code, name: p.name, type: p.type, size: p.size,
+  stock: p.stock, minStock: p.min_stock, maxStock: p.max_stock, price: p.price,
+  supplierId: p.supplier_id, location: p.location, lastUpdated: p.last_updated
+})
+
+router.get('/packaging', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM packaging ORDER BY name').all().map(mapPkg))
+})
+router.post('/packaging', auth, requireRole('admin', 'produccion', 'contabilidad'), (req, res) => {
+  const b = req.body
+  const id = uid('pk-')
+  db.prepare('INSERT INTO packaging (id, code, name, type, size, stock, min_stock, max_stock, price, supplier_id, location, last_updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+    .run(id, b.code, b.name, b.type, b.size || null, b.stock || 0, b.minStock || 0, b.maxStock || 0, b.price || 0, b.supplierId || null, b.location || '', new Date().toISOString())
+  addHistory(req, { action: 'crear', module: 'Embalaje', entityId: id, description: `Creado material ${b.name}` })
+  res.json({ id })
+})
+router.put('/packaging/:id', auth, requireRole('admin', 'produccion', 'contabilidad'), (req, res) => {
+  const b = req.body
+  db.prepare('UPDATE packaging SET code=?, name=?, type=?, size=?, min_stock=?, max_stock=?, price=?, supplier_id=?, location=?, last_updated=? WHERE id=?')
+    .run(b.code, b.name, b.type, b.size || null, b.minStock, b.maxStock, b.price, b.supplierId || null, b.location, new Date().toISOString(), req.params.id)
+  addHistory(req, { action: 'modificar', module: 'Embalaje', entityId: req.params.id, description: `Modificado material ${b.name}` })
+  res.json({ ok: true })
+})
+router.delete('/packaging/:id', auth, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM packaging WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
+})
+router.post('/packaging/:id/entry', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+  const { quantity, price, invoice } = req.body
+  const m = db.prepare('SELECT * FROM packaging WHERE id = ?').get(req.params.id)
+  if (!m) return res.status(404).json({ error: 'No encontrado' })
+  db.prepare('UPDATE packaging SET stock = stock + ?, last_updated = ?, price = COALESCE(?, price) WHERE id = ?')
+    .run(Number(quantity), new Date().toISOString(), price, req.params.id)
+  addHistory(req, { action: 'compra', module: 'Almacén', entityId: req.params.id, description: `Entrada de ${quantity} ud de ${m.name}${invoice ? ' — Factura ' + invoice : ''}` })
+  maybeAddStockNotifications()
+  res.json({ ok: true })
+})
+
+// ---------- PRODUCTS ----------
+const mapProd = (p) => ({
+  id: p.id, code: p.code, name: p.name, description: p.description, category: p.category,
+  bottleSize: p.bottle_size, stock: p.stock, minStock: p.min_stock, maxStock: p.max_stock,
+  price: p.price, cost: p.cost, recipeId: p.recipe_id, active: !!p.active
+})
+
+router.get('/products', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM products ORDER BY name').all().map(mapProd))
+})
+router.post('/products', auth, requireRole('admin'), (req, res) => {
+  const b = req.body
+  const id = uid('pr-')
+  db.prepare('INSERT INTO products (id, code, name, description, category, bottle_size, stock, min_stock, max_stock, price, cost, recipe_id, active) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)')
+    .run(id, b.code, b.name, b.description || '', b.category || 'General', b.bottleSize, b.stock || 0, b.minStock || 0, b.maxStock || 0, b.price || 0, b.cost || 0, b.recipeId || null)
+  addHistory(req, { action: 'crear', module: 'Productos', entityId: id, description: `Creado producto ${b.name}` })
+  res.json({ id })
+})
+router.put('/products/:id', auth, requireRole('admin'), (req, res) => {
+  const b = req.body
+  db.prepare('UPDATE products SET code=?, name=?, description=?, category=?, bottle_size=?, min_stock=?, max_stock=?, price=?, cost=?, recipe_id=?, active=? WHERE id=?')
+    .run(b.code, b.name, b.description, b.category, b.bottleSize, b.minStock, b.maxStock, b.price, b.cost, b.recipeId || null, b.active === false ? 0 : 1, req.params.id)
+  addHistory(req, { action: 'modificar', module: 'Productos', entityId: req.params.id, description: `Modificado producto ${b.name}` })
+  res.json({ ok: true })
+})
+router.delete('/products/:id', auth, requireRole('admin'), (req, res) => {
+  try {
+    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id)
+    if (!product) return res.status(404).json({ error: 'Producto no encontrado' })
+    // Comprobar si tiene recetas o lotes asociados
+    const recipes = db.prepare('SELECT COUNT(*) c FROM recipes WHERE product_id = ?').get(req.params.id).c
+    const lots = db.prepare('SELECT COUNT(*) c FROM lots WHERE product_id = ?').get(req.params.id).c
+    if (recipes > 0 || lots > 0) {
+      return res.status(400).json({ 
+        error: `No se puede eliminar: tiene ${recipes} receta(s) y ${lots} lote(s) asociado(s). Elimina primero esos registros.` 
+      })
+    }
+    db.prepare('DELETE FROM products WHERE id = ?').run(req.params.id)
+    addHistory(req, { action: 'eliminar', module: 'Productos', entityId: req.params.id, description: `Eliminado producto ${product.name}` })
+    res.json({ ok: true })
+  } catch (e) {
+    res.status(500).json({ error: 'Error al eliminar: ' + e.message })
+  }
+})
+
+// ---------- RECIPES ----------
+const mapRec = (r) => ({
+  id: r.id, productId: r.product_id, bottleSize: r.bottle_size,
+  bottlesPerBox: r.bottles_per_box, boxesPerPallet: r.boxes_per_pallet,
+  yieldPerLiter: r.yield_per_liter,
+  batchSize: r.batch_size ?? 1000,
+  items: JSON.parse(r.items_json || '[]'),
+  updatedAt: r.updated_at
+})
+
+router.get('/recipes', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM recipes ORDER BY product_id').all().map(mapRec))
+})
+router.get('/recipes/:id', auth, (req, res) => {
+  const r = db.prepare('SELECT * FROM recipes WHERE id = ?').get(req.params.id)
+  if (!r) return res.status(404).json({ error: 'No encontrado' })
+  res.json(mapRec(r))
+})
+router.post('/recipes', auth, requireRole('admin', 'produccion'), (req, res) => {
+  const b = req.body
+  const id = uid('rc-')
+  const batchSize = Number(b.batchSize) || 1000
+  db.prepare('INSERT INTO recipes (id, product_id, bottle_size, bottles_per_box, boxes_per_pallet, yield_per_liter, batch_size, items_json, updated_at) VALUES (?,?,?,?,?,?,?,?,?)')
+    .run(id, b.productId, b.bottleSize || 0, b.bottlesPerBox || 0, b.boxesPerPallet || 0, b.yieldPerLiter || 0, batchSize, JSON.stringify(b.items || []), new Date().toISOString())
+  addHistory(req, { action: 'crear', module: 'Recetas', entityId: id, description: `Creada receta (lote de ${batchSize}L) para producto ${b.productId}` })
+  res.json({ id })
+})
+router.put('/recipes/:id', auth, requireRole('admin', 'produccion'), (req, res) => {
+  const b = req.body
+  const batchSize = Number(b.batchSize) || 1000
+  db.prepare('UPDATE recipes SET bottle_size=?, bottles_per_box=?, boxes_per_pallet=?, yield_per_liter=?, batch_size=?, items_json=?, updated_at=? WHERE id=?')
+    .run(b.bottleSize || 0, b.bottlesPerBox || 0, b.boxesPerPallet || 0, b.yieldPerLiter || 0, batchSize, JSON.stringify(b.items || []), new Date().toISOString(), req.params.id)
+  addHistory(req, { action: 'modificar', module: 'Recetas', entityId: req.params.id, description: `Modificada receta (lote de ${batchSize}L)` })
+  res.json({ ok: true })
+})
+router.delete('/recipes/:id', auth, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM recipes WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
+
+// DELETE /api/lots/:id — eliminar fabricación (SOLO ADMIN)
+router.delete('/lots/:id', auth, requireRole('admin'), (req, res) => {
+  const lot = db.prepare('SELECT * FROM lots WHERE id = ?').get(req.params.id)
+  if (!lot) return res.status(404).json({ error: 'Lote no encontrado' })
+  const tx = db.transaction(() => {
+    // Devolver el stock de las materias primas consumidas
+    const items = JSON.parse(lot.raw_materials_json || '[]')
+    for (const it of items) {
+      if (it.materialType === 'raw') {
+        db.prepare('UPDATE raw_materials SET stock = stock + ?, last_updated = ? WHERE id = ?').run(it.quantity || 0, new Date().toISOString(), it.materialId)
+      } else if (it.materialType === 'packaging') {
+        db.prepare('UPDATE packaging SET stock = stock + ?, last_updated = ? WHERE id = ?').run(it.quantity || 0, new Date().toISOString(), it.materialId)
+      }
+    }
+    // Restar del stock del producto (si se sumó al fabricar)
+    if (lot.status === 'completado') {
+      db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?').run(lot.quantity || 0, lot.product_id)
+    }
+    // Borrar notificaciones relacionadas
+    db.prepare("DELETE FROM notifications WHERE related_id = ?").run('lot:' + req.params.id)
+    // Borrar el lote
+    db.prepare('DELETE FROM lots WHERE id = ?').run(req.params.id)
+  })
+  tx()
+  addHistory(req, { 
+    action: 'eliminar', 
+    module: 'Producción', 
+    entityId: req.params.id, 
+    description: `Eliminado lote ${lot.lot_number} (producto ${lot.product_id}, cantidad ${lot.quantity}L)` 
+  })
+  res.json({ ok: true, id: req.params.id, message: 'Lote eliminado y stock devuelto' })
+})
+
+})
+
+// ---------- CUSTOMERS ----------
+const mapCust = (c) => ({
+  id: c.id, code: c.code, name: c.name, company: c.company, cif: c.cif,
+  address: c.address, city: c.city, country: c.country, phone: c.phone,
+  email: c.email, contact: c.contact, notes: c.notes,
+  totalPurchases: c.total_purchases, createdAt: c.created_at
+})
+
+router.get('/customers', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM customers ORDER BY name').all().map(mapCust))
+})
+router.post('/customers', auth, requireRole('admin', 'comercial'), (req, res) => {
+  const b = req.body
+  const id = uid('c-')
+  const code = b.code || `C-${String(db.prepare('SELECT COUNT(*) c FROM customers').get().c + 1).padStart(3, '0')}`
+  db.prepare('INSERT INTO customers (id, code, name, company, cif, address, city, country, phone, email, contact, notes, total_purchases, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0,?)')
+    .run(id, code, b.name, b.company || '', b.cif || '', b.address || '', b.city || '', b.country || 'España', b.phone || '', b.email || '', b.contact || '', b.notes || '', new Date().toISOString())
+  addHistory(req, { action: 'crear', module: 'Clientes', entityId: id, description: `Creado cliente ${b.name}` })
+  res.json({ id })
+})
+router.put('/customers/:id', auth, requireRole('admin', 'comercial'), (req, res) => {
+  const b = req.body
+  db.prepare('UPDATE customers SET code=?, name=?, company=?, cif=?, address=?, city=?, country=?, phone=?, email=?, contact=?, notes=? WHERE id=?')
+    .run(b.code, b.name, b.company, b.cif, b.address, b.city, b.country, b.phone, b.email, b.contact, b.notes, req.params.id)
+  addHistory(req, { action: 'modificar', module: 'Clientes', entityId: req.params.id, description: `Modificado cliente ${b.name}` })
+  res.json({ ok: true })
+})
+router.delete('/customers/:id', auth, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM customers WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
+})
+
+// ---------- ORDERS ----------
+const mapOrder = (o) => ({
+  id: o.id, number: o.number, customerId: o.customer_id, items: JSON.parse(o.items_json || '[]'),
+  subtotal: o.subtotal, tax: o.tax, discount: o.discount, total: o.total,
+  status: o.status, createdAt: o.created_at, deliveryDate: o.delivery_date, notes: o.notes, createdBy: o.created_by
+})
+
+router.get('/orders', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM orders ORDER BY created_at DESC').all().map(mapOrder))
+})
+router.post('/orders', auth, requireRole('admin', 'comercial'), (req, res) => {
+  const b = req.body
+  const id = uid('o-')
+  const count = db.prepare("SELECT COUNT(*) c FROM orders WHERE number LIKE 'PED-%'").get().c
+  const number = b.number || `PED-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`
+  db.prepare('INSERT INTO orders (id, number, customer_id, items_json, subtotal, tax, discount, total, status, created_at, delivery_date, notes, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
+    .run(id, number, b.customerId, JSON.stringify(b.items || []), b.subtotal || 0, b.tax || 0, b.discount || 0, b.total || 0, b.status || 'pendiente', new Date().toISOString(), b.deliveryDate || null, b.notes || null, req.user.id)
+  addHistory(req, { action: 'crear', module: 'Pedidos', entityId: id, description: `Creado pedido ${number}` })
+  // add notification
+  db.prepare('INSERT INTO notifications (id, type, title, message, severity, read, created_at, related_id) VALUES (?,?,?,?,?,0,?,?)')
+    .run(uid('n-'), 'pedido', 'Nuevo pedido', `Pedido ${number} creado por ${req.user.fullName}`, 'info', new Date().toISOString(), 'order:'+id)
+  res.json({ id, number })
+})
+router.put('/orders/:id', auth, requireRole('admin', 'comercial', 'produccion'), (req, res) => {
+  const b = req.body
+  const before = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)
+  if (!before) return res.status(404).json({ error: 'No encontrado' })
+  // if changing to 'confirmado' from pendiente and was not confirmed before, deduct stock
+  const newStatus = b.status || before.status
+  let touched = false
+  const deductStock = (order) => {
+    const items = JSON.parse(order.items_json)
+    for (const it of items) {
+      db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?').run(it.quantity, it.productId)
+      touched = true
+    }
+    db.prepare('UPDATE customers SET total_purchases = total_purchases + ? WHERE id = ?').run(order.total, order.customer_id)
+  }
+  if (newStatus === 'confirmado' && before.status !== 'confirmado' && before.status !== 'entregado' && before.status !== 'cancelado') {
+    deductStock(before)
+  }
+  db.prepare('UPDATE orders SET customer_id=?, items_json=?, subtotal=?, tax=?, discount=?, total=?, status=?, delivery_date=?, notes=? WHERE id=?')
+    .run(b.customerId || before.customer_id, JSON.stringify(b.items || JSON.parse(before.items_json)), b.subtotal ?? before.subtotal, b.tax ?? before.tax, b.discount ?? before.discount, b.total ?? before.total, newStatus, b.deliveryDate ?? before.delivery_date, b.notes ?? before.notes, req.params.id)
+  addHistory(req, { action: 'modificar', module: 'Pedidos', entityId: req.params.id, description: `Pedido ${before.number} → ${newStatus}${touched ? ' (stock descontado)' : ''}`, before: mapOrder(before) })
+  if (touched) maybeAddStockNotifications()
+  res.json({ ok: true })
+})
+router.delete('/orders/:id', auth, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM orders WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
+})
+
+// ---------- PURCHASES ----------
+const mapPurch = (p) => ({
+  id: p.id, number: p.number, supplierId: p.supplier_id, invoice: p.invoice, items: JSON.parse(p.items_json || '[]'),
+  subtotal: p.subtotal, tax: p.tax, total: p.total, status: p.status, date: p.date, notes: p.notes
+})
+
+router.get('/purchases', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM purchases ORDER BY date DESC').all().map(mapPurch))
+})
+router.post('/purchases', auth, requireRole('admin', 'contabilidad', 'almacen'), (req, res) => {
+  const b = req.body
+  const id = uid('pu-')
+  const count = db.prepare('SELECT COUNT(*) c FROM purchases').get().c
+  const number = b.number || `C-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`
+  db.prepare('INSERT INTO purchases (id, number, supplier_id, invoice, items_json, subtotal, tax, total, status, date, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?)')
+    .run(id, number, b.supplierId, b.invoice || '', JSON.stringify(b.items || []), b.subtotal || 0, b.tax || 0, b.total || 0, b.status || 'recibida', b.date || new Date().toISOString(), b.notes || null)
+  // auto-update stock if status recibida
+  if ((b.status || 'recibida') === 'recibida') {
+    for (const it of b.items || []) {
+      if (it.materialType === 'raw') db.prepare('UPDATE raw_materials SET stock = stock + ?, last_updated = ? WHERE id = ?').run(it.quantity, new Date().toISOString(), it.materialId)
+      else db.prepare('UPDATE packaging SET stock = stock + ?, last_updated = ? WHERE id = ?').run(it.quantity, new Date().toISOString(), it.materialId)
+    }
+    maybeAddStockNotifications()
+  }
+  addHistory(req, { action: 'compra', module: 'Compras', entityId: id, description: `Compra ${number} — Factura ${b.invoice || 's/f'}` })
+  res.json({ id, number })
+})
+router.put('/purchases/:id', auth, requireRole('admin', 'contabilidad', 'almacen'), (req, res) => {
+  const b = req.body
+  db.prepare('UPDATE purchases SET supplier_id=?, invoice=?, items_json=?, subtotal=?, tax=?, total=?, status=?, date=?, notes=? WHERE id=?')
+    .run(b.supplierId, b.invoice, JSON.stringify(b.items || []), b.subtotal, b.tax, b.total, b.status, b.date, b.notes, req.params.id)
+  res.json({ ok: true })
+})
+router.delete('/purchases/:id', auth, requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM purchases WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
+})
+
+// ---------- EXPENSES ----------
+const mapExp = (e) => ({ id: e.id, date: e.date, category: e.category, amount: e.amount, description: e.description, attachment: e.attachment, createdBy: e.created_by })
+
+router.get('/expenses', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM expenses ORDER BY date DESC').all().map(mapExp))
+})
+router.post('/expenses', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+  const b = req.body
+  const id = uid('e-')
+  db.prepare('INSERT INTO expenses (id, date, category, amount, description, attachment, created_by) VALUES (?,?,?,?,?,?,?)')
+    .run(id, b.date || new Date().toISOString(), b.category, b.amount, b.description || '', b.attachment || null, req.user.id)
+  addHistory(req, { action: 'crear', module: 'Gastos', entityId: id, description: `Gasto de ${b.category}: ${b.amount}€` })
+  res.json({ id })
+})
+router.put('/expenses/:id', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+  const b = req.body
+  db.prepare('UPDATE expenses SET date=?, category=?, amount=?, description=?, attachment=? WHERE id=?')
+    .run(b.date, b.category, b.amount, b.description, b.attachment, req.params.id)
+  res.json({ ok: true })
+})
+router.delete('/expenses/:id', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+  db.prepare('DELETE FROM expenses WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
+})
+
+// ---------- LOTS ----------
+const mapLot = (l) => ({
+  id: l.id,
+  lotNumber: l.lot_number,
+  productionOrderNumber: l.production_order_number || '',
+  productId: l.product_id,
+  recipeId: l.recipe_id || '',
+  quantity: l.quantity || 0,
+  rawMaterialsUsed: JSON.parse(l.raw_materials_json || '[]'),
+  producedBy: l.produced_by,
+  machineId: l.machine_id || undefined,
+  producedAt: l.produced_at,
+  expiryDate: l.expiry_date || undefined,
+  status: l.status,
+  notes: l.notes
+})
+
+router.get('/lots', auth, (_req, res) => {
+  res.json(db.prepare('SELECT * FROM lots ORDER BY produced_at DESC').all().map(mapLot))
+})
 router.get('/lots/:id', auth, (req, res) => {
   const l = db.prepare('SELECT * FROM lots WHERE id = ?').get(req.params.id)
   if (!l) return res.status(404).json({ error: 'No encontrado' })
-  res.json(mapLot(l))
-})
 
 // PATCH /api/lots/:id/status — cambiar estado de una fabricación
 router.patch('/lots/:id/status', auth, requireRole('admin', 'produccion'), (req, res) => {
@@ -53,6 +600,9 @@ router.post('/lots', auth, requireRole('admin', 'produccion'), (req, res) => {
     .run(lotId, lotNumber, productId, plannedQuantity || 0, '[]', req.user.id, new Date().toISOString(), 'pendiente', notes || null, machineId || null, orderNumber)
   addHistory(req, { action: 'crear', module: 'Producción', entityId: lotId, description: `Nueva fabricación ${lotNumber} (${orderNumber}) en estado pendiente` })
   res.json({ ok: true, id: lotId, lotNumber, productionOrderNumber: orderNumber, status: 'pendiente' })
+})
+
+  res.json(mapLot(l))
 })
 
 function nextProductionNumbers() {
