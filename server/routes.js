@@ -942,6 +942,39 @@ router.get('/barcode/:code', auth, (req, res) => {
   res.status(404).json({ error: 'No encontrado' })
 })
 
+
+// ---------- EMERGENCY UNLOCK (uses RESET_TOKEN) ----------
+// Resetea failed_attempts de TODOS los usuarios para desbloquear cuentas.
+// Tambien permite cambiar la password de un usuario concreto.
+router.post('/auth/emergency-unlock', (req, res) => {
+  const token = (req.body || {}).token
+  const expected = process.env.RESET_TOKEN
+  if (!expected) return res.status(500).json({ error: 'RESET_TOKEN no configurado en el servidor' })
+  if (token !== expected) return res.status(403).json({ error: 'Token de reset incorrecto' })
+  
+  const newPassword = (req.body || {}).newPassword
+  const username = (req.body || {}).username
+  
+  try {
+    // Resetear todos los failed_attempts
+    db.prepare('UPDATE users SET failed_attempts = 0').run()
+    
+    // Si se quiere cambiar la contraseña
+    if (newPassword && username) {
+      const bcrypt = require('bcryptjs')
+      const u = db.prepare('SELECT * FROM users WHERE username = ?').get(username)
+      if (!u) return res.status(404).json({ error: 'Usuario no encontrado' })
+      const hash = bcrypt.hashSync(newPassword, 10)
+      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, u.id)
+      return res.json({ ok: true, message: 'Cuenta desbloqueada y contraseña cambiada para ' + username, newPassword })
+    }
+    
+    res.json({ ok: true, message: 'Todas las cuentas han sido desbloqueadas' })
+  } catch (e) {
+    res.status(500).json({ error: 'Error: ' + e.message })
+  }
+})
+
 export default router
 
 // ---------- RESET DB (dev only) ----------
