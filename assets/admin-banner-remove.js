@@ -233,12 +233,23 @@
     });
   }
 
-  function loop() {
-    ensureMiniButton();
-    applySidebarPermissions();
+  // Solo ejecutar UNA VEZ, y re-aplicar en cambios de URL
+  let lastUrl = window.location.href;
+  function checkChanges() {
+    const newUrl = window.location.href;
+    if (newUrl !== lastUrl) {
+      lastUrl = newUrl;
+      applySidebarPermissions();
+    }
+    // Solo crear el boton si NO existe (no recrear)
+    if (!document.getElementById('acp-mini-btn')) {
+      ensureMiniButton();
+    }
   }
-
-  setInterval(loop, 200);
+  // Verificar cada 1 segundo (NO cada 200ms - eso causa parpadeo)
+  setInterval(checkChanges, 1000);
+  // Ejecutar al inicio
+  checkChanges();
   document.addEventListener('click', (e) => {
     if (isAdmin()) return;
     const link = e.target.closest && e.target.closest('a[href]');
