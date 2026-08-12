@@ -1,3 +1,4 @@
+
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { api } from '@/lib/api'
 
@@ -51,7 +52,7 @@ const ROLE_PERMISSIONS: Record<Role, string[]> = {
     'lots.read', 'lots.write',
     'rawMaterialLots.read', 'rawMaterialLots.write',
     'machines.read', 'machines.write',
-    'customers.read', 'customers.write',
+    'customers.read',
     'suppliers.read',
   ],
 
@@ -86,16 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (token) {
-      // Si el token es de demo (empieza con "demo."), usar el user del localStorage directamente
-      if (token.startsWith('demo.')) {
-        try {
-          const u = localStorage.getItem('cleanerp-user')
-          if (u) setUser(JSON.parse(u))
-        } catch {}
-        setLoading(false)
-        return
-      }
-      // Always re-validate token with backend to get fresh user data
+      // Always re-validate the token with the shared backend. Never trust a local/demo user.
       api.get<User>('/auth/me')
         .then(u => { setUser(u); localStorage.setItem('cleanerp-user', JSON.stringify(u)) })
         .catch(() => { setToken(null); setUser(null); localStorage.removeItem('cleanerp-token'); localStorage.removeItem('cleanerp-user') })
