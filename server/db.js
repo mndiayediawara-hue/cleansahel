@@ -251,6 +251,22 @@ try {
 
 // Add status_safe_check column to lots (no usamos esto, pero por si hay restricciones)
 try {
+  // Add permissions column to users if it doesn't exist
+  try {
+    const colsUsers = db.prepare("PRAGMA table_info(users)").all()
+    if (!colsUsers.find(c => c.name === 'permissions')) {
+      db.exec("ALTER TABLE users ADD COLUMN permissions TEXT DEFAULT NULL")
+      console.log('✓ Migrated: added permissions column to users')
+    }
+  } catch (e) { console.warn('migration users permissions:', e.message) }
+  // Add active column to users if it doesn't exist (in case schema doesn't have it)
+  try {
+    const colsUsersA = db.prepare("PRAGMA table_info(users)").all()
+    if (!colsUsersA.find(c => c.name === 'active')) {
+      db.exec("ALTER TABLE users ADD COLUMN active INTEGER DEFAULT 1")
+      console.log('✓ Migrated: added active column to users')
+    }
+  } catch (e) { console.warn('migration users active:', e.message) }
   const colsLots3 = db.prepare("PRAGMA table_info(lots)").all()
   if (!colsLots3.find(c => c.name === 'status') && !colsLots3.find(c => c.name === 'status_safe_check')) {
     // No hacemos nada, status ya existe en el schema
