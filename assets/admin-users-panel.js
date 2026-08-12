@@ -1,7 +1,9 @@
-// admin-users-panel.js v14 - Banner PERMANENTE con MutationObserver
+// admin-users-panel.js v15
+// 1. Panel integrado dentro de la pagina (no tapa la navegacion)
+// 2. Aplica permisos granulares del usuario actual
 (function() {
   'use strict';
-  console.log('[admin-panel v14] cargado');
+  console.log('[admin-panel v15] cargado');
 
   const API = (window.__API_URL__ || 'https://cleansahel-production.up.railway.app/api');
 
@@ -10,6 +12,11 @@
     catch { return null; }
   }
   function getToken() { return localStorage.getItem('cleanerp-token') || ''; }
+  function isOnUsersPage() {
+    const hash = (window.location.hash || '').toLowerCase();
+    const path = (window.location.pathname || '').toLowerCase();
+    return hash.includes('user') || path.includes('user');
+  }
 
   async function api(path, method = 'GET', body = null) {
     const res = await fetch(API + path, {
@@ -24,6 +31,116 @@
     return res.json();
   }
 
+  // ============================================================
+  // PERMISOS: carga, aplica al sidebar, valida rutas
+  // ============================================================
+  const ROUTE_PERMS = {
+    '/': 'home',
+    '/raw-materials': 'raw_materials',
+    '/recipes': 'recipes',
+    '/production': 'production',
+    '/lots': 'lots',
+    '/lot-generator': 'lots',
+    '/raw-material-lots': 'raw_materials',
+    '/packaging': 'packaging',
+    '/customers': 'customers',
+    '/orders': 'sales',
+    '/sales': 'sales',
+    '/purchases': 'sales',
+    '/expenses': 'accounting',
+    '/suppliers': 'customers',
+    '/inventory': 'inventory',
+    '/accounting': 'accounting',
+    '/reports': 'reports',
+    '/recalls': 'recalls',
+    '/alerts': 'home',
+    '/search': 'home',
+    '/scan': 'home',
+    '/users': 'users',
+    '/settings': 'settings',
+    '/dashboard': 'home',
+  };
+
+  let userPermissions = null;
+  let isAdmin = false;
+
+  async function loadMyPermissions() {
+    const user = getCurrentUser();
+    if (!user) return false;
+    isAdmin = user.role === 'admin';
+    if (isAdmin) { userPermissions = null; return true; }
+    try {
+      const me = await api('/auth/me');
+      userPermissions = me.permissions || {};
+      // Guardar en localStorage para uso inmediato
+      try {
+        const u = JSON.parse(localStorage.getItem('cleanerp-user') || '{}');
+        u.permissions = userPermissions;
+        localStorage.setItem('cleanerp-user', JSON.stringify(u));
+      } catch {}
+      return true;
+    } catch (e) {
+      console.error('[admin-panel] error cargando permisos:', e);
+      userPermissions = getCurrentUser().permissions || {};
+      return false;
+    }
+  }
+
+  function hasPerm(module, action) {
+    if (isAdmin) return true;
+    if (!userPermissions) return false;
+    if (!userPermissions[module]) return false;
+    return userPermissions[module][action] === true;
+  }
+
+  function getCurrentRoute() {
+    const hash = window.location.hash.replace(/^#/, '');
+    return hash || '/';
+  }
+
+  function checkRouteAccess() {
+    const route = getCurrentRoute();
+    const module = ROUTE_PERMS[route];
+    if (!module) return true;
+    return hasPerm(module, 'view');
+  }
+
+  function applyPermissionsToSidebar() {
+    if (isAdmin) return;
+    if (!userPermissions) return;
+    // Buscar todos los links del sidebar
+    document.querySelectorAll('a[href^="#"], a[href^="/"]').forEach(link => {
+      const href = (link.getAttribute('href') || '').replace(/^#/, '');
+      if (!href) return;
+      const module = ROUTE_PERMS[href];
+      if (!module) return;
+      if (!hasPerm(module, 'view')) {
+        link.style.display = 'none';
+        link.setAttribute('data-acp-hidden', '1');
+      }
+    });
+  }
+
+  function interceptClicks() {
+    document.addEventListener('click', (e) => {
+      const link = e.target.closest && e.target.closest('a[href]');
+      if (!link) return;
+      const href = (link.getAttribute('href') || '');
+      if (!href || href.startsWith('http') || href.startsWith('#') === false) return;
+      const path = href.replace(/^#/, '');
+      if (!ROUTE_PERMS[path]) return;
+      if (!hasPerm(ROUTE_PERMS[path], 'view')) {
+        e.preventDefault();
+        e.stopPropagation();
+        showMessage('No tienes permiso para acceder a ' + path, 'error');
+        return false;
+      }
+    }, true);
+  }
+
+  // ============================================================
+  // UI: mensaje toast
+  // ============================================================
   function showMessage(text, type) {
     type = type || 'info';
     const existing = document.getElementById('admin-users-toast');
@@ -39,13 +156,9 @@
     setTimeout(() => { try { div.remove(); } catch {} }, 4000);
   }
 
-  function isOnUsersPage() {
-    const hash = (window.location.hash || '').toLowerCase();
-    const path = (window.location.pathname || '').toLowerCase();
-    return hash.includes('user') || path.includes('user');
-  }
-
-  // Modal (mismo de antes)
+  // ============================================================
+  // Modal del Panel de Control
+  // ============================================================
   function openPanel() {
     if (document.getElementById('admin-control-panel')) document.getElementById('admin-control-panel').remove();
     const overlay = document.createElement('div');
@@ -117,7 +230,18 @@
       const form = e.target;
       const newPerms = {};
       form.querySelectorAll('input[type=checkbox]').forEach(cb => { if (!newPerms[cb.dataset.mod]) newPerms[cb.dataset.mod] = {}; newPerms[cb.dataset.mod][cb.dataset.act] = cb.checked; });
-      try { await api('/users/' + userId + '/permissions', 'PUT', { permissions: newPerms }); showMessage('Permisos actualizados', 'success'); closeSubModal(); loadUsers(); } catch (e2) { showMessage('Error: ' + e2.message, 'error'); }
+      try {
+        await api('/users/' + userId + '/permissions', 'PUT', { permissions: newPerms });
+        showMessage('Permisos guardados en la BD', 'success');
+        closeSubModal();
+        loadUsers();
+        // Si el usuario editado soy yo, recargar mis permisos
+        const me = getCurrentUser();
+        if (me && me.id === userId) {
+          await loadMyPermissions();
+          applyPermissionsToSidebar();
+        }
+      } catch (e2) { showMessage('Error: ' + e2.message, 'error'); }
     });
   }
 
@@ -168,6 +292,12 @@
         e.preventDefault();
         const path = link.dataset.path;
         document.getElementById('admin-control-panel').remove();
+        // Verificar permiso
+        const module = ROUTE_PERMS[path];
+        if (module && !hasPerm(module, 'view')) {
+          showMessage('No tienes permiso para acceder a ' + path, 'error');
+          return;
+        }
         try { history.pushState(null, '', '#' + path); window.dispatchEvent(new PopStateEvent('popstate')); } catch (e) {}
         setTimeout(() => { window.location.hash = '#' + path; }, 100);
       });
@@ -209,62 +339,70 @@
   function closeSubModal() { const m = document.getElementById('acp-submodal'); if (m) m.remove(); }
 
   // ============================================================
-  // BANNER PERMANENTE con position:fixed
-  // Se inyecta UNA VEZ en documentElement (no en body) para que
-  // React no lo borre al re-renderizar
+  // BANNER - position:relative (NO fixed) - dentro del contenido
   // ============================================================
-  let bannerElement = null;
-  function ensureBanner() {
+  function injectBanner() {
     const user = getCurrentUser();
-    if (!user || user.role !== 'admin') {
-      if (bannerElement) { bannerElement.remove(); bannerElement = null; }
-      return;
-    }
-    if (!isOnUsersPage()) {
-      if (bannerElement) { bannerElement.remove(); bannerElement = null; }
-      return;
-    }
-    if (bannerElement && document.documentElement.contains(bannerElement)) return;
+    if (!user || user.role !== 'admin') return;
+    if (document.getElementById('admin-control-panel-btn')) return;
+    if (!isOnUsersPage()) return;
 
-    bannerElement = document.createElement('div');
-    bannerElement.id = 'admin-control-panel-btn';
-    bannerElement.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:99999;background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;padding:14px 20px;cursor:pointer;box-shadow:0 4px 16px rgba(124,58,237,.4);display:flex;align-items:center;gap:14px;font-family:system-ui,-apple-system,sans-serif;';
-    bannerElement.innerHTML = '<span style="font-size:24px;">⚙️</span><div style="flex:1;"><div style="font-size:15px;font-weight:600;">Panel de Control Centralizado</div><div style="font-size:11px;opacity:.9;margin-top:2px;">Toca para abrir gestion de usuarios, modulos y acciones</div></div><span style="background:rgba(255,255,255,.25);padding:6px 14px;border-radius:6px;font-size:13px;font-weight:500;">Abrir →</span>';
-    bannerElement.addEventListener('click', openPanel);
-    // Inyectar en documentElement (mas alla del body donde React opera)
-    document.documentElement.insertBefore(bannerElement, document.body);
-    console.log('[admin-panel] banner PERMANENTE inyectado');
-  }
+    // Quitar banner existente
+    const old = document.getElementById('admin-control-panel-btn');
+    if (old) old.remove();
 
-  // ============================================================
-  // Watcher: detecta cambios de URL y re-inyecta si es necesario
-  // ============================================================
-  let lastUrl = window.location.href;
-  function checkAndUpdate() {
-    if (window.location.href !== lastUrl) {
-      lastUrl = window.location.href;
-      ensureBanner();
+    const banner = document.createElement('div');
+    banner.id = 'admin-control-panel-btn';
+    banner.style.cssText = 'background:linear-gradient(135deg,#7c3aed,#2563eb);color:#fff;padding:16px 18px;border-radius:10px;margin:0 0 16px;cursor:pointer;box-shadow:0 4px 12px rgba(124,58,237,.3);display:flex;align-items:center;gap:12px;font-family:system-ui,-apple-system,sans-serif;position:relative;z-index:100;';
+    banner.innerHTML = '<span style="font-size:24px;">⚙️</span><div style="flex:1;"><div style="font-size:15px;font-weight:600;">Panel de Control Centralizado</div><div style="font-size:11px;opacity:.9;margin-top:2px;">Toca para abrir gestion de usuarios, modulos y acciones</div></div><span style="background:rgba(255,255,255,.25);padding:6px 14px;border-radius:6px;font-size:13px;font-weight:500;">Abrir →</span>';
+    banner.addEventListener('click', openPanel);
+
+    // Insertar como PRIMER hijo del contenedor principal de la pagina
+    // (NO en documentElement ni fixed, para no tapar navegacion)
+    const main = document.querySelector('main') || document.querySelector('#root > div') || document.body;
+    if (main && main.firstChild) {
+      main.insertBefore(banner, main.firstChild);
+    } else if (main) {
+      main.appendChild(banner);
     } else {
-      // Verificar si el banner sigue existiendo (React no lo borro)
-      if (bannerElement && !document.documentElement.contains(bannerElement)) {
-        ensureBanner();
-      } else if (!bannerElement) {
-        ensureBanner();
-      }
+      document.body.appendChild(banner);
     }
+    console.log('[admin-panel] banner inyectado en pagina de Usuarios');
   }
-
-  // Verificar cada 200ms
-  setInterval(checkAndUpdate, 200);
 
   function removeOld() {
     const old = document.getElementById('admin-users-btn');
     if (old) old.remove();
   }
 
+  let lastUrl = window.location.href;
+  function update() {
+    const newUrl = window.location.href;
+    if (newUrl !== lastUrl) {
+      lastUrl = newUrl;
+      // Re-aplicar permisos en cada cambio de URL
+      applyPermissionsToSidebar();
+    }
+    // Verificar banner
+    const existing = document.getElementById('admin-control-panel-btn');
+    if (existing && !document.body.contains(existing)) {
+      // React lo borro, re-inyectar
+    } else if (existing && isOnUsersPage()) {
+      // Sigue ahi, OK
+    } else {
+      injectBanner();
+    }
+  }
+
+  setInterval(update, 500);
+
   function start() {
     removeOld();
-    ensureBanner();
+    loadMyPermissions().then(() => {
+      applyPermissionsToSidebar();
+      interceptClicks();
+      injectBanner();
+    });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
