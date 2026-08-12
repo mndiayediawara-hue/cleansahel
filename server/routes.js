@@ -565,7 +565,7 @@ router.patch('/lots/:id/status', auth, requireRole('admin', 'produccion'), (req,
   if (lot.status === 'completado' && status !== 'completado') {
     return res.status(400).json({ error: 'No se puede cambiar el estado de un lote ya completado' })
   }
-  const allowedTransitions: Record<string, string[]> = {
+  const allowedTransitions = {
     pendiente: ['pendiente', 'en_curso', 'cancelado'],
     en_curso: ['en_curso', 'completado', 'cancelado'],
     completado: ['completado'],
