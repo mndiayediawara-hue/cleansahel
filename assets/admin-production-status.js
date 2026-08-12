@@ -11,8 +11,8 @@
   'use strict';
 
   function getApi() {
-    if (window.__API_URL__) return 'https://cleansahel.onrender.com/api';
-    return 'https://cleansahel.onrender.com/api';
+    if (window.__API_URL__) return 'https://cleansahel-production.up.railway.app/api';
+    return 'https://cleansahel-production.up.railway.app/api';
   }
 
   function getUser() {
