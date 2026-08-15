@@ -1103,6 +1103,40 @@ router.get('/permissions/defaults', auth, requirePermission('users', 'view'), (_
   })
 })
 
+// ---------- RECALLS (retiradas) ----------
+router.get('/recalls', auth, (_req, res) => {
+  const rows = db.prepare('SELECT * FROM recalls ORDER BY date DESC, id DESC').all();
+  res.json(rows);
+});
+
+router.post('/recalls', auth, (req, res) => {
+  const b = req.body || {};
+  const { productId, lotNumber, reason, quantity, status, reportedBy, date, notes } = b;
+  if (!productId) return res.status(400).json({ error: 'Falta productId' });
+  if (!reason) return res.status(400).json({ error: 'Falta reason' });
+  const id = uid('rc-');
+  db.prepare(`INSERT INTO recalls (id, product_id, lot_number, reason, quantity, status, reported_by, date, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(id, productId, lotNumber || null, reason, quantity || 0, status || 'investigating', reportedBy || null, date || new Date().toISOString().split('T')[0], notes || null);
+  addHistory({ user: req.user }, { action: 'crear', module: 'Retiradas', entityId: id, description: `Retirada creada: ${reason}` });
+  res.json({ id, ok: true });
+});
+
+router.put('/recalls/:id', auth, (req, res) => {
+  const u = db.prepare('SELECT * FROM recalls WHERE id = ?').get(req.params.id);
+  if (!u) return res.status(404).json({ error: 'No encontrado' });
+  const b = req.body || {};
+  db.prepare(`UPDATE recalls SET status = COALESCE(?, status), notes = COALESCE(?, notes), reason = COALESCE(?, reason) WHERE id = ?`)
+    .run(b.status || null, b.notes || null, b.reason || null, req.params.id);
+  res.json({ ok: true });
+});
+
+router.delete('/recalls/:id', auth, (req, res) => {
+  const u = db.prepare('SELECT * FROM recalls WHERE id = ?').get(req.params.id);
+  if (!u) return res.status(404).json({ error: 'No encontrado' });
+  db.prepare('DELETE FROM recalls WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
+});
+
 // ---------- EMERGENCY UNLOCK (uses RESET_TOKEN) ----------
 // Resetea failed_attempts de TODOS los usuarios para desbloquear cuentas.
 // Tambien permite cambiar la password de un usuario concreto.
