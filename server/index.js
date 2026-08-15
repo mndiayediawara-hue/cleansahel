@@ -59,7 +59,7 @@ if (fs.existsSync(distPath)) {
 
 const PORT = process.env.PORT || 3001
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✓ CleanERP API running on http://0.0.0.0:${PORT}`)
+  console.log(`✓ CleanERP API ready (recalls enabled) on http://0.0.0.0:${PORT}`)
   console.log(`  Database: ${path.join(__dirname, '..', 'data', 'cleanerp.db')}`)
   console.log(`  Static dist: ${fs.existsSync(distPath) ? 'found' : 'NOT FOUND — run npm run build'}`)
 })
