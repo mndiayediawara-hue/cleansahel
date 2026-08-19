@@ -445,7 +445,32 @@ router.put('/orders/:id', auth, requireRole('admin', 'comercial', 'produccion'),
   const deductStock = (order) => {
     const items = JSON.parse(order.items_json)
     for (const it of items) {
-      db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?').run(it.quantity, it.productId)
+      // Mirar stock actual del producto
+      const prod = db.prepare('SELECT * FROM products WHERE id = ?').get(it.productId)
+      const requested = it.quantity
+      const available = prod ? prod.stock : 0
+      if (available >= requested) {
+        // Hay suficiente: descontar directamente
+        db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?').run(requested, it.productId)
+      } else {
+        // No hay suficiente: descontar lo que haya (sin negativos) y crear production_order por la diferencia
+        if (available > 0) {
+          db.prepare('UPDATE products SET stock = 0 WHERE id = ?').run(it.productId)
+        }
+        const falta = requested - available
+        // Crear production_order pendiente para cubrir lo que falta
+        const poId = uid('po-')
+        const poCount = db.prepare("SELECT COUNT(*) c FROM production_orders WHERE number LIKE 'OP-%'").get().c
+        const poNumber = `OP-${new Date().getFullYear()}-${String(poCount + 1).padStart(4, '0')}`
+        const recipe = db.prepare('SELECT * FROM recipes WHERE product_id = ?').get(it.productId)
+        db.prepare(`INSERT INTO production_orders (id, number, product_id, recipe_id, quantity, status, pedido_id, notes, created_by, created_at)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)`)
+          .run(poId, poNumber, it.productId, recipe ? recipe.id : null, falta, 'pendiente', order.id, `Auto-creada por pedido: ${order.number}`, req.user.id, new Date().toISOString())
+        addHistory(req, { action: 'crear', module: 'Producción', entityId: poId, description: `Auto-creada OP ${poNumber} (${falta} L) por pedido ${order.number} - stock insuficiente` })
+        // Notificación
+        db.prepare('INSERT INTO notifications (id, type, title, message, severity, read, created_at, related_id) VALUES (?,?,?,?,?,0,?,?)')
+          .run(uid('n-'), 'produccion', 'Producción pendiente', `Faltan ${falta} L de ${prod?.name || it.productId} - OP ${poNumber}`, 'warning', new Date().toISOString(), 'po:'+poId)
+      }
       touched = true
     }
     db.prepare('UPDATE customers SET total_purchases = total_purchases + ? WHERE id = ?').run(order.total, order.customer_id)
@@ -461,6 +486,99 @@ router.put('/orders/:id', auth, requireRole('admin', 'comercial', 'produccion'),
 })
 router.delete('/orders/:id', auth, requireRole('admin'), (req, res) => {
   db.prepare('DELETE FROM orders WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
+})
+
+// ---------- PRODUCTION ORDERS ----------
+const mapProductionOrder = (o) => o ? ({
+  id: o.id,
+  number: o.number,
+  productId: o.product_id,
+  recipeId: o.recipe_id,
+  quantity: o.quantity,
+  status: o.status,
+  pedidoId: o.pedido_id,
+  notes: o.notes,
+  createdBy: o.created_by,
+  createdAt: o.created_at,
+  startedAt: o.started_at,
+  finishedAt: o.finished_at,
+}) : null
+
+// Listar todas las ordenes de fabricacion
+router.get('/production-orders', auth, (_req, res) => {
+  const rows = db.prepare('SELECT * FROM production_orders ORDER BY created_at DESC').all()
+  res.json(rows.map(mapProductionOrder))
+})
+
+// Crear una orden de fabricacion manual
+router.post('/production-orders', auth, requireRole('admin', 'produccion'), (req, res) => {
+  const b = req.body
+  if (!b.productId) return res.status(400).json({ error: 'Falta productId' })
+  if (!b.quantity || b.quantity <= 0) return res.status(400).json({ error: 'Cantidad inválida' })
+  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(b.productId)
+  if (!product) return res.status(404).json({ error: 'Producto no encontrado' })
+  // Auto-buscar receta para este producto
+  const recipe = db.prepare('SELECT * FROM recipes WHERE product_id = ?').get(b.productId)
+  const id = uid('po-')
+  const count = db.prepare("SELECT COUNT(*) c FROM production_orders WHERE number LIKE 'OP-%'").get().c
+  const number = b.number || `OP-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`
+  db.prepare(`INSERT INTO production_orders (id, number, product_id, recipe_id, quantity, status, pedido_id, notes, created_by, created_at)
+              VALUES (?,?,?,?,?,?,?,?,?,?)`)
+    .run(id, number, b.productId, recipe ? recipe.id : null, b.quantity, b.status || 'pendiente', b.pedidoId || null, b.notes || null, req.user.id, new Date().toISOString())
+  addHistory(req, { action: 'crear', module: 'Producción', entityId: id, description: `Creada orden de fabricación ${number} (${b.quantity} L de ${product.name})` })
+  const created = db.prepare('SELECT * FROM production_orders WHERE id = ?').get(id)
+  res.json(mapProductionOrder(created))
+})
+
+// Confirmar fabricacion: pendiente -> en_proceso
+router.patch('/production-orders/:id/start', auth, requireRole('admin', 'produccion'), (req, res) => {
+  const o = db.prepare('SELECT * FROM production_orders WHERE id = ?').get(req.params.id)
+  if (!o) return res.status(404).json({ error: 'No encontrado' })
+  if (o.status !== 'pendiente') return res.status(400).json({ error: `No se puede iniciar una orden en estado '${o.status}'` })
+  db.prepare(`UPDATE production_orders SET status = 'en_proceso', started_at = ? WHERE id = ?`)
+    .run(new Date().toISOString(), req.params.id)
+  addHistory(req, { action: 'modificar', module: 'Producción', entityId: o.id, description: `Orden ${o.number} → en_proceso` })
+  const updated = db.prepare('SELECT * FROM production_orders WHERE id = ?').get(req.params.id)
+  res.json(mapProductionOrder(updated))
+})
+
+// Marcar como acabada: en_proceso -> acabada, descuenta MPs y suma stock producto
+router.patch('/production-orders/:id/complete', auth, requireRole('admin', 'produccion'), (req, res) => {
+  const o = db.prepare('SELECT * FROM production_orders WHERE id = ?').get(req.params.id)
+  if (!o) return res.status(404).json({ error: 'No encontrado' })
+  if (o.status !== 'en_proceso') return res.status(400).json({ error: `Solo se pueden completar ordenes en_proceso (actual: '${o.status}')` })
+  const recipe = o.recipe_id ? db.prepare('SELECT * FROM recipes WHERE id = ?').get(o.recipe_id) : null
+  if (!recipe) return res.status(400).json({ error: 'La orden no tiene receta asociada' })
+  const items = JSON.parse(recipe.items_json || '[]')
+  const recipeBatch = recipe.batch_size || 1000
+  const ratio = o.quantity / recipeBatch
+  // Descontar materias primas / envases
+  for (const it of items) {
+    const total = it.quantity * ratio
+    if (it.materialType === 'raw') {
+      db.prepare('UPDATE raw_materials SET stock = stock - ? WHERE id = ?').run(total, it.materialId)
+    } else if (it.materialType === 'packaging') {
+      db.prepare('UPDATE packaging SET stock = stock - ? WHERE id = ?').run(total, it.materialId)
+    }
+  }
+  // Sumar al stock del producto terminado
+  db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(o.quantity, o.product_id)
+  // Marcar como acabada
+  db.prepare(`UPDATE production_orders SET status = 'acabada', finished_at = ? WHERE id = ?`)
+    .run(new Date().toISOString(), o.id)
+  addHistory(req, { action: 'modificar', module: 'Producción', entityId: o.id, description: `Orden ${o.number} → acabada (${o.quantity} L fabricados)` })
+  const updated = db.prepare('SELECT * FROM production_orders WHERE id = ?').get(o.id)
+  res.json(mapProductionOrder(updated))
+})
+
+// Borrar orden de fabricacion
+router.delete('/production-orders/:id', auth, requireRole('admin'), (req, res) => {
+  const o = db.prepare('SELECT * FROM production_orders WHERE id = ?').get(req.params.id)
+  if (!o) return res.status(404).json({ error: 'No encontrado' })
+  if (o.status === 'en_proceso') return res.status(400).json({ error: 'No se puede borrar una orden en_proceso' })
+  db.prepare('DELETE FROM production_orders WHERE id = ?').run(req.params.id)
+  addHistory(req, { action: 'borrar', module: 'Producción', entityId: o.id, description: `Borrada orden ${o.number}` })
   res.json({ ok: true })
 })
 
