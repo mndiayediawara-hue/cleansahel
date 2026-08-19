@@ -215,6 +215,26 @@ CREATE TABLE IF NOT EXISTS config (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- production_orders: ordenes de fabricacion con 3 estados (pendiente/en_proceso/acabada)
+CREATE TABLE IF NOT EXISTS production_orders (
+  id TEXT PRIMARY KEY,
+  number TEXT UNIQUE NOT NULL,
+  product_id TEXT NOT NULL,
+  recipe_id TEXT,
+  quantity REAL NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pendiente',
+  pedido_id TEXT,
+  notes TEXT,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  started_at TEXT,
+  finished_at TEXT,
+  FOREIGN KEY (product_id) REFERENCES products(id),
+  FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE SET NULL,
+  FOREIGN KEY (pedido_id) REFERENCES orders(id) ON DELETE SET NULL,
+  FOREIGN KEY (created_by) REFERENCES users(id)
+);
 `
 
 // Ejecutar SCHEMA primero
