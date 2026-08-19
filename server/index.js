@@ -10,11 +10,16 @@ import { db } from './db.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-
-// Initialize DB - SIEMPRE forzar re-seed para corregir datos corruptos
-console.log('🗑️  Forzando re-seed de la DB...')
-seed({ force: true })
-console.log('✓ DB re-seedeada con datos correctos')
+// Initialize DB - seed solo si está vacía (preservar datos entre deploys)
+console.log('🌱 Verificando seed inicial...')
+const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get().c
+if (userCount === 0) {
+  console.log('📦 DB vacía, ejecutando seed inicial...')
+  seed({ force: true })
+  console.log('✓ DB inicializada con datos de ejemplo')
+} else {
+  console.log(`✓ DB ya tiene ${userCount} usuarios, saltando seed (datos preservados)`)
+}
 
 const app = express()
 app.use(cors())
