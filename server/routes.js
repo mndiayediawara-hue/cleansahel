@@ -286,13 +286,22 @@ const mapProd = (p) => ({
 router.get('/products', auth, (_req, res) => {
   res.json(db.prepare('SELECT * FROM products ORDER BY name').all().map(mapProd))
 })
-router.post('/products', auth, requireRole('admin'), (req, res) => {
-  const b = req.body
-  const id = uid('pr-')
-  db.prepare('INSERT INTO products (id, code, name, description, category, bottle_size, stock, min_stock, max_stock, price, cost, recipe_id, active) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,1)')
-    .run(id, b.code, b.name, b.description || '', b.category || 'General', b.bottleSize, b.stock || 0, b.minStock || 0, b.maxStock || 0, b.price || 0, b.cost || 0, b.recipeId || null)
-  addHistory(req, { action: 'crear', module: 'Productos', entityId: id, description: `Creado producto ${b.name}` })
-  res.json({ id })
+router.post('/products', auth, requireRole('admin', 'produccion', 'contabilidad'), (req, res) => {
+  try {
+    const b = req.body || {}
+    if (!b.name) return res.status(400).json({ error: 'Falta el nombre del producto' })
+    const id = uid('pr-')
+    const count = db.prepare('SELECT COUNT(*) c FROM products').get().c
+    const entryNumber = count + 1
+    const code = b.code || `PROD${entryNumber}`
+    db.prepare('INSERT INTO products (id, code, name, description, category, bottle_size, stock, min_stock, max_stock, price, cost, recipe_id, active, entry_number) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)')
+      .run(id, code, b.name, b.description || '', b.category || 'General', Number(b.bottleSize) || 0, Number(b.stock) || 0, Number(b.minStock) || 0, Number(b.maxStock) || 0, Number(b.price) || 0, Number(b.cost) || 0, b.recipeId || null, 1, entryNumber)
+    addHistory(req, { action: 'crear', module: 'Productos', entityId: id, description: `Creado producto ${b.name} (${code})` })
+    res.json({ id, code, entryNumber })
+  } catch (e) {
+    console.error('Error POST /products:', e.message)
+    res.status(500).json({ error: e.message })
+  }
 })
 router.put('/products/:id', auth, requireRole('admin'), (req, res) => {
   const b = req.body

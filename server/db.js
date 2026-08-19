@@ -380,6 +380,19 @@ try {
       console.log('✓ Migrated: added entry_number column to raw_materials')
     }
   } catch (e) { console.warn('migration raw_materials entry_number:', e.message) }
+
+  try {
+    const colsProd = db.prepare("PRAGMA table_info(products)").all()
+    if (!colsProd.find(c => c.name === 'entry_number')) {
+      db.exec("ALTER TABLE products ADD COLUMN entry_number INTEGER")
+      const allProd = db.prepare("SELECT id FROM products ORDER BY created_at, id").all()
+      let n = 1
+      for (const r of allProd) {
+        db.prepare("UPDATE products SET entry_number = ? WHERE id = ?").run(n++, r.id)
+      }
+      console.log('✓ Migrated: added entry_number column to products')
+    }
+  } catch (e) { console.warn('migration products entry_number:', e.message) }
   const colsLots3 = db.prepare("PRAGMA table_info(lots)").all()
   if (!colsLots3.find(c => c.name === 'status') && !colsLots3.find(c => c.name === 'status_safe_check')) {
     // No hacemos nada, status ya existe en el schema
