@@ -1374,23 +1374,144 @@ router.delete('/machines/:id', auth, requireRole('admin'), (req, res) => {
   res.json({ ok: true });
 });
 
-// ---------- RAW MATERIAL LOTS (placeholder) ----------
+// ---------- RAW MATERIAL LOTS (entradas individuales) ----------
+// Cada entrada (compra/albarán) al almacén queda registrada.
+// Al crear, suma al stock del material.
+// Al borrar, resta del stock del material (devuelve las unidades).
 router.get('/raw-material-lots', auth, (_req, res) => {
-  res.json([]);
-});
+  const rows = db.prepare(`
+    SELECT rml.*, rm.name as material_name, rm.code as material_code, rm.unit as material_unit
+    FROM raw_material_lots rml
+    LEFT JOIN raw_materials rm ON rm.id = rml.raw_material_id
+    ORDER BY rml.received_at DESC, rml.id DESC
+  `).all()
+  res.json(rows.map(r => ({
+    id: r.id,
+    rawMaterialId: r.raw_material_id,
+    materialName: r.material_name,
+    materialCode: r.material_code,
+    unit: r.unit || r.material_unit,
+    code: r.code,
+    quantity: r.quantity,
+    remaining: r.remaining,
+    supplierId: r.supplier_id,
+    supplierName: r.supplier_name,
+    invoice: r.invoice,
+    receivedAt: r.received_at,
+    expiryDate: r.expiry_date,
+    status: r.status,
+    notes: r.notes,
+    createdAt: r.created_at,
+  })))
+})
+
 router.post('/raw-material-lots', auth, requireRole('admin', 'contabilidad'), (req, res) => {
-  const b = req.body || {};
-  res.json({ ok: true, id: uid('rml-') });
-});
+  const b = req.body || {}
+  const { rawMaterialId, quantity, supplierId, supplierName, invoice, receivedAt, expiryDate, notes } = b
+  if (!rawMaterialId) return res.status(400).json({ error: 'Falta rawMaterialId' })
+  const material = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(rawMaterialId)
+  if (!material) return res.status(404).json({ error: 'Materia prima no encontrada' })
+  const qty = Number(quantity)
+  if (!Number.isFinite(qty) || qty <= 0) return res.status(400).json({ error: 'Cantidad inválida' })
+
+  // Generar código único
+  const year = new Date().getFullYear()
+  const count = db.prepare("SELECT COUNT(*) c FROM raw_material_lots WHERE code LIKE ?").get(`RML-${year}-%`).c
+  const code = b.code || `RML-${year}-${String(count + 1).padStart(4, '0')}`
+
+  const id = uid('rml-')
+  const now = new Date().toISOString()
+  db.prepare(`INSERT INTO raw_material_lots (id, raw_material_id, code, quantity, remaining, unit, supplier_id, supplier_name, invoice, received_at, expiry_date, status, notes, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(id, rawMaterialId, code, qty, qty, material.unit, supplierId || null, supplierName || null, invoice || null,
+         receivedAt || now, expiryDate || null, 'active', notes || null, now)
+
+  // Sumar al stock del material
+  db.prepare('UPDATE raw_materials SET stock = stock + ?, last_updated = ? WHERE id = ?').run(qty, now, rawMaterialId)
+
+  addHistory(req, {
+    action: 'compra', module: 'Materias Primas', entityId: id,
+    description: `Entrada de ${qty} ${material.unit} de ${material.name} (Lote ${code}${invoice ? ' — Factura ' + invoice : ''})`
+  })
+  res.json({ ok: true, id, code })
+})
+
 router.put('/raw-material-lots/:id', auth, requireRole('admin', 'contabilidad'), (req, res) => {
-  res.json({ ok: true });
-});
+  const b = req.body || {}
+  const lot = db.prepare('SELECT * FROM raw_material_lots WHERE id = ?').get(req.params.id)
+  if (!lot) return res.status(404).json({ error: 'No encontrado' })
+  db.prepare(`UPDATE raw_material_lots SET supplier_id = COALESCE(?, supplier_id), supplier_name = COALESCE(?, supplier_name), invoice = COALESCE(?, invoice), expiry_date = COALESCE(?, expiry_date), notes = COALESCE(?, notes), status = COALESCE(?, status) WHERE id = ?`)
+    .run(b.supplierId || null, b.supplierName || null, b.invoice || null, b.expiryDate || null, b.notes || null, b.status || null, req.params.id)
+  res.json({ ok: true })
+})
+
 router.delete('/raw-material-lots/:id', auth, requireRole('admin'), (req, res) => {
-  res.json({ ok: true });
-});
+  const lot = db.prepare('SELECT * FROM raw_material_lots WHERE id = ?').get(req.params.id)
+  if (!lot) return res.status(404).json({ error: 'No encontrado' })
+  // Restar del stock del material
+  db.prepare('UPDATE raw_materials SET stock = stock - ?, last_updated = ? WHERE id = ?').run(lot.remaining || lot.quantity, new Date().toISOString(), lot.raw_material_id)
+  // Borrar el lote
+  db.prepare('DELETE FROM raw_material_lots WHERE id = ?').run(req.params.id)
+  addHistory(req, {
+    action: 'borrar', module: 'Materias Primas', entityId: req.params.id,
+    description: `Eliminada entrada de ${lot.quantity} ${lot.unit} (${lot.code}). Stock devuelto al material.`
+  })
+  res.json({ ok: true })
+})
+
 router.patch('/raw-material-lots/:id/block', auth, requireRole('admin', 'contabilidad'), (req, res) => {
-  res.json({ ok: true });
-});
+  const lot = db.prepare('SELECT * FROM raw_material_lots WHERE id = ?').get(req.params.id)
+  if (!lot) return res.status(404).json({ error: 'No encontrado' })
+  // Bloquear lote: poner status='blocked' y restar del stock disponible
+  if (lot.status !== 'blocked') {
+    const blocked = lot.remaining || 0
+    db.prepare('UPDATE raw_materials SET stock = stock - ?, last_updated = ? WHERE id = ?').run(blocked, new Date().toISOString(), lot.raw_material_id)
+    db.prepare("UPDATE raw_material_lots SET status = 'blocked', remaining = 0 WHERE id = ?").run(req.params.id)
+  } else {
+    // Desbloquear
+    db.prepare("UPDATE raw_material_lots SET status = 'active', remaining = ? WHERE id = ?").run(lot.quantity, req.params.id)
+    db.prepare('UPDATE raw_materials SET stock = stock + ?, last_updated = ? WHERE id = ?').run(lot.quantity, new Date().toISOString(), lot.raw_material_id)
+  }
+  res.json({ ok: true })
+})
+
+// ---------- PACKAGING LOTS (entradas individuales de envases) ----------
+router.get('/packaging-lots', auth, (_req, res) => {
+  res.json([])
+})
+router.post('/packaging-lots', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+  const b = req.body || {}
+  const { packagingId, quantity, supplierId, supplierName, invoice, receivedAt, expiryDate, notes } = b
+  if (!packagingId) return res.status(400).json({ error: 'Falta packagingId' })
+  const packaging = db.prepare('SELECT * FROM packaging WHERE id = ?').get(packagingId)
+  if (!packaging) return res.status(404).json({ error: 'Envase no encontrado' })
+  const qty = Number(quantity)
+  if (!Number.isFinite(qty) || qty <= 0) return res.status(400).json({ error: 'Cantidad inválida' })
+
+  const year = new Date().getFullYear()
+  const count = db.prepare("SELECT COUNT(*) c FROM packaging_lots WHERE code LIKE ?").get(`PKL-${year}-%`).c
+  const code = b.code || `PKL-${year}-${String(count + 1).padStart(4, '0')}`
+
+  const id = uid('pkl-')
+  const now = new Date().toISOString()
+  db.prepare(`INSERT INTO packaging_lots (id, packaging_id, code, quantity, remaining, supplier_id, supplier_name, invoice, received_at, expiry_date, status, notes, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(id, packagingId, code, qty, qty, supplierId || null, supplierName || null, invoice || null,
+         receivedAt || now, expiryDate || null, 'active', notes || null, now)
+
+  db.prepare('UPDATE packaging SET stock = stock + ?, last_updated = ? WHERE id = ?').run(qty, now, packagingId)
+  addHistory(req, {
+    action: 'compra', module: 'Almacén', entityId: id,
+    description: `Entrada de ${qty} ud de ${packaging.name} (Lote ${code}${invoice ? ' — Factura ' + invoice : ''})`
+  })
+  res.json({ ok: true, id, code })
+})
+
+router.delete('/packaging-lots/:id', auth, requireRole('admin'), (req, res) => {
+  const lot = db.prepare('SELECT * FROM packaging_lots WHERE id = ?').get(req.params.id)
+  if (!lot) return res.status(404).json({ error: 'No encontrado' })
+  db.prepare('UPDATE packaging SET stock = stock - ?, last_updated = ? WHERE id = ?').run(lot.remaining || lot.quantity, new Date().toISOString(), lot.packaging_id)
+  db.prepare('DELETE FROM packaging_lots WHERE id = ?').run(req.params.id)
+  res.json({ ok: true })
+})
 
 export default router
 
