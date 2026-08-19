@@ -178,7 +178,8 @@ router.delete('/suppliers/:id', auth, requireRole('admin'), (req, res) => {
 const mapRaw = (r) => ({
   id: r.id, code: r.code, name: r.name, category: r.category, unit: r.unit,
   stock: r.stock, minStock: r.min_stock, maxStock: r.max_stock, price: r.price,
-  supplierId: r.supplier_id, location: r.location, expiryDate: r.expiry_date, lot: r.lot, lastUpdated: r.last_updated
+  supplierId: r.supplier_id, location: r.location, expiryDate: r.expiry_date, lot: r.lot, lastUpdated: r.last_updated,
+  entryNumber: r.entry_number || null
 })
 
 router.get('/raw-materials', auth, (_req, res) => {
@@ -187,10 +188,13 @@ router.get('/raw-materials', auth, (_req, res) => {
 router.post('/raw-materials', auth, requireRole('admin', 'produccion', 'contabilidad'), (req, res) => {
   const b = req.body
   const id = uid('rm-')
-  db.prepare(`INSERT INTO raw_materials (id, code, name, category, unit, stock, min_stock, max_stock, price, supplier_id, location, expiry_date, lot, last_updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(id, b.code, b.name, b.category, b.unit, b.stock || 0, b.minStock || 0, b.maxStock || 0, b.price || 0, b.supplierId || null, b.location || '', b.expiryDate || null, b.lot || null, new Date().toISOString())
-  addHistory(req, { action: 'crear', module: 'Materias Primas', entityId: id, description: `Creada materia prima ${b.name}` })
-  res.json({ id })
+  const count = db.prepare('SELECT COUNT(*) c FROM raw_materials').get().c
+  const entryNumber = count + 1
+  const code = b.code || `MP ${entryNumber}`
+  db.prepare(`INSERT INTO raw_materials (id, code, name, category, unit, stock, min_stock, max_stock, price, supplier_id, location, expiry_date, lot, last_updated, entry_number) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(id, code, b.name, b.category || 'General', b.unit, b.stock || 0, b.minStock || 0, b.maxStock || 0, b.price || 0, b.supplierId || null, b.location || '', b.expiryDate || null, b.lot || null, new Date().toISOString(), entryNumber)
+  addHistory(req, { action: 'crear', module: 'Materias Primas', entityId: id, description: `Creada materia prima ${b.name} (${code})` })
+  res.json({ id, code, entryNumber })
 })
 router.put('/raw-materials/:id', auth, requireRole('admin', 'produccion', 'contabilidad'), (req, res) => {
   const b = req.body
@@ -225,19 +229,30 @@ router.post('/raw-materials/:id/entry', auth, requireRole('admin', 'contabilidad
 const mapPkg = (p) => ({
   id: p.id, code: p.code, name: p.name, type: p.type, size: p.size,
   stock: p.stock, minStock: p.min_stock, maxStock: p.max_stock, price: p.price,
-  supplierId: p.supplier_id, location: p.location, lastUpdated: p.last_updated
+  supplierId: p.supplier_id, location: p.location, lastUpdated: p.last_updated,
+  entryNumber: p.entry_number || null
 })
 
 router.get('/packaging', auth, (_req, res) => {
-  res.json(db.prepare('SELECT * FROM packaging ORDER BY name').all().map(mapPkg))
+  res.json(db.prepare('SELECT * FROM packaging ORDER BY entry_number ASC, id ASC').all().map(mapPkg))
 })
 router.post('/packaging', auth, requireRole('admin', 'produccion', 'contabilidad'), (req, res) => {
   const b = req.body
   const id = uid('pk-')
-  db.prepare('INSERT INTO packaging (id, code, name, type, size, stock, min_stock, max_stock, price, supplier_id, location, last_updated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
-    .run(id, b.code, b.name, b.type, b.size || null, b.stock || 0, b.minStock || 0, b.maxStock || 0, b.price || 0, b.supplierId || null, b.location || '', new Date().toISOString())
-  addHistory(req, { action: 'crear', module: 'Embalaje', entityId: id, description: `Creado material ${b.name}` })
-  res.json({ id })
+  const count = db.prepare('SELECT COUNT(*) c FROM packaging').get().c
+  const entryNumber = count + 1
+  const code = b.code || `Envase ${entryNumber}`
+  let name = b.name
+  if (!name && b.size) {
+    const typeLabel = (b.type || 'Botella')
+    name = `${typeLabel} ${b.size}`
+  } else if (!name) {
+    name = `Envase ${entryNumber}`
+  }
+  db.prepare(`INSERT INTO packaging (id, code, name, type, size, stock, min_stock, max_stock, price, supplier_id, location, last_updated, entry_number) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(id, code, name, b.type || 'Botella', b.size || null, b.stock || 0, b.minStock || 0, b.maxStock || 0, b.price || 0, b.supplierId || null, b.location || '', new Date().toISOString(), entryNumber)
+  addHistory(req, { action: 'crear', module: 'Embalaje', entityId: id, description: `Creado material ${name} (${code})` })
+  res.json({ id, code, name, entryNumber })
 })
 router.put('/packaging/:id', auth, requireRole('admin', 'produccion', 'contabilidad'), (req, res) => {
   const b = req.body
@@ -646,21 +661,63 @@ router.delete('/expenses/:id', auth, requireRole('admin', 'contabilidad'), (req,
 })
 
 // ---------- LOTS ----------
-const mapLot = (l) => ({
-  id: l.id,
-  lotNumber: l.lot_number,
-  productionOrderNumber: l.production_order_number || '',
-  productId: l.product_id,
-  recipeId: l.recipe_id || '',
-  quantity: l.quantity || 0,
-  rawMaterialsUsed: JSON.parse(l.raw_materials_json || '[]'),
-  producedBy: l.produced_by,
-  machineId: l.machine_id || undefined,
-  producedAt: l.produced_at,
-  expiryDate: l.expiry_date || undefined,
-  status: l.status,
-  notes: l.notes
-})
+// Helper: calcular si un lote pendiente/en_curso se puede producir con el stock actual
+function canProduceLot(lotId) {
+  const lot = db.prepare('SELECT * FROM lots WHERE id = ?').get(lotId)
+  if (!lot) return { canProduce: false, shortages: [] }
+  const recipe = db.prepare('SELECT * FROM recipes WHERE product_id = ?').get(lot.product_id)
+  if (!recipe) return { canProduce: true, shortages: [] } // sin receta, asumimos OK
+  let items = []
+  try { items = JSON.parse(recipe.items_json || '[]') } catch {}
+  const recipeBatch = recipe.batch_size || 1
+  const liters = Number(lot.quantity) || 0
+  const ratio = liters / recipeBatch
+  const shortages = []
+  for (const it of items) {
+    const totalQty = it.quantity * ratio
+    let available = 0
+    if (it.materialType === 'raw') {
+      const m = db.prepare('SELECT stock FROM raw_materials WHERE id = ?').get(it.materialId)
+      available = m ? m.stock : 0
+    } else {
+      const m = db.prepare('SELECT stock FROM packaging WHERE id = ?').get(it.materialId)
+      available = m ? m.stock : 0
+    }
+    if (available < totalQty) {
+      shortages.push({
+        materialId: it.materialId,
+        materialType: it.materialType,
+        required: totalQty,
+        available: available,
+        missing: totalQty - available
+      })
+    }
+  }
+  return { canProduce: shortages.length === 0, shortages }
+}
+
+const mapLot = (l) => {
+  const result = (l.status === 'pendiente' || l.status === 'en_curso') ? canProduceLot(l.id) : { canProduce: true, shortages: [] }
+  return {
+    id: l.id,
+    lotNumber: l.lot_number,
+    productionOrderNumber: l.production_order_number || '',
+    productId: l.product_id,
+    recipeId: l.recipe_id || '',
+    quantity: l.quantity || 0,
+    rawMaterialsUsed: JSON.parse(l.raw_materials_json || '[]'),
+    producedBy: l.produced_by,
+    machineId: l.machine_id || undefined,
+    producedAt: l.produced_at,
+    expiryDate: l.expiry_date || undefined,
+    status: l.status,
+    notes: l.notes,
+    canProduce: result.canProduce,
+    shortages: result.shortages,
+    startedAt: l.started_at || undefined,
+    finishedAt: l.finished_at || undefined
+  }
+}
 
 function mapUser(u) {
   let permissions = null

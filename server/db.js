@@ -353,6 +353,33 @@ try {
       console.log('✓ Migrated: added active column to users')
     }
   } catch (e) { console.warn('migration users active:', e.message) }
+
+  // Add entry_number column to packaging and raw_materials (auto-incrementing identifier)
+  try {
+    const colsPkg = db.prepare("PRAGMA table_info(packaging)").all()
+    if (!colsPkg.find(c => c.name === 'entry_number')) {
+      db.exec("ALTER TABLE packaging ADD COLUMN entry_number INTEGER")
+      const allPkg = db.prepare("SELECT id FROM packaging ORDER BY created_at, id").all()
+      let n = 1
+      for (const r of allPkg) {
+        db.prepare("UPDATE packaging SET entry_number = ? WHERE id = ?").run(n++, r.id)
+      }
+      console.log('✓ Migrated: added entry_number column to packaging')
+    }
+  } catch (e) { console.warn('migration packaging entry_number:', e.message) }
+
+  try {
+    const colsRaw = db.prepare("PRAGMA table_info(raw_materials)").all()
+    if (!colsRaw.find(c => c.name === 'entry_number')) {
+      db.exec("ALTER TABLE raw_materials ADD COLUMN entry_number INTEGER")
+      const allRaw = db.prepare("SELECT id FROM raw_materials ORDER BY created_at, id").all()
+      let n = 1
+      for (const r of allRaw) {
+        db.prepare("UPDATE raw_materials SET entry_number = ? WHERE id = ?").run(n++, r.id)
+      }
+      console.log('✓ Migrated: added entry_number column to raw_materials')
+    }
+  } catch (e) { console.warn('migration raw_materials entry_number:', e.message) }
   const colsLots3 = db.prepare("PRAGMA table_info(lots)").all()
   if (!colsLots3.find(c => c.name === 'status') && !colsLots3.find(c => c.name === 'status_safe_check')) {
     // No hacemos nada, status ya existe en el schema
