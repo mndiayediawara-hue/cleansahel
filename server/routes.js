@@ -712,6 +712,11 @@ router.get('/lots/:id', auth, (req, res) => {
 })
 
 // PATCH /api/lots/:id/status — cambiar estado de una fabricación
+// Cuando se marca como 'completado' por primera vez:
+//   - Descuenta MPs y envases del stock
+//   - Suma los litros al stock del producto
+//   - Crea el detalle de materiales consumidos
+//   - Marca started_at/finished_at
 router.patch('/lots/:id/status', auth, requireRole('admin', 'produccion'), (req, res) => {
   const { status } = req.body
   const validStatuses = ['pendiente', 'en_curso', 'completado', 'cancelado']
@@ -720,8 +725,6 @@ router.patch('/lots/:id/status', auth, requireRole('admin', 'produccion'), (req,
   }
   const lot = db.prepare('SELECT * FROM lots WHERE id = ?').get(req.params.id)
   if (!lot) return res.status(404).json({ error: 'Lote no encontrado' })
-  // Si pasa a completado, ya está completado (no hacemos nada extra)
-  // Si pasa de completado a otro, no permitimos (regla de negocio)
   if (lot.status === 'completado' && status !== 'completado') {
     return res.status(400).json({ error: 'No se puede cambiar el estado de un lote ya completado' })
   }
@@ -734,12 +737,82 @@ router.patch('/lots/:id/status', auth, requireRole('admin', 'produccion'), (req,
   if (!(allowedTransitions[lot.status] || []).includes(status)) {
     return res.status(400).json({ error: `Transición no permitida: ${lot.status} → ${status}` })
   }
-  db.prepare('UPDATE lots SET status = ? WHERE id = ?').run(status, req.params.id)
-  addHistory(req, { 
-    action: 'cambiar_estado', 
-    module: 'Producción', 
-    entityId: req.params.id, 
-    description: `Lote ${lot.lot_number} → ${status}` 
+
+  const now = new Date().toISOString()
+  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(lot.product_id)
+
+  // Al pasar a en_curso por primera vez: marca started_at
+  if (status === 'en_curso' && !lot.started_at) {
+    db.prepare('UPDATE lots SET status = ?, started_at = ? WHERE id = ?').run(status, now, req.params.id)
+  }
+  // Al pasar a completado: descuenta stock, suma al producto, marca finished_at
+  else if (status === 'completado' && lot.status !== 'completado') {
+    if (!product) return res.status(400).json({ error: 'Producto no encontrado' })
+    const recipe = db.prepare('SELECT * FROM recipes WHERE product_id = ?').get(lot.product_id)
+    if (!recipe) return res.status(400).json({ error: 'El producto no tiene receta definida' })
+
+    let items
+    try { items = JSON.parse(recipe.items_json) } catch { items = [] }
+    if (!items.length) return res.status(400).json({ error: 'La receta no tiene items definidos' })
+
+    const recipeBatch = recipe.batch_size || 1
+    const liters = Number(lot.quantity)
+    if (!Number.isFinite(liters) || liters <= 0) {
+      return res.status(400).json({ error: 'Cantidad del lote inválida' })
+    }
+    const ratio = liters / recipeBatch
+
+    // Calcular materiales necesarios
+    const needed = items.map(it => {
+      const totalQty = it.quantity * ratio
+      if (it.materialType === 'raw') {
+        const m = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(it.materialId)
+        return { ...it, totalQty, available: m ? m.stock : 0, name: m?.name || it.materialId, unit: m?.unit || it.unit }
+      } else {
+        const m = db.prepare('SELECT * FROM packaging WHERE id = ?').get(it.materialId)
+        return { ...it, totalQty, available: m ? m.stock : 0, name: m?.name || it.materialId, unit: 'ud' }
+      }
+    })
+
+    // Verificar stock
+    const shortages = needed.filter(n => n.available < n.totalQty)
+    if (shortages.length > 0) {
+      return res.status(400).json({
+        error: 'Stock insuficiente para completar la fabricación',
+        shortages: shortages.map(s => ({ name: s.name, needed: s.totalQty, available: s.available, unit: s.unit }))
+      })
+    }
+
+    // Descontar stock y sumar al producto
+    const tx = db.transaction(() => {
+      for (const n of needed) {
+        if (n.materialType === 'raw') {
+          db.prepare('UPDATE raw_materials SET stock = stock - ?, last_updated = ? WHERE id = ?').run(n.totalQty, now, n.materialId)
+        } else {
+          db.prepare('UPDATE packaging SET stock = stock - ?, last_updated = ? WHERE id = ?').run(n.totalQty, now, n.materialId)
+        }
+      }
+      // Sumar litros al stock del producto
+      db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(liters, lot.product_id)
+      // Actualizar lote
+      db.prepare('UPDATE lots SET status = ?, finished_at = ?, raw_materials_json = ? WHERE id = ?')
+        .run(status, now, JSON.stringify(needed.map(n => ({ materialId: n.materialId, materialType: n.materialType, quantity: n.totalQty, unit: n.unit, name: n.name }))), req.params.id)
+      // Notificación
+      db.prepare('INSERT INTO notifications (id, type, title, message, severity, read, created_at, related_id) VALUES (?,?,?,?,?,0,?,?)')
+        .run(uid('n-'), 'produccion', 'Producción completada', `Fabricados ${liters} L de ${product.name} — Lote ${lot.lot_number}`, 'success', now, 'lot:' + req.params.id)
+    })
+    tx()
+    addHistory(req, { action: 'produccion', module: 'Producción', entityId: req.params.id, description: `Lote ${lot.lot_number} completado: ${liters} L de ${product.name}` })
+    maybeAddStockNotifications()
+    return res.json({ ok: true, id: req.params.id, status, deducted: needed.length })
+  }
+  // Otros casos
+  else {
+    db.prepare('UPDATE lots SET status = ? WHERE id = ?').run(status, req.params.id)
+  }
+  addHistory(req, {
+    action: 'cambiar_estado', module: 'Producción', entityId: req.params.id,
+    description: `Lote ${lot.lot_number} → ${status}`
   })
   res.json({ ok: true, id: req.params.id, status })
 })
