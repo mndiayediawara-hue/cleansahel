@@ -241,13 +241,13 @@ router.post('/packaging', auth, requireRole('admin', 'produccion', 'contabilidad
   const id = uid('pk-')
   const count = db.prepare('SELECT COUNT(*) c FROM packaging').get().c
   const entryNumber = count + 1
-  const code = b.code || `Envase ${entryNumber}`
+  const code = b.code || `PK${entryNumber}`
   let name = b.name
   if (!name && b.size) {
     const typeLabel = (b.type || 'Botella')
     name = `${typeLabel} ${b.size}`
   } else if (!name) {
-    name = `Envase ${entryNumber}`
+    name = `PK${entryNumber}`
   }
   db.prepare(`INSERT INTO packaging (id, code, name, type, size, stock, min_stock, max_stock, price, supplier_id, location, last_updated, entry_number) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(id, code, name, b.type || 'Botella', b.size || null, b.stock || 0, b.minStock || 0, b.maxStock || 0, b.price || 0, b.supplierId || null, b.location || '', new Date().toISOString(), entryNumber)
