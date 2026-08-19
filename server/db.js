@@ -235,6 +235,22 @@ CREATE TABLE IF NOT EXISTS production_orders (
   FOREIGN KEY (pedido_id) REFERENCES orders(id) ON DELETE SET NULL,
   FOREIGN KEY (created_by) REFERENCES users(id)
 );
+
+-- recalls: retiradas de producto
+CREATE TABLE IF NOT EXISTS recalls (
+  id TEXT PRIMARY KEY,
+  product_id TEXT,
+  lot_number TEXT,
+  reason TEXT NOT NULL,
+  quantity REAL DEFAULT 0,
+  status TEXT DEFAULT 'investigating',
+  reported_by TEXT,
+  date TEXT NOT NULL,
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL,
+  FOREIGN KEY (reported_by) REFERENCES users(id) ON DELETE SET NULL
+);
 `
 
 // Ejecutar SCHEMA primero

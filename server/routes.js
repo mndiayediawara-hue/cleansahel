@@ -1287,6 +1287,38 @@ router.post('/auth/emergency-unlock', (req, res) => {
   }
 })
 
+// ---------- MACHINES (placeholder) ----------
+router.get('/machines', auth, (_req, res) => {
+  res.json([]);
+});
+router.post('/machines', auth, requireRole('admin'), (req, res) => {
+  res.json({ ok: true, id: uid('m-') });
+});
+router.put('/machines/:id', auth, requireRole('admin'), (req, res) => {
+  res.json({ ok: true });
+});
+router.delete('/machines/:id', auth, requireRole('admin'), (req, res) => {
+  res.json({ ok: true });
+});
+
+// ---------- RAW MATERIAL LOTS (placeholder) ----------
+router.get('/raw-material-lots', auth, (_req, res) => {
+  res.json([]);
+});
+router.post('/raw-material-lots', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+  const b = req.body || {};
+  res.json({ ok: true, id: uid('rml-') });
+});
+router.put('/raw-material-lots/:id', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+  res.json({ ok: true });
+});
+router.delete('/raw-material-lots/:id', auth, requireRole('admin'), (req, res) => {
+  res.json({ ok: true });
+});
+router.patch('/raw-material-lots/:id/block', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+  res.json({ ok: true });
+});
+
 export default router
 
 // ---------- RESET DB (dev only) ----------
