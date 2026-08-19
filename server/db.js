@@ -216,6 +216,48 @@ CREATE TABLE IF NOT EXISTS config (
   value TEXT NOT NULL
 );
 
+-- raw_material_lots: entradas individuales de cada materia prima
+-- (Cada compra o entrada al almacén queda registrada con su cantidad,
+-- fecha de caducidad, proveedor, etc. El stock total del material se
+-- calcula sumando todos los lotes activos.)
+CREATE TABLE IF NOT EXISTS raw_material_lots (
+  id TEXT PRIMARY KEY,
+  raw_material_id TEXT NOT NULL,
+  code TEXT UNIQUE NOT NULL,
+  quantity REAL NOT NULL DEFAULT 0,
+  remaining REAL NOT NULL DEFAULT 0,
+  unit TEXT,
+  supplier_id TEXT,
+  supplier_name TEXT,
+  invoice TEXT,
+  received_at TEXT NOT NULL,
+  expiry_date TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (raw_material_id) REFERENCES raw_materials(id) ON DELETE CASCADE,
+  FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE SET NULL
+);
+
+-- packaging_lots: entradas individuales de cada envase
+CREATE TABLE IF NOT EXISTS packaging_lots (
+  id TEXT PRIMARY KEY,
+  packaging_id TEXT NOT NULL,
+  code TEXT UNIQUE NOT NULL,
+  quantity REAL NOT NULL DEFAULT 0,
+  remaining REAL NOT NULL DEFAULT 0,
+  supplier_id TEXT,
+  supplier_name TEXT,
+  invoice TEXT,
+  received_at TEXT NOT NULL,
+  expiry_date TEXT,
+  status TEXT NOT NULL DEFAULT 'active',
+  notes TEXT,
+  created_at TEXT NOT NULL,
+  FOREIGN KEY (packaging_id) REFERENCES packaging(id) ON DELETE CASCADE,
+  FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE SET NULL
+);
+
 -- production_orders: ordenes de fabricacion con 3 estados (pendiente/en_proceso/acabada)
 CREATE TABLE IF NOT EXISTS production_orders (
   id TEXT PRIMARY KEY,
