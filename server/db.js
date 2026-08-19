@@ -274,7 +274,15 @@ try {
     db.exec("ALTER TABLE lots ADD COLUMN machine_id TEXT")
     console.log('✓ Migrated: added machine_id column to lots')
   }
-} catch (e) { console.warn('migration lots:', e.message) }
+  if (!colsLots.find(c => c.name === 'started_at')) {
+    db.exec("ALTER TABLE lots ADD COLUMN started_at TEXT")
+    console.log('✓ Migrated: added started_at column to lots')
+  }
+  if (!colsLots.find(c => c.name === 'finished_at')) {
+    db.exec("ALTER TABLE lots ADD COLUMN finished_at TEXT")
+    console.log('✓ Migrated: added finished_at column to lots')
+  }
+} catch (e) { console.warn('migration lots timestamps:', e.message) }
 
 // Add production_order_number column to lots if it doesn't exist (safe)
 try {
