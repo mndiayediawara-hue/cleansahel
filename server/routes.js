@@ -85,18 +85,22 @@ router.post('/auth/login', (req, res) => {
   }
 
   db.prepare('UPDATE users SET failed_attempts = 0, last_login = ? WHERE id = ?').run(new Date().toISOString(), user.id)
-  const token = jwt.sign({ id: user.id, username: user.username, role: user.role, fullName: user.full_name }, JWT_SECRET, { expiresIn: '8h' })
+  let userPerms = null
+  try { userPerms = user.permissions ? JSON.parse(user.permissions) : null } catch {}
+  const token = jwt.sign({ id: user.id, username: user.username, role: user.role, fullName: user.full_name, permissions: userPerms }, JWT_SECRET, { expiresIn: '8h' })
   res.json({
     token,
-    user: { id: user.id, username: user.username, fullName: user.full_name, email: user.email, role: user.role }
+    user: { id: user.id, username: user.username, fullName: user.full_name, email: user.email, role: user.role, permissions: userPerms }
   })
   addHistory({ user: { id: user.id, fullName: user.full_name } }, { action: 'login', module: 'Auth', description: `Inicio de sesión: ${user.username}` })
 })
 
 router.get('/auth/me', auth, (req, res) => {
-  const u = db.prepare('SELECT id, username, full_name, email, role, active, created_at, last_login FROM users WHERE id = ?').get(req.user.id)
+  const u = db.prepare('SELECT id, username, full_name, email, role, active, created_at, last_login, permissions FROM users WHERE id = ?').get(req.user.id)
   if (!u) return res.status(404).json({ error: 'No encontrado' })
-  res.json({ id: u.id, username: u.username, fullName: u.full_name, email: u.email, role: u.role, active: !!u.active, createdAt: u.created_at, lastLogin: u.last_login })
+  let perms = null
+  try { perms = u.permissions ? JSON.parse(u.permissions) : null } catch {}
+  res.json({ id: u.id, username: u.username, fullName: u.full_name, email: u.email, role: u.role, active: !!u.active, createdAt: u.created_at, lastLogin: u.last_login, permissions: perms })
 })
 
 // ---------- USERS ----------
@@ -108,24 +112,27 @@ router.get('/users', auth, (_req, res) => {
   })))
 })
 
-router.post('/users', auth, requireRole('admin'), (req, res) => {
-  const { username, password, fullName, email, role } = req.body
+router.post('/users', auth, requirePermission('users', 'create'), (req, res) => {
+  const { username, password, fullName, email, role, permissions } = req.body
   if (!username || !password || !fullName) return res.status(400).json({ error: 'Datos incompletos' })
   // Only allow 3 roles
   const validRoles = ['admin', 'produccion', 'contabilidad']
   const finalRole = validRoles.includes(role) ? role : 'produccion'
   try {
     const id = uid('u-')
-    db.prepare('INSERT INTO users (id, username, password_hash, full_name, email, role, active, created_at) VALUES (?,?,?,?,?,?,1,?)')
-      .run(id, username, bcrypt.hashSync(password, 10), fullName, email || '', finalRole, new Date().toISOString())
+    // Permisos: si se pasan, se usan; si no, se asignan los del rol
+    const finalPerms = permissions || getDefaultPermsForRole(finalRole)
+    const permsJson = finalPerms ? JSON.stringify(finalPerms) : null
+    db.prepare('INSERT INTO users (id, username, password_hash, full_name, email, role, active, created_at, permissions) VALUES (?,?,?,?,?,?,1,?,?)')
+      .run(id, username, bcrypt.hashSync(password, 10), fullName, email || '', finalRole, new Date().toISOString(), permsJson)
     addHistory(req, { action: 'crear', module: 'Usuarios', entityId: id, description: `Creado usuario ${username} (${finalRole})` })
-    res.json({ id, username, fullName, email, role: finalRole })
+    res.json({ id, username, fullName, email, role: finalRole, permissions: finalPerms })
   } catch (e) {
     res.status(400).json({ error: 'Usuario ya existe' })
   }
 })
 
-router.put('/users/:id', auth, requireRole('admin'), (req, res) => {
+router.put('/users/:id', auth, requirePermission('users', 'edit'), (req, res) => {
   const { id } = req.params
   const { fullName, email, role, active, password } = req.body
   const u = db.prepare('SELECT * FROM users WHERE id = ?').get(id)
@@ -137,7 +144,7 @@ router.put('/users/:id', auth, requireRole('admin'), (req, res) => {
   res.json({ ok: true })
 })
 
-router.delete('/users/:id', auth, requireRole('admin'), (req, res) => {
+router.delete('/users/:id', auth, requirePermission('users', 'delete'), (req, res) => {
   const { id } = req.params
   if (id === req.user.id) return res.status(400).json({ error: 'No puede eliminarse a sí mismo' })
   const u = db.prepare('SELECT * FROM users WHERE id = ?').get(id)
@@ -153,7 +160,7 @@ router.get('/suppliers', auth, (_req, res) => {
     id: s.id, name: s.name, cif: s.cif, email: s.email, phone: s.phone, contact: s.contact, address: s.address, city: s.city, country: s.country
   })))
 })
-router.post('/suppliers', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+router.post('/suppliers', auth, requirePermission('suppliers', 'create'), (req, res) => {
   const b = req.body
   const id = uid('s-')
   db.prepare('INSERT INTO suppliers (id, name, cif, email, phone, contact, address, city, country) VALUES (?,?,?,?,?,?,?,?,?)')
@@ -161,14 +168,14 @@ router.post('/suppliers', auth, requireRole('admin', 'contabilidad'), (req, res)
   addHistory(req, { action: 'crear', module: 'Proveedores', entityId: id, description: `Creado proveedor ${b.name}` })
   res.json({ id })
 })
-router.put('/suppliers/:id', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+router.put('/suppliers/:id', auth, requirePermission('suppliers', 'edit'), (req, res) => {
   const b = req.body
   db.prepare('UPDATE suppliers SET name=?, cif=?, email=?, phone=?, contact=?, address=?, city=?, country=? WHERE id=?')
     .run(b.name, b.cif, b.email, b.phone, b.contact, b.address, b.city, b.country, req.params.id)
   addHistory(req, { action: 'modificar', module: 'Proveedores', entityId: req.params.id, description: `Modificado proveedor ${b.name}` })
   res.json({ ok: true })
 })
-router.delete('/suppliers/:id', auth, requireRole('admin'), (req, res) => {
+router.delete('/suppliers/:id', auth, requirePermission('suppliers', 'delete'), (req, res) => {
   db.prepare('DELETE FROM suppliers WHERE id = ?').run(req.params.id)
   addHistory(req, { action: 'borrar', module: 'Proveedores', entityId: req.params.id, description: 'Proveedor eliminado' })
   res.json({ ok: true })
@@ -185,7 +192,7 @@ const mapRaw = (r) => ({
 router.get('/raw-materials', auth, (_req, res) => {
   res.json(db.prepare('SELECT * FROM raw_materials ORDER BY name').all().map(mapRaw))
 })
-router.post('/raw-materials', auth, requireRole('admin', 'produccion', 'contabilidad'), (req, res) => {
+router.post('/raw-materials', auth, requirePermission('raw_materials', 'create'), (req, res) => {
   const b = req.body
   const id = uid('rm-')
   const count = db.prepare('SELECT COUNT(*) c FROM raw_materials').get().c
@@ -196,7 +203,7 @@ router.post('/raw-materials', auth, requireRole('admin', 'produccion', 'contabil
   addHistory(req, { action: 'crear', module: 'Materias Primas', entityId: id, description: `Creada materia prima ${b.name} (${code})` })
   res.json({ id, code, entryNumber })
 })
-router.put('/raw-materials/:id', auth, requireRole('admin', 'produccion', 'contabilidad'), (req, res) => {
+router.put('/raw-materials/:id', auth, requirePermission('raw_materials', 'edit'), (req, res) => {
   const b = req.body
   const before = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(req.params.id)
   if (!before) return res.status(404).json({ error: 'No encontrado' })
@@ -205,7 +212,7 @@ router.put('/raw-materials/:id', auth, requireRole('admin', 'produccion', 'conta
   addHistory(req, { action: 'modificar', module: 'Materias Primas', entityId: req.params.id, description: `Modificada materia prima ${b.name}`, before: mapRaw(before), after: b })
   res.json({ ok: true })
 })
-router.delete('/raw-materials/:id', auth, requireRole('admin'), (req, res) => {
+router.delete('/raw-materials/:id', auth, requirePermission('raw_materials', 'delete'), (req, res) => {
   const before = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(req.params.id)
   db.prepare('DELETE FROM raw_materials WHERE id = ?').run(req.params.id)
   addHistory(req, { action: 'borrar', module: 'Materias Primas', entityId: req.params.id, description: `Eliminada materia prima ${before?.name || ''}`, before: before ? mapRaw(before) : null })
@@ -213,7 +220,7 @@ router.delete('/raw-materials/:id', auth, requireRole('admin'), (req, res) => {
 })
 
 // Stock entry (compra / entrada almacén)
-router.post('/raw-materials/:id/entry', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+router.post('/raw-materials/:id/entry', auth, requirePermission('purchases', 'create'), (req, res) => {
   const { quantity, lot, expiryDate, price, invoice } = req.body
   const m = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(req.params.id)
   if (!m) return res.status(404).json({ error: 'No encontrado' })
@@ -236,7 +243,7 @@ const mapPkg = (p) => ({
 router.get('/packaging', auth, (_req, res) => {
   res.json(db.prepare('SELECT * FROM packaging ORDER BY entry_number ASC, id ASC').all().map(mapPkg))
 })
-router.post('/packaging', auth, requireRole('admin', 'produccion', 'contabilidad'), (req, res) => {
+router.post('/packaging', auth, requirePermission('packaging', 'create'), (req, res) => {
   const b = req.body
   const id = uid('pk-')
   const count = db.prepare('SELECT COUNT(*) c FROM packaging').get().c
@@ -254,18 +261,18 @@ router.post('/packaging', auth, requireRole('admin', 'produccion', 'contabilidad
   addHistory(req, { action: 'crear', module: 'Embalaje', entityId: id, description: `Creado material ${name} (${code})` })
   res.json({ id, code, name, entryNumber })
 })
-router.put('/packaging/:id', auth, requireRole('admin', 'produccion', 'contabilidad'), (req, res) => {
+router.put('/packaging/:id', auth, requirePermission('packaging', 'edit'), (req, res) => {
   const b = req.body
   db.prepare('UPDATE packaging SET code=?, name=?, type=?, size=?, min_stock=?, max_stock=?, price=?, supplier_id=?, location=?, last_updated=? WHERE id=?')
     .run(b.code, b.name, b.type, b.size || null, b.minStock, b.maxStock, b.price, b.supplierId || null, b.location, new Date().toISOString(), req.params.id)
   addHistory(req, { action: 'modificar', module: 'Embalaje', entityId: req.params.id, description: `Modificado material ${b.name}` })
   res.json({ ok: true })
 })
-router.delete('/packaging/:id', auth, requireRole('admin'), (req, res) => {
+router.delete('/packaging/:id', auth, requirePermission('packaging', 'delete'), (req, res) => {
   db.prepare('DELETE FROM packaging WHERE id = ?').run(req.params.id)
   res.json({ ok: true })
 })
-router.post('/packaging/:id/entry', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+router.post('/packaging/:id/entry', auth, requirePermission('purchases', 'create'), (req, res) => {
   const { quantity, price, invoice } = req.body
   const m = db.prepare('SELECT * FROM packaging WHERE id = ?').get(req.params.id)
   if (!m) return res.status(404).json({ error: 'No encontrado' })
@@ -286,7 +293,7 @@ const mapProd = (p) => ({
 router.get('/products', auth, (_req, res) => {
   res.json(db.prepare('SELECT * FROM products ORDER BY name').all().map(mapProd))
 })
-router.post('/products', auth, requireRole('admin', 'produccion', 'contabilidad'), (req, res) => {
+router.post('/products', auth, requirePermission('production', 'create'), (req, res) => {
   try {
     const b = req.body || {}
     if (!b.name) return res.status(400).json({ error: 'Falta el nombre del producto' })
@@ -303,14 +310,14 @@ router.post('/products', auth, requireRole('admin', 'produccion', 'contabilidad'
     res.status(500).json({ error: e.message })
   }
 })
-router.put('/products/:id', auth, requireRole('admin'), (req, res) => {
+router.put('/products/:id', auth, requirePermission('production', 'edit'), (req, res) => {
   const b = req.body
   db.prepare('UPDATE products SET code=?, name=?, description=?, category=?, bottle_size=?, min_stock=?, max_stock=?, price=?, cost=?, recipe_id=?, active=? WHERE id=?')
     .run(b.code, b.name, b.description, b.category, b.bottleSize, b.minStock, b.maxStock, b.price, b.cost, b.recipeId || null, b.active === false ? 0 : 1, req.params.id)
   addHistory(req, { action: 'modificar', module: 'Productos', entityId: req.params.id, description: `Modificado producto ${b.name}` })
   res.json({ ok: true })
 })
-router.delete('/products/:id', auth, requireRole('admin'), (req, res) => {
+router.delete('/products/:id', auth, requirePermission('production', 'delete'), (req, res) => {
   try {
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id)
     if (!product) return res.status(404).json({ error: 'Producto no encontrado' })
@@ -348,7 +355,7 @@ router.get('/recipes/:id', auth, (req, res) => {
   if (!r) return res.status(404).json({ error: 'No encontrado' })
   res.json(mapRec(r))
 })
-router.post('/recipes', auth, requireRole('admin', 'produccion'), (req, res) => {
+router.post('/recipes', auth, requirePermission('recipes', 'create'), (req, res) => {
   const b = req.body
   const id = uid('rc-')
   const batchSize = Number(b.batchSize) || 1000
@@ -357,7 +364,7 @@ router.post('/recipes', auth, requireRole('admin', 'produccion'), (req, res) => 
   addHistory(req, { action: 'crear', module: 'Recetas', entityId: id, description: `Creada receta (lote de ${batchSize}L) para producto ${b.productId}` })
   res.json({ id })
 })
-router.put('/recipes/:id', auth, requireRole('admin', 'produccion'), (req, res) => {
+router.put('/recipes/:id', auth, requirePermission('recipes', 'edit'), (req, res) => {
   const b = req.body
   const batchSize = Number(b.batchSize) || 1000
   db.prepare('UPDATE recipes SET bottle_size=?, bottles_per_box=?, boxes_per_pallet=?, yield_per_liter=?, batch_size=?, items_json=?, updated_at=? WHERE id=?')
@@ -365,12 +372,12 @@ router.put('/recipes/:id', auth, requireRole('admin', 'produccion'), (req, res) 
   addHistory(req, { action: 'modificar', module: 'Recetas', entityId: req.params.id, description: `Modificada receta (lote de ${batchSize}L)` })
   res.json({ ok: true })
 })
-router.delete('/recipes/:id', auth, requireRole('admin'), (req, res) => {
+router.delete('/recipes/:id', auth, requirePermission('recipes', 'delete'), (req, res) => {
   db.prepare('DELETE FROM recipes WHERE id = ?').run(req.params.id)
   res.json({ ok: true })
 
 // DELETE /api/lots/:id — eliminar fabricación (SOLO ADMIN)
-router.delete('/lots/:id', auth, requireRole('admin'), (req, res) => {
+router.delete('/lots/:id', auth, requirePermission('lots', 'delete'), (req, res) => {
   const lot = db.prepare('SELECT * FROM lots WHERE id = ?').get(req.params.id)
   if (!lot) return res.status(404).json({ error: 'Lote no encontrado' })
   const tx = db.transaction(() => {
@@ -421,7 +428,7 @@ router.get('/customers/by-code/:code', auth, (req, res) => {
   if (!c) return res.status(404).json({ error: 'Cliente no encontrado con ese código' })
   res.json(mapCust(c))
 })
-router.post('/customers', auth, requireRole('admin', 'comercial'), (req, res) => {
+router.post('/customers', auth, requirePermission('customers', 'create'), (req, res) => {
   try {
     const b = req.body || {}
     if (!b.name) return res.status(400).json({ error: 'Falta el nombre del cliente' })
@@ -442,14 +449,14 @@ router.post('/customers', auth, requireRole('admin', 'comercial'), (req, res) =>
     res.status(500).json({ error: e.message })
   }
 })
-router.put('/customers/:id', auth, requireRole('admin', 'comercial'), (req, res) => {
+router.put('/customers/:id', auth, requirePermission('customers', 'edit'), (req, res) => {
   const b = req.body
   db.prepare('UPDATE customers SET code=?, name=?, company=?, cif=?, address=?, city=?, country=?, phone=?, email=?, contact=?, notes=? WHERE id=?')
     .run(b.code, b.name, b.company, b.cif, b.address, b.city, b.country, b.phone, b.email, b.contact, b.notes, req.params.id)
   addHistory(req, { action: 'modificar', module: 'Clientes', entityId: req.params.id, description: `Modificado cliente ${b.name}` })
   res.json({ ok: true })
 })
-router.delete('/customers/:id', auth, requireRole('admin'), (req, res) => {
+router.delete('/customers/:id', auth, requirePermission('customers', 'delete'), (req, res) => {
   db.prepare('DELETE FROM customers WHERE id = ?').run(req.params.id)
   res.json({ ok: true })
 })
@@ -513,7 +520,7 @@ router.post('/delivery/:orderId', auth, (req, res) => {
 })
 
 // DELETE /api/delivery/:orderId - Revertir entrega (solo admin)
-router.delete('/delivery/:orderId', auth, requireRole('admin'), (req, res) => {
+router.delete('/delivery/:orderId', auth, requirePermission('sales', 'delete'), (req, res) => {
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.orderId)
   if (!order) return res.status(404).json({ error: 'Pedido no encontrado' })
   if (!order.delivered_at) return res.status(400).json({ error: 'Este pedido no estaba entregado' })
@@ -534,7 +541,7 @@ const mapOrder = (o) => ({
 router.get('/orders', auth, (_req, res) => {
   res.json(db.prepare('SELECT * FROM orders ORDER BY created_at DESC').all().map(mapOrder))
 })
-router.post('/orders', auth, requireRole('admin', 'comercial'), (req, res) => {
+router.post('/orders', auth, requirePermission('sales', 'create'), (req, res) => {
   const b = req.body
   const id = uid('o-')
   const count = db.prepare("SELECT COUNT(*) c FROM orders WHERE number LIKE 'PED-%'").get().c
@@ -547,7 +554,7 @@ router.post('/orders', auth, requireRole('admin', 'comercial'), (req, res) => {
     .run(uid('n-'), 'pedido', 'Nuevo pedido', `Pedido ${number} creado por ${req.user.fullName}`, 'info', new Date().toISOString(), 'order:'+id)
   res.json({ id, number })
 })
-router.put('/orders/:id', auth, requireRole('admin', 'comercial', 'produccion'), (req, res) => {
+router.put('/orders/:id', auth, requirePermission('sales', 'edit'), (req, res) => {
   const b = req.body
   const before = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)
   if (!before) return res.status(404).json({ error: 'No encontrado' })
@@ -596,7 +603,7 @@ router.put('/orders/:id', auth, requireRole('admin', 'comercial', 'produccion'),
   if (touched) maybeAddStockNotifications()
   res.json({ ok: true })
 })
-router.delete('/orders/:id', auth, requireRole('admin'), (req, res) => {
+router.delete('/orders/:id', auth, requirePermission('sales', 'delete'), (req, res) => {
   db.prepare('DELETE FROM orders WHERE id = ?').run(req.params.id)
   res.json({ ok: true })
 })
@@ -1487,7 +1494,7 @@ router.get('/production-orders', auth, (_req, res) => {
 })
 
 // Crear una orden de fabricacion manual
-router.post('/production-orders', auth, requireRole('admin', 'produccion'), (req, res) => {
+router.post('/production-orders', auth, requirePermission('production', 'create'), (req, res) => {
   const b = req.body
   if (!b.productId) return res.status(400).json({ error: 'Falta productId' })
   if (!b.quantity || b.quantity <= 0) return res.status(400).json({ error: 'Cantidad inválida' })
@@ -1507,7 +1514,7 @@ router.post('/production-orders', auth, requireRole('admin', 'produccion'), (req
 })
 
 // Confirmar fabricacion: pendiente -> en_proceso
-router.patch('/production-orders/:id/start', auth, requireRole('admin', 'produccion'), (req, res) => {
+router.patch('/production-orders/:id/start', auth, requirePermission('production', 'edit'), (req, res) => {
   const o = db.prepare('SELECT * FROM production_orders WHERE id = ?').get(req.params.id)
   if (!o) return res.status(404).json({ error: 'No encontrado' })
   if (o.status !== 'pendiente') return res.status(400).json({ error: `No se puede iniciar una orden en estado '${o.status}'` })
@@ -1519,7 +1526,7 @@ router.patch('/production-orders/:id/start', auth, requireRole('admin', 'producc
 })
 
 // Marcar como acabada: en_proceso -> acabada, descuenta MPs y suma stock producto
-router.patch('/production-orders/:id/complete', auth, requireRole('admin', 'produccion'), (req, res) => {
+router.patch('/production-orders/:id/complete', auth, requirePermission('production', 'edit'), (req, res) => {
   const o = db.prepare('SELECT * FROM production_orders WHERE id = ?').get(req.params.id)
   if (!o) return res.status(404).json({ error: 'No encontrado' })
   if (o.status !== 'en_proceso') return res.status(400).json({ error: `Solo se pueden completar ordenes en_proceso (actual: '${o.status}')` })
@@ -1548,7 +1555,7 @@ router.patch('/production-orders/:id/complete', auth, requireRole('admin', 'prod
 })
 
 // Borrar orden de fabricacion
-router.delete('/production-orders/:id', auth, requireRole('admin'), (req, res) => {
+router.delete('/production-orders/:id', auth, requirePermission('production', 'delete'), (req, res) => {
   const o = db.prepare('SELECT * FROM production_orders WHERE id = ?').get(req.params.id)
   if (!o) return res.status(404).json({ error: 'No encontrado' })
   if (o.status === 'en_proceso') return res.status(400).json({ error: 'No se puede borrar una orden en_proceso' })
@@ -1566,7 +1573,7 @@ const mapPurch = (p) => ({
 router.get('/purchases', auth, (_req, res) => {
   res.json(db.prepare('SELECT * FROM purchases ORDER BY date DESC').all().map(mapPurch))
 })
-router.post('/purchases', auth, requireRole('admin', 'contabilidad', 'almacen'), (req, res) => {
+router.post('/purchases', auth, requirePermission('purchases', 'create'), (req, res) => {
   const b = req.body
   const id = uid('pu-')
   const count = db.prepare('SELECT COUNT(*) c FROM purchases').get().c
@@ -1584,13 +1591,13 @@ router.post('/purchases', auth, requireRole('admin', 'contabilidad', 'almacen'),
   addHistory(req, { action: 'compra', module: 'Compras', entityId: id, description: `Compra ${number} — Factura ${b.invoice || 's/f'}` })
   res.json({ id, number })
 })
-router.put('/purchases/:id', auth, requireRole('admin', 'contabilidad', 'almacen'), (req, res) => {
+router.put('/purchases/:id', auth, requirePermission('purchases', 'edit'), (req, res) => {
   const b = req.body
   db.prepare('UPDATE purchases SET supplier_id=?, invoice=?, items_json=?, subtotal=?, tax=?, total=?, status=?, date=?, notes=? WHERE id=?')
     .run(b.supplierId, b.invoice, JSON.stringify(b.items || []), b.subtotal, b.tax, b.total, b.status, b.date, b.notes, req.params.id)
   res.json({ ok: true })
 })
-router.delete('/purchases/:id', auth, requireRole('admin'), (req, res) => {
+router.delete('/purchases/:id', auth, requirePermission('purchases', 'delete'), (req, res) => {
   db.prepare('DELETE FROM purchases WHERE id = ?').run(req.params.id)
   res.json({ ok: true })
 })
@@ -1601,7 +1608,7 @@ const mapExp = (e) => ({ id: e.id, date: e.date, category: e.category, amount: e
 router.get('/expenses', auth, (_req, res) => {
   res.json(db.prepare('SELECT * FROM expenses ORDER BY date DESC').all().map(mapExp))
 })
-router.post('/expenses', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+router.post('/expenses', auth, requirePermission('expenses', 'create'), (req, res) => {
   const b = req.body
   const id = uid('e-')
   db.prepare('INSERT INTO expenses (id, date, category, amount, description, attachment, created_by) VALUES (?,?,?,?,?,?,?)')
@@ -1609,13 +1616,13 @@ router.post('/expenses', auth, requireRole('admin', 'contabilidad'), (req, res) 
   addHistory(req, { action: 'crear', module: 'Gastos', entityId: id, description: `Gasto de ${b.category}: ${b.amount}€` })
   res.json({ id })
 })
-router.put('/expenses/:id', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+router.put('/expenses/:id', auth, requirePermission('expenses', 'edit'), (req, res) => {
   const b = req.body
   db.prepare('UPDATE expenses SET date=?, category=?, amount=?, description=?, attachment=? WHERE id=?')
     .run(b.date, b.category, b.amount, b.description, b.attachment, req.params.id)
   res.json({ ok: true })
 })
-router.delete('/expenses/:id', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+router.delete('/expenses/:id', auth, requirePermission('expenses', 'delete'), (req, res) => {
   db.prepare('DELETE FROM expenses WHERE id = ?').run(req.params.id)
   res.json({ ok: true })
 })
@@ -1734,7 +1741,7 @@ router.get('/lots/:id', auth, (req, res) => {
 //   - Suma los litros al stock del producto
 //   - Crea el detalle de materiales consumidos
 //   - Marca started_at/finished_at
-router.patch('/lots/:id/status', auth, requireRole('admin', 'produccion'), (req, res) => {
+router.patch('/lots/:id/status', auth, requirePermission('production', 'edit'), (req, res) => {
   const { status } = req.body
   const validStatuses = ['pendiente', 'en_curso', 'completado', 'cancelado']
   if (!status || !validStatuses.includes(status)) {
@@ -1836,7 +1843,7 @@ router.patch('/lots/:id/status', auth, requireRole('admin', 'produccion'), (req,
 
 
 // POST /api/lots — crear una nueva fabricación con estado 'pendiente' (sin descontar stock todavía)
-router.post('/lots', auth, requireRole('admin', 'produccion'), (req, res) => {
+router.post('/lots', auth, requirePermission('production', 'create'), (req, res) => {
   const { productId, plannedQuantity, notes, machineId } = req.body
   if (!productId) return res.status(400).json({ error: 'Falta productId' })
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId)
@@ -1861,7 +1868,7 @@ function nextProductionNumbers() {
 }
 
 // PRODUCE-WITH-LOTS — alias de /produce con respuesta extendida (mantener compatibilidad frontend)
-router.post('/produce-with-lots', auth, requireRole('admin', 'produccion'), (req, res) => {
+router.post('/produce-with-lots', auth, requirePermission('production', 'create'), (req, res) => {
   const { productId, quantity, notes, machineId } = req.body
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId)
   if (!product) return res.status(404).json({ error: 'Producto no encontrado' })
@@ -1910,7 +1917,7 @@ router.post('/produce-with-lots', auth, requireRole('admin', 'produccion'), (req
 })
 
 // PRODUCE — the core action (calcula por lote de fabricación)
-router.post('/produce', auth, requireRole('admin', 'produccion'), (req, res) => {
+router.post('/produce', auth, requirePermission('production', 'create'), (req, res) => {
   const { productId, quantity, notes, machineId } = req.body
   // quantity = litros del lote a fabricar
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId)
@@ -1996,7 +2003,7 @@ router.get('/config', auth, (_req, res) => {
     security: getConfig('security'),
   })
 })
-router.put('/config', auth, requireRole('admin'), (req, res) => {
+router.put('/config', auth, requirePermission('settings', 'edit'), (req, res) => {
   const { company, defaults, security } = req.body
   if (company) setConfig('company', company)
   if (defaults) setConfig('defaults', defaults)
@@ -2126,7 +2133,7 @@ router.get('/reports/consumption', auth, (_req, res) => {
 })
 
 // ---------- BACKUP ----------
-router.get('/backup', auth, requireRole('admin'), (_req, res) => {
+router.get('/backup', auth, requirePermission('settings', 'view'), (_req, res) => {
   const tables = ['users','suppliers','raw_materials','packaging','products','recipes','customers','orders','purchases','expenses','lots','notifications','history','config']
   const dump = {}
   for (const t of tables) {
@@ -2137,7 +2144,7 @@ router.get('/backup', auth, requireRole('admin'), (_req, res) => {
   res.json(dump)
 })
 
-router.post('/restore', auth, requireRole('admin'), (req, res) => {
+router.post('/restore', auth, requirePermission('settings', 'edit'), (req, res) => {
   const dump = req.body
   if (!dump || typeof dump !== 'object') return res.status(400).json({ error: 'Datos inválidos' })
   try {
@@ -2284,30 +2291,71 @@ router.delete('/users/:id', auth, requirePermission('users', 'delete'), (req, re
   res.json({ ok: true })
 })
 
+// ---------- PERMISSION DEFAULTS ----------
+const PERMISSION_MODULES = [
+  { key: 'home',          label: 'Inicio',         icon: 'home' },
+  { key: 'raw_materials', label: 'Materias Primas', icon: 'beaker' },
+  { key: 'packaging',     label: 'Embalaje',       icon: 'package' },
+  { key: 'recipes',       label: 'Recetas',        icon: 'book' },
+  { key: 'production',    label: 'Producción',     icon: 'factory' },
+  { key: 'lots',          label: 'Lotes',          icon: 'box' },
+  { key: 'customers',     label: 'Clientes',       icon: 'users' },
+  { key: 'sales',         label: 'Pedidos',        icon: 'shopping-cart' },
+  { key: 'suppliers',     label: 'Proveedores',    icon: 'truck' },
+  { key: 'purchases',     label: 'Compras',        icon: 'inbox' },
+  { key: 'expenses',      label: 'Gastos',         icon: 'receipt' },
+  { key: 'inventory',     label: 'Inventario',     icon: 'archive' },
+  { key: 'reports',       label: 'Informes',       icon: 'bar-chart' },
+  { key: 'recalls',       label: 'Retiradas',      icon: 'alert' },
+  { key: 'users',         label: 'Usuarios',       icon: 'user-cog' },
+  { key: 'settings',      label: 'Configuración',  icon: 'settings' },
+]
+
+const PERMISSION_ACTIONS = [
+  { key: 'view',   label: 'Ver' },
+  { key: 'create', label: 'Crear' },
+  { key: 'edit',   label: 'Editar' },
+  { key: 'delete', label: 'Eliminar' },
+]
+
+const DEFAULT_PERMS_BY_ROLE = {
+  admin: () => {
+    const p = {}
+    for (const m of PERMISSION_MODULES) p[m.key] = { view: true, create: true, edit: true, delete: true }
+    return p
+  },
+  produccion: () => {
+    const allowed = ['home', 'raw_materials', 'packaging', 'recipes', 'production', 'lots', 'inventory', 'recalls']
+    const p = {}
+    for (const m of PERMISSION_MODULES) {
+      if (allowed.includes(m.key)) p[m.key] = { view: true, create: true, edit: true, delete: false }
+    }
+    return p
+  },
+  contabilidad: () => {
+    const allowed = ['home', 'customers', 'sales', 'suppliers', 'purchases', 'expenses', 'inventory', 'reports']
+    const p = {}
+    for (const m of PERMISSION_MODULES) {
+      if (allowed.includes(m.key)) p[m.key] = { view: true, create: true, edit: true, delete: false }
+    }
+    return p
+  },
+}
+
+function getDefaultPermsForRole(role) {
+  if (DEFAULT_PERMS_BY_ROLE[role]) return DEFAULT_PERMS_BY_ROLE[role]()
+  return null
+}
+
 router.get('/permissions/defaults', auth, requirePermission('users', 'view'), (_req, res) => {
   res.json({
-    modules: [
-      { key: 'home', label: 'Inicio' },
-      { key: 'raw_materials', label: 'Materias primas' },
-      { key: 'recipes', label: 'Recetas' },
-      { key: 'production', label: 'Producción' },
-      { key: 'lots', label: 'Lotes' },
-      { key: 'customers', label: 'Clientes' },
-      { key: 'sales', label: 'Ventas/Pedidos' },
-      { key: 'inventory', label: 'Inventario' },
-      { key: 'accounting', label: 'Contabilidad' },
-      { key: 'reports', label: 'Informes' },
-      { key: 'users', label: 'Usuarios' },
-      { key: 'settings', label: 'Configuración' },
-      { key: 'recalls', label: 'Retiradas' },
-      { key: 'packaging', label: 'Embalaje' },
-    ],
-    actions: [
-      { key: 'view', label: 'Ver' },
-      { key: 'create', label: 'Crear' },
-      { key: 'edit', label: 'Editar' },
-      { key: 'delete', label: 'Eliminar' },
-    ]
+    modules: PERMISSION_MODULES,
+    actions: PERMISSION_ACTIONS,
+    byRole: {
+      admin: getDefaultPermsForRole('admin'),
+      produccion: getDefaultPermsForRole('produccion'),
+      contabilidad: getDefaultPermsForRole('contabilidad'),
+    }
   })
 })
 
@@ -2317,6 +2365,16 @@ router.get('/recalls', auth, (_req, res) => {
   res.json(rows);
 });
 
+// Cualquier usuario logueado puede ver sus propios permisos (sin necesidad de ser admin)
+router.get('/permissions/mine', auth, (req, res) => {
+  const u = db.prepare('SELECT role, permissions FROM users WHERE id = ?').get(req.user.id)
+  if (!u) return res.status(404).json({ error: 'No encontrado' })
+  let perms = null
+  try { perms = u.permissions ? JSON.parse(u.permissions) : null } catch {}
+  res.json({ role: u.role, permissions: perms })
+})
+
+// ---------- RECALLS (retiradas) ----------
 router.post('/recalls', auth, (req, res) => {
   const b = req.body || {};
   const { productId, lotNumber, reason, quantity, status, reportedBy, date, notes } = b;
@@ -2381,13 +2439,13 @@ router.post('/auth/emergency-unlock', (req, res) => {
 router.get('/machines', auth, (_req, res) => {
   res.json([]);
 });
-router.post('/machines', auth, requireRole('admin'), (req, res) => {
+router.post('/machines', auth, requirePermission('production', 'create'), (req, res) => {
   res.json({ ok: true, id: uid('m-') });
 });
-router.put('/machines/:id', auth, requireRole('admin'), (req, res) => {
+router.put('/machines/:id', auth, requirePermission('production', 'edit'), (req, res) => {
   res.json({ ok: true });
 });
-router.delete('/machines/:id', auth, requireRole('admin'), (req, res) => {
+router.delete('/machines/:id', auth, requirePermission('production', 'delete'), (req, res) => {
   res.json({ ok: true });
 });
 
@@ -2422,7 +2480,7 @@ router.get('/raw-material-lots', auth, (_req, res) => {
   })))
 })
 
-router.post('/raw-material-lots', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+router.post('/raw-material-lots', auth, requirePermission('purchases', 'create'), (req, res) => {
   const b = req.body || {}
   const { rawMaterialId, quantity, supplierId, supplierName, invoice, receivedAt, expiryDate, notes } = b
   if (!rawMaterialId) return res.status(400).json({ error: 'Falta rawMaterialId' })
@@ -2452,7 +2510,7 @@ router.post('/raw-material-lots', auth, requireRole('admin', 'contabilidad'), (r
   res.json({ ok: true, id, code })
 })
 
-router.put('/raw-material-lots/:id', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+router.put('/raw-material-lots/:id', auth, requirePermission('purchases', 'edit'), (req, res) => {
   const b = req.body || {}
   const lot = db.prepare('SELECT * FROM raw_material_lots WHERE id = ?').get(req.params.id)
   if (!lot) return res.status(404).json({ error: 'No encontrado' })
@@ -2461,7 +2519,7 @@ router.put('/raw-material-lots/:id', auth, requireRole('admin', 'contabilidad'),
   res.json({ ok: true })
 })
 
-router.delete('/raw-material-lots/:id', auth, requireRole('admin'), (req, res) => {
+router.delete('/raw-material-lots/:id', auth, requirePermission('purchases', 'delete'), (req, res) => {
   const lot = db.prepare('SELECT * FROM raw_material_lots WHERE id = ?').get(req.params.id)
   if (!lot) return res.status(404).json({ error: 'No encontrado' })
   // Restar del stock del material
@@ -2475,7 +2533,7 @@ router.delete('/raw-material-lots/:id', auth, requireRole('admin'), (req, res) =
   res.json({ ok: true })
 })
 
-router.patch('/raw-material-lots/:id/block', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+router.patch('/raw-material-lots/:id/block', auth, requirePermission('purchases', 'edit'), (req, res) => {
   const lot = db.prepare('SELECT * FROM raw_material_lots WHERE id = ?').get(req.params.id)
   if (!lot) return res.status(404).json({ error: 'No encontrado' })
   // Bloquear lote: poner status='blocked' y restar del stock disponible
@@ -2495,7 +2553,7 @@ router.patch('/raw-material-lots/:id/block', auth, requireRole('admin', 'contabi
 router.get('/packaging-lots', auth, (_req, res) => {
   res.json([])
 })
-router.post('/packaging-lots', auth, requireRole('admin', 'contabilidad'), (req, res) => {
+router.post('/packaging-lots', auth, requirePermission('purchases', 'create'), (req, res) => {
   const b = req.body || {}
   const { packagingId, quantity, supplierId, supplierName, invoice, receivedAt, expiryDate, notes } = b
   if (!packagingId) return res.status(400).json({ error: 'Falta packagingId' })
@@ -2522,7 +2580,7 @@ router.post('/packaging-lots', auth, requireRole('admin', 'contabilidad'), (req,
   res.json({ ok: true, id, code })
 })
 
-router.delete('/packaging-lots/:id', auth, requireRole('admin'), (req, res) => {
+router.delete('/packaging-lots/:id', auth, requirePermission('purchases', 'delete'), (req, res) => {
   const lot = db.prepare('SELECT * FROM packaging_lots WHERE id = ?').get(req.params.id)
   if (!lot) return res.status(404).json({ error: 'No encontrado' })
   db.prepare('UPDATE packaging SET stock = stock - ?, last_updated = ? WHERE id = ?').run(lot.remaining || lot.quantity, new Date().toISOString(), lot.packaging_id)
@@ -2533,7 +2591,7 @@ router.delete('/packaging-lots/:id', auth, requireRole('admin'), (req, res) => {
 export default router
 
 // ---------- RESET DB (dev only) ----------
-router.post('/reset', auth, requireRole('admin'), async (_req, res) => {
+router.post('/reset', auth, requirePermission('settings', 'edit'), async (_req, res) => {
   const { seed } = await import('./seed.js')
   seed({ force: true })
   res.json({ ok: true })
