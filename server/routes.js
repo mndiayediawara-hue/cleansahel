@@ -2918,14 +2918,17 @@ router.get('/customer-card/:code', (req, res) => {
 
   const companyInfo = getConfig('company', { name: 'SAHEL', tagline: 'Produits d\'Hygiène' })
   const deliveryUrl = `${req.protocol}://${req.get('host')}/api/delivery-mobile?code=${encodeURIComponent(customer.code)}`
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=10&data=${encodeURIComponent(deliveryUrl)}`
+  // QR generado en cliente con qrcode.js (CDN) - funciona offline y nunca falla
+  const companyName = (companyInfo.name || 'SAHEL').toUpperCase()
+  const tagline = (companyInfo.tagline || 'Produits d\'Hygiène').replace(/'/g, "\\'")
 
   const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tarjeta ${customer.code}</title>
+  <title>Tarjeta ${customer.code} - ${customer.name}</title>
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: Arial, Helvetica, sans-serif; background: #e5e7eb; padding: 20px; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
@@ -2939,10 +2942,11 @@ router.get('/customer-card/:code', (req, res) => {
     .card-brand { font-size: 9pt; font-weight: bold; color: #1e3a8a; letter-spacing: 0.5px; margin-top: 2mm; }
     .card-tagline { font-size: 6pt; color: #6b7280; text-transform: uppercase; letter-spacing: 1px; margin-top: 0.5mm; }
     .card-customer { flex: 1; display: flex; flex-direction: column; justify-content: center; margin: 2mm 0; }
-    .card-name { font-size: 10pt; font-weight: bold; color: #111827; margin-bottom: 2mm; line-height: 1.1; }
+    .card-name { font-size: 10pt; font-weight: bold; color: #111827; margin-bottom: 2mm; line-height: 1.1; max-height: 22pt; overflow: hidden; }
     .card-code { display: inline-block; background: #1e3a8a; color: white; padding: 1.5mm 3mm; font-family: 'Courier New', monospace; font-size: 11pt; font-weight: bold; letter-spacing: 1.5px; align-self: flex-start; }
     .card-qr { display: flex; flex-direction: column; align-items: center; justify-content: center; padding-top: 3mm; }
-    .card-qr img { width: 24mm; height: 24mm; display: block; }
+    .card-qr-canvas { width: 24mm; height: 24mm; display: block; }
+    .card-qr canvas, .card-qr img { width: 24mm !important; height: 24mm !important; display: block; }
     .card-qr-label { font-size: 5.5pt; color: #6b7280; margin-top: 0.5mm; text-align: center; }
     .instructions { max-width: 600px; background: white; padding: 16px 20px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,.08); font-size: 10pt; color: #4b5563; line-height: 1.5; }
     .instructions h3 { color: #1e3a8a; font-size: 11pt; margin-bottom: 8px; }
@@ -2960,8 +2964,8 @@ router.get('/customer-card/:code', (req, res) => {
     <div class="card">
       <div class="card-info">
         <div>
-          <div class="card-brand">${(companyInfo.name || 'SAHEL').toUpperCase()}</div>
-          <div class="card-tagline">${companyInfo.tagline || 'Produits d\'Hygiène'}</div>
+          <div class="card-brand">${companyName}</div>
+          <div class="card-tagline">${tagline}</div>
         </div>
         <div class="card-customer">
           <div class="card-name">${customer.name}</div>
@@ -2969,7 +2973,7 @@ router.get('/customer-card/:code', (req, res) => {
         </div>
       </div>
       <div class="card-qr">
-        <img src="${qrUrl}" alt="QR ${customer.code}" />
+        <div id="qrcode" class="card-qr-canvas"></div>
         <div class="card-qr-label">Escanear para entrega</div>
       </div>
     </div>
@@ -2977,12 +2981,63 @@ router.get('/customer-card/:code', (req, res) => {
       <h3>Instrucciones</h3>
       <ul>
         <li>Tarjeta de <strong>${customer.name}</strong></li>
-        <li>Código: <strong>${customer.code}</strong></li>
-        <li>Imprimir en papel grueso (85.6mm × 54mm) y plastificar.</li>
-        <li>El cliente conserva siempre la misma tarjeta.</li>
+        <li>C&oacute;digo: <strong>${customer.code}</strong></li>
+        <li>Imprimir en papel grueso (85.6mm &times; 54mm) y plastificar.</li>
+        <li>El cliente conserva siempre la misma tarjeta; el QR es permanente.</li>
+        <li>El operador escanea el QR desde Pedidos &rarr; Escanear cliente.</li>
       </ul>
     </div>
   </div>
+  <script>
+    (function() {
+      var deliveryUrl = ${JSON.stringify(deliveryUrl)};
+      function renderQR() {
+        try {
+          if (typeof QRCode !== 'undefined') {
+            new QRCode(document.getElementById('qrcode'), {
+              text: deliveryUrl,
+              width: 240,
+              height: 240,
+              colorDark: '#1e3a8a',
+              colorLight: '#ffffff',
+              correctLevel: QRCode.CorrectLevel.M
+            });
+            return true;
+          }
+        } catch (e) { console.error('QR error:', e); }
+        return false;
+      }
+      // Intentar cargar qrcode desde varios CDNs
+      function loadQR() {
+        var scripts = [
+          'https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js',
+          'https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js',
+          'https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js'
+        ];
+        function tryNext(i) {
+          if (i >= scripts.length) {
+            // Fallback: mostrar el código como texto
+            var el = document.getElementById('qrcode');
+            if (el) {
+              el.innerHTML = '<div style="width:24mm;height:24mm;background:#1e3a8a;color:white;display:flex;align-items:center;justify-content:center;font-size:8pt;text-align:center;padding:1mm;font-family:monospace">' + deliveryUrl + '</div>';
+            }
+            return;
+          }
+          var s = document.createElement('script');
+          s.src = scripts[i];
+          s.onload = function() { if (!renderQR()) tryNext(i+1); };
+          s.onerror = function() { tryNext(i+1); };
+          document.head.appendChild(s);
+        }
+        tryNext(0);
+      }
+      if (typeof QRCode === 'undefined') {
+        loadQR();
+      } else {
+        renderQR();
+      }
+    })();
+  </script>
 </body>
 </html>`
 
