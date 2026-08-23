@@ -142,6 +142,8 @@ CREATE TABLE IF NOT EXISTS orders (
   delivery_date TEXT,
   notes TEXT,
   created_by TEXT,
+  delivered_at TEXT,
+  delivered_by TEXT,
   FOREIGN KEY (customer_id) REFERENCES customers(id),
   FOREIGN KEY (created_by) REFERENCES users(id)
 );
@@ -393,6 +395,19 @@ try {
       console.log('✓ Migrated: added entry_number column to products')
     }
   } catch (e) { console.warn('migration products entry_number:', e.message) }
+
+// Add delivery columns to orders (delivered_at, delivered_by)
+try {
+  const colsOrders = db.prepare("PRAGMA table_info(orders)").all()
+  if (!colsOrders.find(c => c.name === 'delivered_at')) {
+    db.exec("ALTER TABLE orders ADD COLUMN delivered_at TEXT")
+    console.log('✓ Migrated: added delivered_at column to orders')
+  }
+  if (!colsOrders.find(c => c.name === 'delivered_by')) {
+    db.exec("ALTER TABLE orders ADD COLUMN delivered_by TEXT")
+    console.log('✓ Migrated: added delivered_by column to orders')
+  }
+} catch (e) { console.warn('migration orders delivery:', e.message) }
   const colsLots3 = db.prepare("PRAGMA table_info(lots)").all()
   if (!colsLots3.find(c => c.name === 'status') && !colsLots3.find(c => c.name === 'status_safe_check')) {
     // No hacemos nada, status ya existe en el schema
