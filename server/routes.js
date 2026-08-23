@@ -928,321 +928,277 @@ router.get('/order-sheet/:orderId', auth, (req, res) => {
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #e5e7eb;
-      color: #1a1a1a;
-      line-height: 1.4;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #f3f4f6;
+      color: #111827;
+      line-height: 1.45;
       padding: 20px;
+      font-size: 10pt;
     }
     .no-print {
-      background: #1e293b;
+      background: #1f2937;
       color: white;
-      padding: 14px;
+      padding: 12px;
       display: flex;
-      gap: 10px;
+      gap: 8px;
       justify-content: center;
       align-items: center;
       position: sticky;
       top: 0;
       z-index: 100;
-      box-shadow: 0 2px 8px rgba(0,0,0,.2);
-      margin: -20px -20px 20px -20px;
+      margin: -20px -20px 16px -20px;
     }
     .no-print button {
-      padding: 10px 18px;
-      font-size: 13px;
-      background: #329bff;
+      padding: 9px 16px;
+      font-size: 12px;
+      background: #2563eb;
       color: white;
       border: none;
-      border-radius: 6px;
+      border-radius: 4px;
       cursor: pointer;
-      font-weight: 600;
+      font-weight: 500;
+      font-family: inherit;
     }
-    .no-print button:hover { background: #1666e0; }
-    .no-print button.close { background: #475569; }
-    .no-print button.pdf { background: #10b981; }
-    .no-print button.pdf:hover { background: #059669; }
-    .no-print button span { margin-right: 6px; }
+    .no-print button:hover { background: #1d4ed8; }
+    .no-print button.close { background: #6b7280; }
 
     .sheet {
       width: 210mm;
       min-height: 297mm;
       margin: 0 auto;
       background: white;
-      padding: 12mm 14mm;
-      box-shadow: 0 4px 20px rgba(0,0,0,.15);
-      border-radius: 2px;
+      padding: 14mm 16mm;
+      box-shadow: 0 2px 8px rgba(0,0,0,.1);
     }
 
-    /* ==== HEADER ==== */
     .header {
       display: grid;
-      grid-template-columns: 60mm 1fr 65mm;
-      gap: 8mm;
+      grid-template-columns: 55mm 1fr 70mm;
+      gap: 6mm;
       align-items: center;
-      padding-bottom: 8mm;
-      border-bottom: 2px solid #1666e0;
+      padding-bottom: 6mm;
+      border-bottom: 1.5pt solid #1e3a8a;
+      margin-bottom: 6mm;
     }
     .logo-box {
-      background: white;
-      padding: 3mm;
       text-align: center;
-      border: 1px solid #e2e8f0;
-      border-radius: 4px;
+      padding: 2mm;
+      border: 0.5pt solid #d1d5db;
     }
-    .logo-box img { width: 100%; max-width: 54mm; height: auto; }
-    .logo-box-fallback {
-      font-weight: 900;
-      font-size: 24pt;
-      color: #1666e0;
-      letter-spacing: 2px;
-    }
+    .logo-box img { width: 100%; max-width: 50mm; height: auto; }
     .company-name {
-      font-size: 18pt;
-      font-weight: 900;
-      color: #1666e0;
-      letter-spacing: 1px;
-      margin-bottom: 2mm;
+      font-size: 16pt;
+      font-weight: bold;
+      color: #1e3a8a;
+      letter-spacing: 0.5px;
+      margin-bottom: 1mm;
     }
     .company-tagline {
       font-size: 8pt;
-      color: #64748b;
-      margin-bottom: 4mm;
-      letter-spacing: 1px;
+      color: #6b7280;
+      margin-bottom: 3mm;
       text-transform: uppercase;
+      letter-spacing: 1.5px;
     }
     .company-info {
-      font-size: 9pt;
-      line-height: 1.55;
-      color: #475569;
+      font-size: 8.5pt;
+      line-height: 1.6;
+      color: #4b5563;
     }
-    .company-info div { margin: 0.5mm 0; }
+    .company-info div { margin: 0.3mm 0; }
 
     .order-meta {
       text-align: right;
-      background: #f0f9ff;
-      padding: 5mm 6mm;
-      border-radius: 4px;
-      border-left: 4px solid #1666e0;
+      padding: 4mm 5mm;
+      border: 1pt solid #1e3a8a;
     }
     .order-meta .label {
       font-size: 7pt;
-      color: #64748b;
+      color: #6b7280;
       text-transform: uppercase;
-      letter-spacing: 1px;
-      font-weight: 700;
+      letter-spacing: 1.5px;
+      font-weight: 600;
     }
     .order-meta .order-num {
-      font-size: 18pt;
-      font-weight: 900;
-      color: #1666e0;
-      letter-spacing: 1px;
+      font-size: 14pt;
+      font-weight: bold;
+      color: #1e3a8a;
+      letter-spacing: 0.5px;
       margin: 1mm 0;
     }
     .order-meta .order-date {
-      font-size: 9pt;
-      color: #475569;
-      margin-top: 2mm;
+      font-size: 8.5pt;
+      color: #4b5563;
+      margin-top: 1.5mm;
     }
 
-    /* ==== CLIENT + DETAILS ==== */
+    .doc-title {
+      text-align: center;
+      font-size: 16pt;
+      font-weight: bold;
+      color: #1e3a8a;
+      letter-spacing: 3px;
+      margin: 4mm 0 6mm;
+    }
+
     .info-section {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 6mm;
-      margin: 7mm 0;
+      gap: 5mm;
+      margin-bottom: 5mm;
     }
     .info-box {
-      background: #f8fafc;
-      border: 1px solid #e2e8f0;
-      border-radius: 4px;
-      padding: 5mm 6mm;
+      padding: 4mm 5mm;
+      border: 0.5pt solid #9ca3af;
     }
     .info-box h3 {
       font-size: 9pt;
-      color: #1666e0;
+      color: #1e3a8a;
       text-transform: uppercase;
       letter-spacing: 1.5px;
-      font-weight: 800;
+      font-weight: bold;
       margin-bottom: 3mm;
-      padding-bottom: 2mm;
-      border-bottom: 1px solid #cbd5e1;
+      padding-bottom: 1.5mm;
+      border-bottom: 0.5pt solid #1e3a8a;
     }
     .info-row {
-      display: flex;
-      gap: 3mm;
-      margin: 1.5mm 0;
+      display: grid;
+      grid-template-columns: 32mm 1fr;
+      gap: 2mm;
+      margin: 1mm 0;
       font-size: 9pt;
     }
-    .info-row .ico {
-      width: 14px;
-      text-align: center;
-      color: #1666e0;
-      flex-shrink: 0;
-    }
     .info-row .lbl {
-      font-weight: 700;
-      color: #475569;
-      min-width: 24mm;
+      font-weight: 600;
+      color: #4b5563;
     }
-    .info-row .val { color: #1a1a1a; flex: 1; }
+    .info-row .val { color: #111827; }
 
-    /* ==== TABLE ==== */
     table.items {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 4mm;
+      margin: 4mm 0;
     }
     table.items thead th {
-      background: #1e40af;
+      background: #1e3a8a;
       color: white;
-      padding: 3mm 3mm;
+      padding: 2.5mm 3mm;
       text-align: left;
-      font-size: 8pt;
+      font-size: 8.5pt;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      font-weight: 700;
+      font-weight: 600;
     }
     table.items thead th.right { text-align: right; }
     table.items thead th.center { text-align: center; }
     table.items tbody td {
-      padding: 3mm 3mm;
-      border-bottom: 1px solid #e2e8f0;
+      padding: 2.5mm 3mm;
+      border-bottom: 0.5pt solid #d1d5db;
       font-size: 9pt;
       vertical-align: top;
     }
     table.items tbody td.right { text-align: right; }
     table.items tbody td.center { text-align: center; }
-    table.items tbody tr:nth-child(even) { background: #f8fafc; }
-    table.items tbody tr:last-child td { border-bottom: 2px solid #1e40af; }
-    .item-name { font-weight: 700; color: #1a1a1a; }
-    .item-sub { font-size: 8pt; color: #64748b; margin-top: 0.5mm; }
+    .item-name { font-weight: 600; color: #111827; }
+    .item-sub { font-size: 7.5pt; color: #6b7280; margin-top: 0.5mm; }
 
-    /* ==== TOTALS ==== */
     .totals {
       display: flex;
       justify-content: flex-end;
-      margin-top: 4mm;
+      margin: 3mm 0 5mm;
     }
     .totals-box {
-      width: 75mm;
-      border: 1px solid #cbd5e1;
-      border-radius: 4px;
-      overflow: hidden;
+      width: 80mm;
+      border: 0.5pt solid #9ca3af;
     }
     .total-row {
       display: flex;
       justify-content: space-between;
-      padding: 2.5mm 4mm;
+      padding: 2mm 4mm;
       font-size: 9pt;
-      background: white;
+      border-bottom: 0.3pt solid #e5e7eb;
     }
-    .total-row.sub { color: #475569; }
-    .total-row.disc { color: #10b981; }
+    .total-row:last-child { border-bottom: none; }
+    .total-row.sub { color: #4b5563; }
+    .total-row.disc { color: #047857; }
     .total-row.grand {
-      background: #1e40af;
+      background: #1e3a8a;
       color: white;
-      font-weight: 800;
-      font-size: 12pt;
+      font-weight: bold;
+      font-size: 11pt;
     }
 
-    /* ==== CONDITIONS + SIGNATURE ==== */
     .bottom {
       display: grid;
-      grid-template-columns: 1.4fr 1fr;
-      gap: 6mm;
-      margin-top: 8mm;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 5mm;
+      margin-top: 6mm;
     }
     .conditions {
-      background: #f0f9ff;
-      border-left: 3px solid #1666e0;
-      border-radius: 4px;
       padding: 4mm 5mm;
+      border: 0.5pt solid #9ca3af;
+      background: #f9fafb;
     }
     .conditions h4 {
-      font-size: 9pt;
-      color: #1666e0;
+      font-size: 8.5pt;
+      color: #1e3a8a;
       text-transform: uppercase;
       letter-spacing: 1.5px;
-      font-weight: 800;
-      margin-bottom: 3mm;
+      font-weight: bold;
+      margin-bottom: 2.5mm;
     }
     .conditions ul {
       list-style: none;
       padding: 0;
     }
     .conditions li {
-      font-size: 8.5pt;
-      color: #475569;
-      margin: 1.5mm 0;
+      font-size: 8pt;
+      color: #4b5563;
+      margin: 1.2mm 0;
       padding-left: 4mm;
       position: relative;
+      line-height: 1.5;
     }
     .conditions li::before {
       content: "•";
       position: absolute;
       left: 0;
-      color: #1666e0;
-      font-weight: 800;
+      color: #1e3a8a;
+      font-weight: bold;
     }
     .signature {
-      border: 1px solid #cbd5e1;
-      border-radius: 4px;
-      padding: 4mm;
+      border: 0.5pt solid #9ca3af;
+      padding: 3mm;
       display: flex;
       flex-direction: column;
       align-items: center;
-      justify-content: space-between;
-      min-height: 32mm;
+      justify-content: flex-end;
+      min-height: 35mm;
     }
     .sig-label {
-      font-size: 8pt;
-      color: #64748b;
+      font-size: 7.5pt;
+      color: #6b7280;
       text-align: center;
       width: 100%;
-      border-top: 1px solid #94a3b8;
-      padding-top: 2mm;
-      margin-top: auto;
+      border-top: 0.5pt solid #9ca3af;
+      padding-top: 1.5mm;
     }
 
-    /* ==== FOOTER ==== */
     .thanks {
       text-align: center;
-      margin: 6mm 0 4mm;
-      font-size: 10pt;
-      font-weight: 800;
-      color: #1666e0;
+      margin: 5mm 0 3mm;
+      font-size: 9pt;
+      font-weight: bold;
+      color: #1e3a8a;
       letter-spacing: 2px;
     }
-    .values {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 4mm;
-      border-top: 1px solid #e2e8f0;
-      padding-top: 4mm;
-    }
-    .value-item {
+    .footer-info {
       text-align: center;
-      padding: 2mm;
-    }
-    .value-item .vi-title {
-      font-size: 8pt;
-      color: #1666e0;
-      text-transform: uppercase;
-      letter-spacing: 2px;
-      font-weight: 800;
-    }
-    .value-item .vi-text {
-      font-size: 7.5pt;
-      color: #64748b;
-      margin-top: 1mm;
-      line-height: 1.3;
-    }
-    .drop {
-      width: 14px;
-      height: 14px;
-      color: #1666e0;
-      margin: 0 auto 1mm;
+      font-size: 7pt;
+      color: #9ca3af;
+      margin-top: 3mm;
+      padding-top: 2mm;
+      border-top: 0.5pt solid #e5e7eb;
     }
 
     @media print {
@@ -1254,7 +1210,6 @@ router.get('/order-sheet/:orderId', auth, (req, res) => {
         padding: 10mm 12mm;
         width: 100%;
         min-height: auto;
-        border-radius: 0;
       }
       @page {
         size: A4;
@@ -1265,32 +1220,33 @@ router.get('/order-sheet/:orderId', auth, (req, res) => {
 </head>
 <body>
   <div class="no-print">
-    <button onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
+    <button onclick="window.print()">Imprimir / Guardar PDF</button>
     <button class="close" onclick="window.close()">Cerrar</button>
   </div>
 
   <div class="sheet">
     <div class="header">
       <div class="logo-box">
-        <img src="https://mndiayediawara-hue.github.io/cleansahel/logo.svg" alt="SAHEL" onerror="this.outerHTML='<div class=\\'logo-box-fallback\\'>SAHEL</div>'" />
-        <div style="font-size: 6.5pt; color: #1666e0; margin-top: 1mm; letter-spacing: 1.5px; font-weight: 700;">PRODUITS D'HYGIÈNE</div>
+        <img src="https://mndiayediawara-hue.github.io/cleansahel/logo.svg" alt="SAHEL" onerror="this.outerHTML='<div style=&quot;font-weight:bold;font-size:18pt;color:#1e3a8a;&quot;>SAHEL</div>'" />
       </div>
       <div>
         <div class="company-name">${(companyInfo.name || 'SAHEL').toUpperCase()}</div>
         <div class="company-tagline">${companyInfo.tagline || 'Produits d\'Hygiène'}</div>
         <div class="company-info">
-          ${companyInfo.address ? `<div>📍 ${companyInfo.address}${companyInfo.city ? ', ' + companyInfo.city : ''}${companyInfo.country ? ', ' + companyInfo.country : ''}</div>` : ''}
-          ${companyInfo.phone ? `<div>📞 ${companyInfo.phone}</div>` : ''}
-          ${companyInfo.email ? `<div>✉️ ${companyInfo.email}</div>` : ''}
-          ${companyInfo.website ? `<div>🌐 ${companyInfo.website}</div>` : ''}
+          ${companyInfo.address ? `<div>${companyInfo.address}${companyInfo.city ? ', ' + companyInfo.city : ''}${companyInfo.country ? ', ' + companyInfo.country : ''}</div>` : ''}
+          ${companyInfo.phone ? `<div>Tel: ${companyInfo.phone}</div>` : ''}
+          ${companyInfo.email ? `<div>Email: ${companyInfo.email}</div>` : ''}
+          ${companyInfo.website ? `<div>Web: ${companyInfo.website}</div>` : ''}
         </div>
       </div>
       <div class="order-meta">
-        <div class="label">PEDIDO N°</div>
+        <div class="label">Pedido N°</div>
         <div class="order-num">${order.number}</div>
-        <div class="order-date">FECHA: ${orderDate.split('-').reverse().join('/')}</div>
+        <div class="order-date">Fecha: ${orderDate.split('-').reverse().join('/')}</div>
       </div>
     </div>
+
+    <div class="doc-title">HOJA DE PEDIDO</div>
 
     <div class="info-section">
       <div class="info-box">
@@ -1319,7 +1275,7 @@ router.get('/order-sheet/:orderId', auth, (req, res) => {
           <span class="lbl">Vendedor:</span>
           <span class="val">${seller}</span>
         </div>
-        ${customerRef ? `<div class="info-row"><span class="lbl">Referencia cliente:</span><span class="val">${customerRef}</span></div>` : ''}
+        ${customerRef ? `<div class="info-row"><span class="lbl">Ref. cliente:</span><span class="val">${customerRef}</span></div>` : ''}
         ${order.notes ? `<div class="info-row"><span class="lbl">Notas:</span><span class="val">${order.notes}</span></div>` : ''}
       </div>
     </div>
@@ -1359,19 +1315,19 @@ router.get('/order-sheet/:orderId', auth, (req, res) => {
     <div class="totals">
       <div class="totals-box">
         <div class="total-row sub">
-          <span>SUBTOTAL</span>
+          <span>Subtotal</span>
           <span>${subtotal.toLocaleString('es-ES', { minimumFractionDigits: 2 })} ${currency}</span>
         </div>
         ${discount > 0 ? `<div class="total-row disc">
-          <span>DESCUENTO</span>
+          <span>Descuento</span>
           <span>-${discount.toLocaleString('es-ES', { minimumFractionDigits: 2 })} ${currency}</span>
         </div>` : ''}
         ${shipping > 0 ? `<div class="total-row sub">
-          <span>TRANSPORTE</span>
+          <span>Transporte</span>
           <span>${shipping.toLocaleString('es-ES', { minimumFractionDigits: 2 })} ${currency}</span>
         </div>` : ''}
         ${tax > 0 ? `<div class="total-row sub">
-          <span>${taxRate}% IVA</span>
+          <span>${taxRate}% I.V.A.</span>
           <span>${tax.toLocaleString('es-ES', { minimumFractionDigits: 2 })} ${currency}</span>
         </div>` : ''}
         <div class="total-row grand">
@@ -1386,34 +1342,19 @@ router.get('/order-sheet/:orderId', auth, (req, res) => {
         <h4>Condiciones Generales</h4>
         <ul>
           <li>Los productos viajan por cuenta y riesgo del comprador.</li>
-          <li>Cualquier reclamación debe hacerse dentro de las <strong>48h</strong> después de la recepción.</li>
+          <li>Cualquier reclamación debe hacerse dentro de las 48h después de la recepción.</li>
           <li>Pagos: transferencia bancaria o efectivo según condiciones acordadas.</li>
         </ul>
       </div>
       <div class="signature">
-        <div style="width: 100%; height: 18mm;"></div>
         <div class="sig-label">Firma y sello del cliente</div>
       </div>
     </div>
 
     <div class="thanks">¡GRACIAS POR SU CONFIANZA!</div>
 
-    <div class="values">
-      <div class="value-item">
-        <svg class="drop" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 8 6 13 6 15a6 6 0 0012 0c0-2-.48-7-6-13z"/></svg>
-        <div class="vi-title">CALIDAD</div>
-        <div class="vi-text">Productos de alta calidad para tu higiene diaria</div>
-      </div>
-      <div class="value-item">
-        <svg class="drop" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l-9 4v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V6l-9-4z"/></svg>
-        <div class="vi-title">CONFIANZA</div>
-        <div class="vi-text">Comprometidos con tu satisfacción</div>
-      </div>
-      <div class="value-item">
-        <svg class="drop" viewBox="0 0 24 24" fill="currentColor"><path d="M17 8C8 10 5.9 16.17 3.82 21.34l1.89.66.95-2.3c.48.17.98.3 1.34.3C19 20 22 3 22 3c-1 2-8 2.25-13 3.25S2 11.5 2 13.5s1.75 3.75 1.75 3.75C7 8 17 8 17 8z"/></svg>
-        <div class="vi-title">RESPONSABILIDAD</div>
-        <div class="vi-text">Respetuosos con el medio ambiente</div>
-      </div>
+    <div class="footer-info">
+      ${(companyInfo.name || 'SAHEL').toUpperCase()} · ${companyInfo.tagline || 'Produits d\'Hygiène'}
     </div>
   </div>
 </body>
