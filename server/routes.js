@@ -104,12 +104,9 @@ router.get('/auth/me', auth, (req, res) => {
 })
 
 // ---------- USERS ----------
-router.get('/users', auth, (_req, res) => {
-  const rows = db.prepare('SELECT id, username, full_name, email, role, active, created_at, last_login FROM users ORDER BY full_name').all()
-  res.json(rows.map(u => ({
-    id: u.id, username: u.username, fullName: u.full_name, email: u.email, role: u.role,
-    active: !!u.active, createdAt: u.created_at, lastLogin: u.last_login
-  })))
+router.get('/users', auth, requirePermission('users', 'view'), (_req, res) => {
+  const rows = db.prepare('SELECT * FROM users ORDER BY full_name').all()
+  res.json(rows.map(mapUser))
 })
 
 router.post('/users', auth, requirePermission('users', 'create'), (req, res) => {
