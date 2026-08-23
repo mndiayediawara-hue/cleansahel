@@ -2906,3 +2906,294 @@ router.get('/print-label/:lotId', auth, (req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
   res.send(html)
 })
+
+// ---------- CUSTOMER CARD (Tarjeta de cliente con QR) ----------
+// GET /api/customer-card/:code
+router.get('/customer-card/:code', auth, (req, res) => {
+  const customer = db.prepare('SELECT * FROM customers WHERE code = ?').get(req.params.code)
+  if (!customer) return res.status(404).send('<h1>Cliente no encontrado</h1>')
+
+  const companyInfo = getConfig('company', { name: 'SAHEL', tagline: 'Produits d\'Hygiène' })
+  const deliveryUrl = `${req.protocol}://${req.get('host')}/api/delivery-mobile?code=${encodeURIComponent(customer.code)}`
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&margin=10&data=${encodeURIComponent(deliveryUrl)}`
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tarjeta ${customer.code}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; background: #e5e7eb; padding: 20px; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .no-print { background: #1f2937; color: white; padding: 12px; display: flex; gap: 8px; justify-content: center; align-items: center; position: fixed; top: 0; left: 0; right: 0; z-index: 100; }
+    .no-print button { padding: 9px 16px; font-size: 12px; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; font-family: inherit; }
+    .no-print button:hover { background: #1d4ed8; }
+    .no-print button.close { background: #6b7280; }
+    .card-container { display: flex; flex-direction: column; gap: 16px; margin-top: 50px; align-items: center; }
+    .card { width: 85.6mm; height: 53.98mm; background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%); border: 1px solid #1e3a8a; border-radius: 6px; padding: 5mm; display: grid; grid-template-columns: 1fr 26mm; gap: 4mm; box-shadow: 0 4px 12px rgba(0,0,0,.15); position: relative; overflow: hidden; }
+    .card-info { display: flex; flex-direction: column; justify-content: space-between; padding-top: 3mm; }
+    .card-brand { font-size: 9pt; font-weight: bold; color: #1e3a8a; letter-spacing: 0.5px; margin-top: 2mm; }
+    .card-tagline { font-size: 6pt; color: #6b7280; text-transform: uppercase; letter-spacing: 1px; margin-top: 0.5mm; }
+    .card-customer { flex: 1; display: flex; flex-direction: column; justify-content: center; margin: 2mm 0; }
+    .card-name { font-size: 10pt; font-weight: bold; color: #111827; margin-bottom: 2mm; line-height: 1.1; }
+    .card-code { display: inline-block; background: #1e3a8a; color: white; padding: 1.5mm 3mm; font-family: 'Courier New', monospace; font-size: 11pt; font-weight: bold; letter-spacing: 1.5px; align-self: flex-start; }
+    .card-qr { display: flex; flex-direction: column; align-items: center; justify-content: center; padding-top: 3mm; }
+    .card-qr img { width: 24mm; height: 24mm; display: block; }
+    .card-qr-label { font-size: 5.5pt; color: #6b7280; margin-top: 0.5mm; text-align: center; }
+    .instructions { max-width: 600px; background: white; padding: 16px 20px; border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,.08); font-size: 10pt; color: #4b5563; line-height: 1.5; }
+    .instructions h3 { color: #1e3a8a; font-size: 11pt; margin-bottom: 8px; }
+    .instructions ul { padding-left: 18px; }
+    .instructions li { margin: 4px 0; }
+    @media print { body { background: white; padding: 0; } .no-print { display: none; } .card-container { margin: 0; } .card { box-shadow: none; page-break-inside: avoid; margin: 8mm auto; } .instructions { display: none; } @page { size: A4; margin: 8mm; } }
+  </style>
+</head>
+<body>
+  <div class="no-print">
+    <button onclick="window.print()">Imprimir / Guardar PDF</button>
+    <button class="close" onclick="window.close()">Cerrar</button>
+  </div>
+  <div class="card-container">
+    <div class="card">
+      <div class="card-info">
+        <div>
+          <div class="card-brand">${(companyInfo.name || 'SAHEL').toUpperCase()}</div>
+          <div class="card-tagline">${companyInfo.tagline || 'Produits d\'Hygiène'}</div>
+        </div>
+        <div class="card-customer">
+          <div class="card-name">${customer.name}</div>
+          <div class="card-code">${customer.code}</div>
+        </div>
+      </div>
+      <div class="card-qr">
+        <img src="${qrUrl}" alt="QR ${customer.code}" />
+        <div class="card-qr-label">Escanear para entrega</div>
+      </div>
+    </div>
+    <div class="instructions no-print">
+      <h3>Instrucciones</h3>
+      <ul>
+        <li>Tarjeta de <strong>${customer.name}</strong></li>
+        <li>Código: <strong>${customer.code}</strong></li>
+        <li>Imprimir en papel grueso (85.6mm × 54mm) y plastificar.</li>
+        <li>El cliente conserva siempre la misma tarjeta.</li>
+      </ul>
+    </div>
+  </div>
+</body>
+</html>`
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
+// Tarjeta con auth por query string
+router.get('/customer-card-view/:code', (req, res) => {
+  const token = req.query.token
+  if (token) {
+    try {
+      const jwt = require('jsonwebtoken')
+      req.user = jwt.verify(token, process.env.JWT_SECRET || 'cleanerp-dev-secret-change-in-production-9f8e7d6c5b4a3210')
+    } catch (e) {}
+  }
+  return router.handle({ ...req, url: `/customer-card/${req.params.code}`, method: 'GET' }, res, () => {})
+})
+
+// ---------- DELIVERY MOBILE (Escáner QR + Input manual) ----------
+router.get('/delivery-mobile', (req, res) => {
+  const prefillCode = req.query.code || ''
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#1e3a8a">
+  <title>SAHEL - Entregas</title>
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f3f4f6; color: #111827; min-height: 100vh; }
+    .header { background: #1e3a8a; color: white; padding: 14px 16px; display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 10; }
+    .header img { width: 32px; height: 32px; }
+    .header h1 { font-size: 15px; font-weight: 600; }
+    .header .sub { font-size: 10px; opacity: .85; }
+    .container { max-width: 600px; margin: 0 auto; padding: 12px; }
+    .card { background: white; border-radius: 8px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.1); margin-bottom: 10px; }
+    .card h2 { font-size: 12px; color: #6b7280; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 12px; font-weight: 600; }
+    .scanner { width: 100%; aspect-ratio: 1; max-height: 280px; background: #000; border-radius: 8px; overflow: hidden; position: relative; display: flex; align-items: center; justify-content: center; }
+    .scanner-placeholder { color: #9ca3af; text-align: center; padding: 20px; }
+    .scanner button { background: #1e3a8a; color: white; border: none; padding: 10px 16px; border-radius: 6px; font-size: 13px; cursor: pointer; margin-top: 10px; font-family: inherit; }
+    .manual-input { display: flex; gap: 6px; margin-top: 10px; }
+    .manual-input input { flex: 1; padding: 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 15px; font-family: monospace; text-transform: uppercase; letter-spacing: 1px; }
+    .manual-input input:focus { outline: none; border-color: #1e3a8a; box-shadow: 0 0 0 3px rgba(30,58,138,.15); }
+    .manual-input button { background: #1e3a8a; color: white; border: none; padding: 10px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit; }
+    .customer-info { background: white; border-radius: 8px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.1); margin-bottom: 10px; }
+    .customer-info h3 { font-size: 17px; color: #111827; margin-bottom: 4px; }
+    .customer-info .code { display: inline-block; background: #1e3a8a; color: white; padding: 3px 8px; border-radius: 4px; font-family: monospace; font-size: 11px; font-weight: 600; letter-spacing: 1.5px; }
+    .customer-info .meta { font-size: 12px; color: #6b7280; margin-top: 4px; }
+    .order { background: white; border-radius: 8px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,.1); margin-bottom: 8px; border-left: 4px solid #1e3a8a; }
+    .order-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .order-number { font-family: monospace; font-weight: 600; color: #1e3a8a; font-size: 14px; }
+    .order-date { font-size: 11px; color: #6b7280; }
+    .order-total { font-size: 17px; font-weight: 700; color: #111827; margin: 6px 0; }
+    .order-items { font-size: 12px; color: #4b5563; padding: 6px 0; border-top: 1px solid #e5e7eb; }
+    .order-btn { width: 100%; background: #10b981; color: white; border: none; padding: 11px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 8px; font-family: inherit; }
+    .order-btn:disabled { background: #9ca3af; cursor: not-allowed; }
+    .order-btn:active { background: #059669; }
+    .order-delivered { background: #f0fdf4; border-left-color: #10b981; }
+    .order-delivered-info { font-size: 12px; color: #047857; margin-top: 6px; font-style: italic; }
+    .empty { text-align: center; padding: 24px 12px; color: #6b7280; }
+    .login-box { background: white; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.1); text-align: center; max-width: 360px; margin: 40px auto; }
+    .login-box input { width: 100%; padding: 10px; margin: 6px 0; border: 1px solid #d1d5db; border-radius: 6px; font-size: 14px; box-sizing: border-box; }
+    .login-box button { width: 100%; background: #1e3a8a; color: white; border: none; padding: 11px; border-radius: 6px; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 10px; font-family: inherit; }
+    .login-error { color: #dc2626; font-size: 13px; margin-top: 8px; }
+    .hidden { display: none; }
+    .badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+    .badge-ok { background: #d1fae5; color: #065f46; }
+    .toast { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); background: #1f2937; color: white; padding: 10px 16px; border-radius: 6px; font-size: 13px; z-index: 100; opacity: 0; transition: opacity 0.2s; }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="https://mndiayediawara-hue.github.io/cleansahel/logo.svg" onerror="this.outerHTML='<div style=width:32px;height:32px;background:white;color:#1e3a8a;font-weight:bold;display:flex;align-items:center;justify-content:center;border-radius:4px;font-size:12px>SH</div>'" />
+    <div>
+      <h1>SAHEL · Entregas</h1>
+      <div class="sub">Escanear QR o introducir código</div>
+    </div>
+  </div>
+  <div class="container">
+    <div id="loginSection" class="login-box hidden">
+      <p style="color: #6b7280; margin-bottom: 12px;">Inicia sesión para continuar</p>
+      <input type="text" id="loginUser" placeholder="Usuario" autocomplete="username" />
+      <input type="password" id="loginPass" placeholder="Contraseña" autocomplete="current-password" />
+      <button onclick="doLogin()">Iniciar sesión</button>
+      <div id="loginError" class="login-error hidden"></div>
+    </div>
+    <div id="mainSection" class="hidden">
+      <div class="card">
+        <h2>1. Escanear QR del cliente</h2>
+        <div id="qr-reader" class="scanner"></div>
+        <button id="startScanBtn" onclick="startScanner()">Iniciar cámara</button>
+        <div style="margin-top: 10px; text-align: center; color: #6b7280; font-size: 11px;">o introduce el código manualmente</div>
+        <div class="manual-input">
+          <input type="text" id="codeInput" placeholder="CL-00001" value="${prefillCode}" autocomplete="off" />
+          <button onclick="lookupCustomer()">Buscar</button>
+        </div>
+      </div>
+      <div id="resultSection"></div>
+    </div>
+  </div>
+  <div id="toast" class="toast"></div>
+  <script>
+    const API = 'https://cleansahel-production.up.railway.app/api'
+    let token = localStorage.getItem('cleanerp-token') || new URLSearchParams(window.location.search).get('token')
+    if (token) { localStorage.setItem('cleanerp-token', token); showMain() } else { document.getElementById('loginSection').classList.remove('hidden') }
+    function showToast(msg, color) { const t = document.getElementById('toast'); t.textContent = msg; t.style.background = color || '#1f2937'; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2500) }
+    async function doLogin() {
+      const username = document.getElementById('loginUser').value.trim()
+      const password = document.getElementById('loginPass').value
+      if (!username || !password) { document.getElementById('loginError').textContent = 'Introduce usuario y contraseña'; document.getElementById('loginError').classList.remove('hidden'); return }
+      try {
+        const res = await fetch(API + '/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) })
+        if (!res.ok) throw new Error('Credenciales incorrectas')
+        const data = await res.json()
+        token = data.token
+        localStorage.setItem('cleanerp-token', token)
+        document.getElementById('loginSection').classList.add('hidden')
+        document.getElementById('loginError').classList.add('hidden')
+        showMain()
+      } catch (e) { document.getElementById('loginError').textContent = e.message; document.getElementById('loginError').classList.remove('hidden') }
+    }
+    function showMain() { document.getElementById('mainSection').classList.remove('hidden'); const prefill = document.getElementById('codeInput').value.trim(); if (prefill) lookupCustomer() }
+    function startScanner() {
+      const readerEl = document.getElementById('qr-reader'); readerEl.innerHTML = ''
+      const html5QrCode = new Html5Qrcode('qr-reader')
+      const startBtn = document.getElementById('startScanBtn')
+      startBtn.disabled = true; startBtn.textContent = 'Escaneando...'
+      html5QrCode.start({ facingMode: 'environment' }, { fps: 10, qrbox: 250 },
+        (decodedText) => {
+          html5QrCode.stop().then(() => {
+            startBtn.disabled = false; startBtn.textContent = 'Reiniciar cámara'
+            const codeMatch = decodedText.match(/CL-\\d{4,6}/)
+            const code = codeMatch ? codeMatch[0] : decodedText.trim()
+            document.getElementById('codeInput').value = code
+            lookupCustomer()
+          }).catch(() => {})
+        }, (error) => {}
+      ).catch(err => { startBtn.disabled = false; startBtn.textContent = 'Iniciar cámara'; showToast('Error al acceder a la cámara: ' + err.message, '#dc2626') })
+    }
+    async function lookupCustomer() {
+      const code = document.getElementById('codeInput').value.trim().toUpperCase()
+      if (!code) { showToast('Introduce un código', '#dc2626'); return }
+      document.getElementById('codeInput').value = code
+      try {
+        const res = await fetch(API + '/delivery/lookup/' + encodeURIComponent(code), { headers: { 'Authorization': 'Bearer ' + token } })
+        if (res.status === 404) { showToast('Cliente no encontrado: ' + code, '#dc2626'); document.getElementById('resultSection').innerHTML = ''; return }
+        if (!res.ok) throw new Error('Error al buscar cliente')
+        const data = await res.json()
+        renderCustomer(data)
+      } catch (e) { showToast('Error: ' + e.message, '#dc2626') }
+    }
+    function renderCustomer(data) {
+      const c = data.customer; const orders = data.pendingOrders; const delivered = data.deliveredOrders
+      let html = '<div class="customer-info">'
+      html += '<h3>' + escapeHtml(c.name) + '</h3>'
+      html += '<span class="code">' + escapeHtml(c.code) + '</span>'
+      if (c.company) html += '<div class="meta">' + escapeHtml(c.company) + '</div>'
+      if (c.phone) html += '<div class="meta">Tel: ' + escapeHtml(c.phone) + '</div>'
+      if (c.address) html += '<div class="meta">' + escapeHtml(c.address) + (c.city ? ', ' + escapeHtml(c.city) : '') + '</div>'
+      html += '</div>'
+      if (orders.length === 0) { html += '<div class="empty">No hay pedidos pendientes para este cliente.</div>' }
+      else {
+        html += '<div class="card"><h2>2. Pedidos pendientes (' + orders.length + ')</h2></div>'
+        for (const o of orders) {
+          const itemsHtml = (o.items || []).map(i => escapeHtml(i.name || i.productName) + ' × ' + i.quantity).join('<br>')
+          html += '<div class="order" id="order-' + o.id + '">'
+          html += '<div class="order-header"><span class="order-number">' + escapeHtml(o.number) + '</span><span class="order-date">' + formatDate(o.createdAt) + '</span></div>'
+          html += '<div class="order-total">' + (o.total || 0).toFixed(2) + ' €</div>'
+          html += '<div class="order-items">' + itemsHtml + '</div>'
+          html += '<button class="order-btn" onclick="deliverOrder(\\'' + o.id + '\\', this)">Entregar</button>'
+          html += '</div>'
+        }
+      }
+      if (delivered.length > 0) {
+        html += '<div class="card"><h2>Ya entregados (' + delivered.length + ')</h2></div>'
+        for (const o of delivered) {
+          html += '<div class="order order-delivered">'
+          html += '<div class="order-header"><span class="order-number">' + escapeHtml(o.number) + '</span><span class="badge badge-ok">Entregado</span></div>'
+          html += '<div class="order-total">' + (o.total || 0).toFixed(2) + ' €</div>'
+          html += '<div class="order-delivered-info">Entregado el ' + formatDate(o.deliveredAt) + ' por ' + escapeHtml(o.deliveredBy || 'Sistema') + '</div>'
+          html += '</div>'
+        }
+      }
+      document.getElementById('resultSection').innerHTML = html
+      document.getElementById('resultSection').scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+    async function deliverOrder(orderId, btn) {
+      if (!confirm('¿Confirmar la entrega de este pedido?')) return
+      btn.disabled = true; btn.textContent = 'Procesando...'
+      try {
+        const res = await fetch(API + '/delivery/' + orderId, { method: 'POST', headers: { 'Authorization': 'Bearer ' + token } })
+        const data = await res.json()
+        if (!res.ok) {
+          if (data.deliveredAt) { showToast('Pedido ya entregado el ' + formatDate(data.deliveredAt) + ' por ' + data.deliveredBy, '#f59e0b') }
+          else { showToast('Error: ' + (data.error || 'desconocido'), '#dc2626') }
+          btn.disabled = false; btn.textContent = 'Entregar'; return
+        }
+        showToast('Entrega registrada correctamente', '#10b981')
+        setTimeout(() => lookupCustomer(), 800)
+      } catch (e) { showToast('Error: ' + e.message, '#dc2626'); btn.disabled = false; btn.textContent = 'Entregar' }
+    }
+    function formatDate(d) { if (!d) return ''; const dt = new Date(d); return dt.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) }
+    function escapeHtml(s) { if (!s) return ''; return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])) }
+    document.getElementById('codeInput').addEventListener('keypress', (e) => { if (e.key === 'Enter') lookupCustomer() })
+    document.getElementById('loginPass').addEventListener('keypress', (e) => { if (e.key === 'Enter') doLogin() })
+  </script>
+</body>
+</html>`
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
