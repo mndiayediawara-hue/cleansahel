@@ -415,14 +415,32 @@ const mapCust = (c) => ({
 router.get('/customers', auth, (_req, res) => {
   res.json(db.prepare('SELECT * FROM customers ORDER BY name').all().map(mapCust))
 })
+// GET /api/customers/by-code/:code - Buscar cliente por código CL-XXXXX
+router.get('/customers/by-code/:code', auth, (req, res) => {
+  const c = db.prepare('SELECT * FROM customers WHERE code = ?').get(req.params.code)
+  if (!c) return res.status(404).json({ error: 'Cliente no encontrado con ese código' })
+  res.json(mapCust(c))
+})
 router.post('/customers', auth, requireRole('admin', 'comercial'), (req, res) => {
-  const b = req.body
-  const id = uid('c-')
-  const code = b.code || `C-${String(db.prepare('SELECT COUNT(*) c FROM customers').get().c + 1).padStart(3, '0')}`
-  db.prepare('INSERT INTO customers (id, code, name, company, cif, address, city, country, phone, email, contact, notes, total_purchases, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0,?)')
-    .run(id, code, b.name, b.company || '', b.cif || '', b.address || '', b.city || '', b.country || 'España', b.phone || '', b.email || '', b.contact || '', b.notes || '', new Date().toISOString())
-  addHistory(req, { action: 'crear', module: 'Clientes', entityId: id, description: `Creado cliente ${b.name}` })
-  res.json({ id })
+  try {
+    const b = req.body || {}
+    if (!b.name) return res.status(400).json({ error: 'Falta el nombre del cliente' })
+    const id = uid('c-')
+    // Auto-generar código CL-XXXXX si no se proporciona
+    let code = b.code
+    if (!code) {
+      const maxCode = db.prepare("SELECT MAX(CAST(SUBSTR(code, 4) AS INTEGER)) AS max_no FROM customers WHERE code LIKE 'CL-%'").get()
+      const nextNo = (maxCode?.max_no || 0) + 1
+      code = `CL-${String(nextNo).padStart(5, '0')}`
+    }
+    db.prepare('INSERT INTO customers (id, code, name, company, cif, address, city, country, phone, email, contact, notes, total_purchases, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0,?)')
+      .run(id, code, b.name, b.company || '', b.cif || '', b.address || '', b.city || '', b.country || '', b.phone || '', b.email || '', b.contact || '', b.notes || '', new Date().toISOString())
+    addHistory(req, { action: 'crear', module: 'Clientes', entityId: id, description: `Creado cliente ${b.name} (${code})` })
+    res.json({ id, code })
+  } catch (e) {
+    console.error('Error POST /customers:', e.message)
+    res.status(500).json({ error: e.message })
+  }
 })
 router.put('/customers/:id', auth, requireRole('admin', 'comercial'), (req, res) => {
   const b = req.body
@@ -436,11 +454,81 @@ router.delete('/customers/:id', auth, requireRole('admin'), (req, res) => {
   res.json({ ok: true })
 })
 
+// ---------- DELIVERY / ENTREGA DE PEDIDOS ----------
+// GET /api/delivery/lookup/:code - Buscar cliente por código y devolver sus pedidos pendientes
+router.get('/delivery/lookup/:code', auth, (req, res) => {
+  const customer = db.prepare('SELECT * FROM customers WHERE code = ?').get(req.params.code)
+  if (!customer) return res.status(404).json({ error: 'Cliente no encontrado' })
+  // Pedidos NO entregados del cliente
+  const allOrders = db.prepare(`SELECT * FROM orders WHERE customer_id = ? ORDER BY created_at DESC`).all(customer.id)
+  const ordersList = allOrders.map(o => {
+    let items = []
+    try { items = JSON.parse(o.items_json || '[]') } catch {}
+    return {
+      ...o,
+      items,
+      items_json: undefined,
+      delivered: !!o.delivered_at
+    }
+  })
+  res.json({
+    customer: mapCust(customer),
+    orders: ordersList,
+    pendingOrders: ordersList.filter(o => !o.delivered_at),
+    deliveredOrders: ordersList.filter(o => o.delivered_at)
+  })
+})
+
+// POST /api/delivery/:orderId - Marcar pedido como entregado
+router.post('/delivery/:orderId', auth, (req, res) => {
+  try {
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.orderId)
+    if (!order) return res.status(404).json({ error: 'Pedido no encontrado' })
+    if (order.delivered_at) {
+      return res.status(400).json({
+        error: 'Este pedido ya fue entregado',
+        deliveredAt: order.delivered_at,
+        deliveredBy: order.delivered_by
+      })
+    }
+    const now = new Date().toISOString()
+    const userId = req.user?.id || null
+    const userName = req.user?.username || req.user?.fullName || 'Sistema'
+    db.prepare('UPDATE orders SET delivered_at = ?, delivered_by = ?, status = ? WHERE id = ?')
+      .run(now, userName, 'entregado', req.params.orderId)
+    addHistory(req, {
+      action: 'entregar', module: 'Pedidos', entityId: req.params.orderId,
+      description: `Pedido ${order.number} marcado como entregado por ${userName}`
+    })
+    res.json({
+      ok: true,
+      orderId: req.params.orderId,
+      deliveredAt: now,
+      deliveredBy: userName
+    })
+  } catch (e) {
+    console.error('Error POST /delivery:', e.message)
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// DELETE /api/delivery/:orderId - Revertir entrega (solo admin)
+router.delete('/delivery/:orderId', auth, requireRole('admin'), (req, res) => {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.orderId)
+  if (!order) return res.status(404).json({ error: 'Pedido no encontrado' })
+  if (!order.delivered_at) return res.status(400).json({ error: 'Este pedido no estaba entregado' })
+  db.prepare('UPDATE orders SET delivered_at = NULL, delivered_by = NULL, status = ? WHERE id = ?')
+    .run(order.status === 'entregado' ? 'confirmado' : order.status, req.params.orderId)
+  addHistory(req, { action: 'revertir_entrega', module: 'Pedidos', entityId: req.params.orderId, description: `Entrega del pedido ${order.number} revertida` })
+  res.json({ ok: true })
+})
+
 // ---------- ORDERS ----------
 const mapOrder = (o) => ({
   id: o.id, number: o.number, customerId: o.customer_id, items: JSON.parse(o.items_json || '[]'),
   subtotal: o.subtotal, tax: o.tax, discount: o.discount, total: o.total,
-  status: o.status, createdAt: o.created_at, deliveryDate: o.delivery_date, notes: o.notes, createdBy: o.created_by
+  status: o.status, createdAt: o.created_at, deliveryDate: o.delivery_date, notes: o.notes, createdBy: o.created_by,
+  deliveredAt: o.delivered_at || null, deliveredBy: o.delivered_by || null
 })
 
 router.get('/orders', auth, (_req, res) => {
