@@ -17,7 +17,7 @@ export function seed({ force = false } = {}) {
   
   // Config básica
   setConfig('company', {
-    name: 'CleanSahel',
+    name: 'SAHEL',
     cif: '',
     address: '',
     phone: '',
