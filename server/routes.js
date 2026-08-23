@@ -987,7 +987,7 @@ router.get('/invoice-view/:orderId', (req, res) => {
 // Genera una hoja de pedido A4 con el logo SAHEL, datos del cliente, productos, totales y zona de firma
 // Uso: GET /api/order-sheet/:orderId
 //      GET /api/order-sheet-view/:orderId?token=xxx (con token en query)
-router.get('/order-sheet/:orderId', auth, (req, res) => {
+router.get('/order-sheet/:orderId', (req, res) => {
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.orderId)
   if (!order) return res.status(404).send('<h1>Pedido no encontrado</h1>')
   const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id)
@@ -1687,7 +1687,7 @@ function sendEmail() {
 </html>`
 }
 
-router.get('/order-sheet/:orderId', auth, (req, res) => {
+router.get('/order-sheet/:orderId', (req, res) => {
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.orderId)
   if (!order) return res.status(404).send('<h1>Pedido no encontrado</h1>')
   const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id)
