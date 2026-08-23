@@ -2909,7 +2909,10 @@ router.get('/print-label/:lotId', auth, (req, res) => {
 
 // ---------- CUSTOMER CARD (Tarjeta de cliente con QR) ----------
 // GET /api/customer-card/:code
-router.get('/customer-card/:code', auth, (req, res) => {
+// Sin auth: la tarjeta es pública (se entrega al cliente físicamente)
+// El QR de la tarjeta apunta a /api/delivery-mobile que sí puede requerir auth,
+// pero la página mobile maneja su propia auth internamente.
+router.get('/customer-card/:code', (req, res) => {
   const customer = db.prepare('SELECT * FROM customers WHERE code = ?').get(req.params.code)
   if (!customer) return res.status(404).send('<h1>Cliente no encontrado</h1>')
 
