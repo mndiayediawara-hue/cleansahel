@@ -891,6 +891,550 @@ router.get('/invoice-view/:orderId', (req, res) => {
   return router.handle({ ...req, url: `/invoice/${req.params.orderId}`, method: 'GET' }, res, () => {})
 })
 
+// ---------- ORDER SHEET (Hoja de pedido A4 profesional) ----------
+// Genera una hoja de pedido A4 con el logo SAHEL, datos del cliente, productos, totales y zona de firma
+// Uso: GET /api/order-sheet/:orderId
+//      GET /api/order-sheet-view/:orderId?token=xxx (con token en query)
+router.get('/order-sheet/:orderId', auth, (req, res) => {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.orderId)
+  if (!order) return res.status(404).send('<h1>Pedido no encontrado</h1>')
+  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id)
+  let items = []
+  try { items = JSON.parse(order.items_json || '[]') } catch {}
+
+  // Datos de empresa
+  const companyInfo = getConfig('company', { name: 'SAHEL', cif: '', address: '', phone: '', email: '', city: 'Bamako', country: 'Mali' })
+  const taxRate = getConfig('defaults', { tax: 21 }).tax || 21
+
+  const subtotal = order.subtotal || 0
+  const tax = order.tax || 0
+  const discount = order.discount || 0
+  const total = order.total || 0
+  const shipping = order.shipping || 0
+  const currency = order.currency || 'FCFA'
+
+  const orderDate = order.created_at ? order.created_at.split('T')[0] : new Date().toISOString().split('T')[0]
+  const deliveryDate = order.delivery_date || ''
+  const seller = order.seller || order.created_by_name || 'Administración'
+  const paymentTerms = order.payment_terms || 'Contado'
+  const customerRef = order.customer_ref || ''
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hoja de Pedido ${order.number}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #e5e7eb;
+      color: #1a1a1a;
+      line-height: 1.4;
+      padding: 20px;
+    }
+    .no-print {
+      background: #1e293b;
+      color: white;
+      padding: 14px;
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,.2);
+      margin: -20px -20px 20px -20px;
+    }
+    .no-print button {
+      padding: 10px 18px;
+      font-size: 13px;
+      background: #329bff;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .no-print button:hover { background: #1666e0; }
+    .no-print button.close { background: #475569; }
+    .no-print button.pdf { background: #10b981; }
+    .no-print button.pdf:hover { background: #059669; }
+    .no-print button span { margin-right: 6px; }
+
+    .sheet {
+      width: 210mm;
+      min-height: 297mm;
+      margin: 0 auto;
+      background: white;
+      padding: 12mm 14mm;
+      box-shadow: 0 4px 20px rgba(0,0,0,.15);
+      border-radius: 2px;
+    }
+
+    /* ==== HEADER ==== */
+    .header {
+      display: grid;
+      grid-template-columns: 60mm 1fr 65mm;
+      gap: 8mm;
+      align-items: center;
+      padding-bottom: 8mm;
+      border-bottom: 2px solid #1666e0;
+    }
+    .logo-box {
+      background: white;
+      padding: 3mm;
+      text-align: center;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+    }
+    .logo-box img { width: 100%; max-width: 54mm; height: auto; }
+    .logo-box-fallback {
+      font-weight: 900;
+      font-size: 24pt;
+      color: #1666e0;
+      letter-spacing: 2px;
+    }
+    .company-name {
+      font-size: 18pt;
+      font-weight: 900;
+      color: #1666e0;
+      letter-spacing: 1px;
+      margin-bottom: 2mm;
+    }
+    .company-tagline {
+      font-size: 8pt;
+      color: #64748b;
+      margin-bottom: 4mm;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+    .company-info {
+      font-size: 9pt;
+      line-height: 1.55;
+      color: #475569;
+    }
+    .company-info div { margin: 0.5mm 0; }
+
+    .order-meta {
+      text-align: right;
+      background: #f0f9ff;
+      padding: 5mm 6mm;
+      border-radius: 4px;
+      border-left: 4px solid #1666e0;
+    }
+    .order-meta .label {
+      font-size: 7pt;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-weight: 700;
+    }
+    .order-meta .order-num {
+      font-size: 18pt;
+      font-weight: 900;
+      color: #1666e0;
+      letter-spacing: 1px;
+      margin: 1mm 0;
+    }
+    .order-meta .order-date {
+      font-size: 9pt;
+      color: #475569;
+      margin-top: 2mm;
+    }
+
+    /* ==== CLIENT + DETAILS ==== */
+    .info-section {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6mm;
+      margin: 7mm 0;
+    }
+    .info-box {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      padding: 5mm 6mm;
+    }
+    .info-box h3 {
+      font-size: 9pt;
+      color: #1666e0;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      font-weight: 800;
+      margin-bottom: 3mm;
+      padding-bottom: 2mm;
+      border-bottom: 1px solid #cbd5e1;
+    }
+    .info-row {
+      display: flex;
+      gap: 3mm;
+      margin: 1.5mm 0;
+      font-size: 9pt;
+    }
+    .info-row .ico {
+      width: 14px;
+      text-align: center;
+      color: #1666e0;
+      flex-shrink: 0;
+    }
+    .info-row .lbl {
+      font-weight: 700;
+      color: #475569;
+      min-width: 24mm;
+    }
+    .info-row .val { color: #1a1a1a; flex: 1; }
+
+    /* ==== TABLE ==== */
+    table.items {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 4mm;
+    }
+    table.items thead th {
+      background: #1e40af;
+      color: white;
+      padding: 3mm 3mm;
+      text-align: left;
+      font-size: 8pt;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 700;
+    }
+    table.items thead th.right { text-align: right; }
+    table.items thead th.center { text-align: center; }
+    table.items tbody td {
+      padding: 3mm 3mm;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 9pt;
+      vertical-align: top;
+    }
+    table.items tbody td.right { text-align: right; }
+    table.items tbody td.center { text-align: center; }
+    table.items tbody tr:nth-child(even) { background: #f8fafc; }
+    table.items tbody tr:last-child td { border-bottom: 2px solid #1e40af; }
+    .item-name { font-weight: 700; color: #1a1a1a; }
+    .item-sub { font-size: 8pt; color: #64748b; margin-top: 0.5mm; }
+
+    /* ==== TOTALS ==== */
+    .totals {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 4mm;
+    }
+    .totals-box {
+      width: 75mm;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .total-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 2.5mm 4mm;
+      font-size: 9pt;
+      background: white;
+    }
+    .total-row.sub { color: #475569; }
+    .total-row.disc { color: #10b981; }
+    .total-row.grand {
+      background: #1e40af;
+      color: white;
+      font-weight: 800;
+      font-size: 12pt;
+    }
+
+    /* ==== CONDITIONS + SIGNATURE ==== */
+    .bottom {
+      display: grid;
+      grid-template-columns: 1.4fr 1fr;
+      gap: 6mm;
+      margin-top: 8mm;
+    }
+    .conditions {
+      background: #f0f9ff;
+      border-left: 3px solid #1666e0;
+      border-radius: 4px;
+      padding: 4mm 5mm;
+    }
+    .conditions h4 {
+      font-size: 9pt;
+      color: #1666e0;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      font-weight: 800;
+      margin-bottom: 3mm;
+    }
+    .conditions ul {
+      list-style: none;
+      padding: 0;
+    }
+    .conditions li {
+      font-size: 8.5pt;
+      color: #475569;
+      margin: 1.5mm 0;
+      padding-left: 4mm;
+      position: relative;
+    }
+    .conditions li::before {
+      content: "•";
+      position: absolute;
+      left: 0;
+      color: #1666e0;
+      font-weight: 800;
+    }
+    .signature {
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      padding: 4mm;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 32mm;
+    }
+    .sig-label {
+      font-size: 8pt;
+      color: #64748b;
+      text-align: center;
+      width: 100%;
+      border-top: 1px solid #94a3b8;
+      padding-top: 2mm;
+      margin-top: auto;
+    }
+
+    /* ==== FOOTER ==== */
+    .thanks {
+      text-align: center;
+      margin: 6mm 0 4mm;
+      font-size: 10pt;
+      font-weight: 800;
+      color: #1666e0;
+      letter-spacing: 2px;
+    }
+    .values {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 4mm;
+      border-top: 1px solid #e2e8f0;
+      padding-top: 4mm;
+    }
+    .value-item {
+      text-align: center;
+      padding: 2mm;
+    }
+    .value-item .vi-title {
+      font-size: 8pt;
+      color: #1666e0;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      font-weight: 800;
+    }
+    .value-item .vi-text {
+      font-size: 7.5pt;
+      color: #64748b;
+      margin-top: 1mm;
+      line-height: 1.3;
+    }
+    .drop {
+      width: 14px;
+      height: 14px;
+      color: #1666e0;
+      margin: 0 auto 1mm;
+    }
+
+    @media print {
+      body { background: white; padding: 0; }
+      .no-print { display: none; }
+      .sheet {
+        box-shadow: none;
+        margin: 0;
+        padding: 10mm 12mm;
+        width: 100%;
+        min-height: auto;
+        border-radius: 0;
+      }
+      @page {
+        size: A4;
+        margin: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print">
+    <button onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
+    <button class="close" onclick="window.close()">Cerrar</button>
+  </div>
+
+  <div class="sheet">
+    <div class="header">
+      <div class="logo-box">
+        <img src="https://mndiayediawara-hue.github.io/cleansahel/logo.svg" alt="SAHEL" onerror="this.outerHTML='<div class=\\'logo-box-fallback\\'>SAHEL</div>'" />
+        <div style="font-size: 6.5pt; color: #1666e0; margin-top: 1mm; letter-spacing: 1.5px; font-weight: 700;">PRODUITS D'HYGIÈNE</div>
+      </div>
+      <div>
+        <div class="company-name">${(companyInfo.name || 'SAHEL').toUpperCase()}</div>
+        <div class="company-tagline">${companyInfo.tagline || 'Produits d\'Hygiène'}</div>
+        <div class="company-info">
+          ${companyInfo.address ? `<div>📍 ${companyInfo.address}${companyInfo.city ? ', ' + companyInfo.city : ''}${companyInfo.country ? ', ' + companyInfo.country : ''}</div>` : ''}
+          ${companyInfo.phone ? `<div>📞 ${companyInfo.phone}</div>` : ''}
+          ${companyInfo.email ? `<div>✉️ ${companyInfo.email}</div>` : ''}
+          ${companyInfo.website ? `<div>🌐 ${companyInfo.website}</div>` : ''}
+        </div>
+      </div>
+      <div class="order-meta">
+        <div class="label">PEDIDO N°</div>
+        <div class="order-num">${order.number}</div>
+        <div class="order-date">FECHA: ${orderDate.split('-').reverse().join('/')}</div>
+      </div>
+    </div>
+
+    <div class="info-section">
+      <div class="info-box">
+        <h3>Datos del Cliente</h3>
+        <div class="info-row">
+          <span class="lbl">Nombre:</span>
+          <span class="val">${customer?.name || '—'}</span>
+        </div>
+        ${customer?.address ? `<div class="info-row"><span class="lbl">Dirección:</span><span class="val">${customer.address}${customer.city ? ', ' + customer.city : ''}</span></div>` : ''}
+        ${customer?.phone ? `<div class="info-row"><span class="lbl">Teléfono:</span><span class="val">${customer.phone}</span></div>` : ''}
+        ${customer?.email ? `<div class="info-row"><span class="lbl">Email:</span><span class="val">${customer.email}</span></div>` : ''}
+        ${customer?.cif ? `<div class="info-row"><span class="lbl">NIF / VAT:</span><span class="val">${customer.cif}</span></div>` : ''}
+      </div>
+      <div class="info-box">
+        <h3>Detalles del Pedido</h3>
+        <div class="info-row">
+          <span class="lbl">Fecha del pedido:</span>
+          <span class="val">${orderDate.split('-').reverse().join('/')}</span>
+        </div>
+        ${deliveryDate ? `<div class="info-row"><span class="lbl">Fecha de entrega:</span><span class="val">${deliveryDate.split('-').reverse().join('/')}</span></div>` : ''}
+        <div class="info-row">
+          <span class="lbl">Condiciones de pago:</span>
+          <span class="val">${paymentTerms}</span>
+        </div>
+        <div class="info-row">
+          <span class="lbl">Vendedor:</span>
+          <span class="val">${seller}</span>
+        </div>
+        ${customerRef ? `<div class="info-row"><span class="lbl">Referencia cliente:</span><span class="val">${customerRef}</span></div>` : ''}
+        ${order.notes ? `<div class="info-row"><span class="lbl">Notas:</span><span class="val">${order.notes}</span></div>` : ''}
+      </div>
+    </div>
+
+    <table class="items">
+      <thead>
+        <tr>
+          <th style="width: 12mm;" class="center">N°</th>
+          <th>Descripción</th>
+          <th style="width: 38mm;">Presentación</th>
+          <th style="width: 22mm;" class="center">Cantidad</th>
+          <th style="width: 32mm;" class="right">Precio Unitario</th>
+          <th style="width: 35mm;" class="right">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${items.map((it, idx) => {
+          const qty = Number(it.quantity) || 0
+          const price = Number(it.unitPrice) || 0
+          const total = qty * price
+          const presentation = it.presentation || it.size || it.unit || ''
+          return `<tr>
+            <td class="center">${idx + 1}</td>
+            <td>
+              <div class="item-name">${it.name || it.productName || 'Producto'}</div>
+              ${it.code ? `<div class="item-sub">Ref: ${it.code}</div>` : ''}
+            </td>
+            <td>${presentation}</td>
+            <td class="center">${qty.toLocaleString('es-ES')}</td>
+            <td class="right">${price.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}</td>
+            <td class="right">${total.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}</td>
+          </tr>`
+        }).join('')}
+      </tbody>
+    </table>
+
+    <div class="totals">
+      <div class="totals-box">
+        <div class="total-row sub">
+          <span>SUBTOTAL</span>
+          <span>${subtotal.toLocaleString('es-ES', { minimumFractionDigits: 2 })} ${currency}</span>
+        </div>
+        ${discount > 0 ? `<div class="total-row disc">
+          <span>DESCUENTO</span>
+          <span>-${discount.toLocaleString('es-ES', { minimumFractionDigits: 2 })} ${currency}</span>
+        </div>` : ''}
+        ${shipping > 0 ? `<div class="total-row sub">
+          <span>TRANSPORTE</span>
+          <span>${shipping.toLocaleString('es-ES', { minimumFractionDigits: 2 })} ${currency}</span>
+        </div>` : ''}
+        ${tax > 0 ? `<div class="total-row sub">
+          <span>${taxRate}% IVA</span>
+          <span>${tax.toLocaleString('es-ES', { minimumFractionDigits: 2 })} ${currency}</span>
+        </div>` : ''}
+        <div class="total-row grand">
+          <span>TOTAL GENERAL</span>
+          <span>${total.toLocaleString('es-ES', { minimumFractionDigits: 2 })} ${currency}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="bottom">
+      <div class="conditions">
+        <h4>Condiciones Generales</h4>
+        <ul>
+          <li>Los productos viajan por cuenta y riesgo del comprador.</li>
+          <li>Cualquier reclamación debe hacerse dentro de las <strong>48h</strong> después de la recepción.</li>
+          <li>Pagos: transferencia bancaria o efectivo según condiciones acordadas.</li>
+        </ul>
+      </div>
+      <div class="signature">
+        <div style="width: 100%; height: 18mm;"></div>
+        <div class="sig-label">Firma y sello del cliente</div>
+      </div>
+    </div>
+
+    <div class="thanks">¡GRACIAS POR SU CONFIANZA!</div>
+
+    <div class="values">
+      <div class="value-item">
+        <svg class="drop" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 8 6 13 6 15a6 6 0 0012 0c0-2-.48-7-6-13z"/></svg>
+        <div class="vi-title">CALIDAD</div>
+        <div class="vi-text">Productos de alta calidad para tu higiene diaria</div>
+      </div>
+      <div class="value-item">
+        <svg class="drop" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l-9 4v6c0 5.5 3.8 10.7 9 12 5.2-1.3 9-6.5 9-12V6l-9-4z"/></svg>
+        <div class="vi-title">CONFIANZA</div>
+        <div class="vi-text">Comprometidos con tu satisfacción</div>
+      </div>
+      <div class="value-item">
+        <svg class="drop" viewBox="0 0 24 24" fill="currentColor"><path d="M17 8C8 10 5.9 16.17 3.82 21.34l1.89.66.95-2.3c.48.17.98.3 1.34.3C19 20 22 3 22 3c-1 2-8 2.25-13 3.25S2 11.5 2 13.5s1.75 3.75 1.75 3.75C7 8 17 8 17 8z"/></svg>
+        <div class="vi-title">RESPONSABILIDAD</div>
+        <div class="vi-text">Respetuosos con el medio ambiente</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
+// Order sheet con auth por query string
+router.get('/order-sheet-view/:orderId', (req, res) => {
+  const token = req.query.token
+  if (token) {
+    try {
+      const jwt = require('jsonwebtoken')
+      req.user = jwt.verify(token, process.env.JWT_SECRET || 'cleanerp-dev-secret-change-in-production-9f8e7d6c5b4a3210')
+    } catch (e) {}
+  }
+  return router.handle({ ...req, url: `/order-sheet/${req.params.orderId}`, method: 'GET' }, res, () => {})
+})
+
 // ---------- PRODUCTION ORDERS ----------
 const mapProductionOrder = (o) => o ? ({
   id: o.id,
