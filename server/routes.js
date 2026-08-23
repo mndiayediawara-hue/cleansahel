@@ -1468,6 +1468,262 @@ router.get('/order-sheet-view/:orderId', (req, res) => {
   return router.handle({ ...req, url: `/order-sheet/${req.params.orderId}`, method: 'GET' }, res, () => {})
 })
 
+// ---------- ORDER SHEET (Hoja de pedido A4 profesional) ----------
+// Documento imprimible con el diseño de la imagen de referencia
+function buildOrderSheetHTML(order, customer, items) {
+  const companyInfo = getConfig('company', { name: 'SAHEL', tagline: 'Produits d\'Hygiène', cif: '', address: 'Bamako, Mali', phone: '+223 70 00 00 00', email: 'contact@sahel.ml', web: 'www.sahel.ml' })
+  const subtotal = order.subtotal || 0
+  const tax = order.tax || 0
+  const discount = order.discount || 0
+  const total = order.total || 0
+  const shipping = order.shipping || 0
+  const currency = order.currency || 'FCFA'
+  const orderDate = order.created_at ? order.created_at.split('T')[0] : new Date().toISOString().split('T')[0]
+  const deliveryDate = order.delivery_date || ''
+  const seller = order.seller || order.created_by_name || 'Administración'
+  const paymentTerms = order.payment_terms || 'Contado'
+  const customerRef = order.customer_ref || ''
+
+  const fmt = (n) => new Intl.NumberFormat('es-ES').format(Math.round(n || 0)) + ' ' + currency
+  const safe = (s) => String(s || '').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+  const itemRows = (items || []).map((it, i) => {
+    const name = it.name || it.productName || ''
+    const code = it.code || ''
+    const pres = it.presentation || ''
+    const qty = it.quantity || 0
+    const price = it.unitPrice || 0
+    const lineTotal = (qty * price) * (1 - (it.discount || 0) / 100)
+    return `<tr>
+      <td style="text-align:center;width:10mm;">${i + 1}</td>
+      <td><strong>${safe(name)}</strong>${code ? '<br><span style="color:#6b7280;font-size:8.5pt;">' + safe(code) + '</span>' : ''}</td>
+      <td style="text-align:center;width:32mm;">${safe(pres)}</td>
+      <td style="text-align:center;width:18mm;">${new Intl.NumberFormat('es-ES').format(qty)}</td>
+      <td style="text-align:right;width:30mm;">${fmt(price)}</td>
+      <td style="text-align:right;width:30mm;font-weight:600;">${fmt(lineTotal)}</td>
+    </tr>`
+  }).join('')
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Hoja de Pedido ${safe(order.number)}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: Arial, Helvetica, sans-serif; background: #f3f4f6; color: #1f2937; padding: 12px; font-size: 9pt; }
+  .no-print { background: #1f2937; color: white; padding: 12px; display: flex; gap: 8px; justify-content: center; align-items: center; position: sticky; top: 0; z-index: 100; margin: -12px -12px 12px -12px; }
+  .no-print button { padding: 10px 18px; font-size: 12px; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; font-family: inherit; }
+  .no-print button:hover { background: #1d4ed8; }
+  .no-print button.close { background: #6b7280; }
+  .sheet { width: 210mm; min-height: 297mm; margin: 0 auto; background: white; padding: 12mm 14mm; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
+
+  .header { display: grid; grid-template-columns: 50mm 1fr 65mm; gap: 5mm; align-items: start; padding-bottom: 5mm; border-bottom: 1.2pt solid #1e3a8a; margin-bottom: 5mm; }
+  .logo-box { border: 0.6pt solid #cbd5e1; padding: 2mm; text-align: center; }
+  .logo-fallback { color: #1e3a8a; font-weight: 900; font-size: 20pt; letter-spacing: 1px; padding: 6mm 4mm; }
+  .logo-fallback .tag { font-size: 7pt; font-weight: 600; letter-spacing: 2.5px; color: #475569; display: block; margin-top: 2mm; }
+  .doc-title { text-align: center; padding: 2mm 0; }
+  .doc-title h1 { font-size: 18pt; color: #1e3a8a; letter-spacing: 2px; font-weight: 900; margin: 0 0 1mm 0; }
+  .doc-title .divider { width: 30mm; height: 0.8pt; background: #1e3a8a; margin: 2mm auto 0; }
+  .company-info { font-size: 8.5pt; line-height: 1.55; color: #475569; margin-top: 4mm; }
+  .company-info .name { font-size: 9.5pt; font-weight: 700; color: #1e3a8a; letter-spacing: 0.5px; margin-bottom: 1.5mm; }
+  .company-info .row { display: flex; align-items: center; gap: 2mm; margin: 0.6mm 0; }
+  .company-info .ic { width: 8pt; color: #2563eb; flex-shrink: 0; }
+  .order-box { border: 0.8pt solid #1e3a8a; padding: 4mm 5mm; text-align: center; }
+  .order-box .lbl { font-size: 7.5pt; color: #1e3a8a; text-transform: uppercase; letter-spacing: 2px; font-weight: 700; }
+  .order-box .num { font-size: 14pt; color: #1e3a8a; font-weight: 800; letter-spacing: 0.5px; margin: 1mm 0; }
+  .order-box .lbl2 { font-size: 7.5pt; color: #1e3a8a; text-transform: uppercase; letter-spacing: 2px; font-weight: 700; margin-top: 2mm; }
+  .order-box .date { font-size: 10pt; color: #1e3a8a; font-weight: 700; margin-top: 1mm; }
+
+  .info-section { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin-bottom: 5mm; }
+  .info-box { border: 0.6pt solid #cbd5e1; }
+  .info-box h3 { background: #1e3a8a; color: white; padding: 2mm 4mm; font-size: 8.5pt; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; }
+  .info-box .body { padding: 3mm 4mm; }
+  .info-row { display: flex; gap: 2mm; margin: 1.2mm 0; font-size: 8.8pt; align-items: flex-start; }
+  .info-row .ic { color: #2563eb; flex-shrink: 0; margin-top: 0.5mm; width: 9pt; }
+  .info-row .lbl { font-weight: 700; color: #1e3a8a; width: 28mm; flex-shrink: 0; }
+  .info-row .val { color: #1f2937; flex: 1; }
+
+  table.items { width: 100%; border-collapse: collapse; margin-bottom: 5mm; }
+  table.items thead th { background: #1e3a8a; color: white; padding: 2.5mm 3mm; text-align: center; font-size: 8pt; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }
+  table.items tbody td { padding: 2.5mm 3mm; border-bottom: 0.4pt solid #e5e7eb; font-size: 8.5pt; vertical-align: top; }
+  table.items tbody tr:nth-child(even) { background: #f9fafb; }
+
+  .totals-section { display: flex; justify-content: flex-end; margin-bottom: 5mm; }
+  .totals { width: 70mm; }
+  .totals .row { display: flex; justify-content: space-between; padding: 1.5mm 3mm; font-size: 9pt; }
+  .totals .row.grand { background: #1e3a8a; color: white; font-weight: 800; font-size: 10.5pt; padding: 2.5mm 3mm; }
+
+  .bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; margin-bottom: 4mm; }
+  .conditions { border: 0.6pt solid #cbd5e1; padding: 3mm 4mm; }
+  .conditions h4 { color: #1e3a8a; font-size: 8.5pt; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; margin-bottom: 2mm; display: flex; align-items: center; gap: 2mm; }
+  .conditions ul { list-style: disc; padding-left: 4mm; font-size: 8pt; color: #475569; line-height: 1.6; }
+  .signature { border: 0.6pt solid #cbd5e1; padding: 3mm 4mm; display: flex; flex-direction: column; justify-content: flex-end; min-height: 40mm; }
+  .signature .sig-line { border-top: 0.5pt solid #6b7280; margin-top: 18mm; padding-top: 1.5mm; text-align: center; font-size: 8pt; color: #475569; }
+
+  .thanks { text-align: center; color: #1e3a8a; font-size: 12pt; font-weight: 800; letter-spacing: 2.5px; margin: 5mm 0 4mm; }
+
+  .footer { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4mm; border-top: 1pt solid #cbd5e1; padding-top: 4mm; }
+  .footer .col { text-align: center; }
+  .footer .col .ic { color: #2563eb; font-size: 18pt; margin-bottom: 1mm; }
+  .footer .col .t { color: #1e3a8a; font-size: 9pt; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 1mm; }
+  .footer .col .d { font-size: 7.5pt; color: #4b5563; line-height: 1.5; }
+
+  @media print { body { background: white; padding: 0; } .no-print { display: none; } .sheet { box-shadow: none; padding: 0; width: 100%; } @page { size: A4; margin: 0; } }
+</style>
+</head>
+<body>
+<div class="no-print">
+  <button onclick="window.print()">Imprimir / Guardar PDF</button>
+  <button onclick="sendEmail()">Enviar por email</button>
+  <button class="close" onclick="window.close()">Cerrar</button>
+</div>
+<div class="sheet">
+  <div class="header">
+    <div class="logo-box">
+      <div class="logo-fallback">SAHEL<span class="tag">PRODUITS D'HYGIENE</span></div>
+    </div>
+    <div>
+      <div class="doc-title"><h1>HOJA DE PEDIDO</h1><div class="divider"></div></div>
+      <div class="company-info">
+        <div class="name">${safe((companyInfo.name || 'SAHEL').toUpperCase() + ' ' + (companyInfo.tagline || 'PRODUITS D\'HYGIENE'))}</div>
+        <div class="row"><span class="ic">📍</span> ${safe(companyInfo.address || 'Bamako, Mali')}</div>
+        <div class="row"><span class="ic">📞</span> ${safe(companyInfo.phone || '+223 70 00 00 00')}</div>
+        <div class="row"><span class="ic">✉</span> ${safe(companyInfo.email || 'contact@sahel.ml')}</div>
+        <div class="row"><span class="ic">🌐</span> ${safe(companyInfo.web || 'www.sahel.ml')}</div>
+      </div>
+    </div>
+    <div class="order-box">
+      <div class="lbl">Pedido N°</div>
+      <div class="num">${safe(order.number)}</div>
+      <div class="lbl2">Fecha</div>
+      <div class="date">${safe(orderDate)}</div>
+    </div>
+  </div>
+
+  <div class="info-section">
+    <div class="info-box">
+      <h3>Datos del Cliente</h3>
+      <div class="body">
+        <div class="info-row"><span class="ic">👤</span><span class="lbl">Nombre:</span><span class="val">${safe(customer?.name || '-')}</span></div>
+        <div class="info-row"><span class="ic">📍</span><span class="lbl">Dirección:</span><span class="val">${safe(customer?.address || '-')}${customer?.city ? '<br>' + safe(customer.city) + (customer?.country ? ', ' + safe(customer.country) : '') : ''}</span></div>
+        <div class="info-row"><span class="ic">📞</span><span class="lbl">Teléfono:</span><span class="val">${safe(customer?.phone || '-')}</span></div>
+        <div class="info-row"><span class="ic">✉</span><span class="lbl">Email:</span><span class="val">${safe(customer?.email || '-')}</span></div>
+        <div class="info-row"><span class="ic">🏢</span><span class="lbl">NIF / VAT:</span><span class="val">${safe(customer?.cif || '-')}</span></div>
+      </div>
+    </div>
+    <div class="info-box">
+      <h3>Detalles del Pedido</h3>
+      <div class="body">
+        <div class="info-row"><span class="ic">📅</span><span class="lbl">Fecha del pedido:</span><span class="val">${safe(orderDate)}</span></div>
+        <div class="info-row"><span class="ic">🚚</span><span class="lbl">Fecha de entrega:</span><span class="val">${safe(deliveryDate || '-')}</span></div>
+        <div class="info-row"><span class="ic">💳</span><span class="lbl">Condiciones de pago:</span><span class="val">${safe(paymentTerms)}</span></div>
+        <div class="info-row"><span class="ic">👤</span><span class="lbl">Vendedor:</span><span class="val">${safe(seller)}</span></div>
+        <div class="info-row"><span class="ic">🔖</span><span class="lbl">Referencia del cliente:</span><span class="val">${safe(customerRef || '-')}</span></div>
+        <div class="info-row"><span class="ic">📝</span><span class="lbl">Notas:</span><span class="val">${safe(order.notes || '-')}</span></div>
+      </div>
+    </div>
+  </div>
+
+  <table class="items">
+    <thead>
+      <tr>
+        <th style="width:10mm;">N°</th>
+        <th>Descripción</th>
+        <th style="width:32mm;">Presentación</th>
+        <th style="width:18mm;">Cantidad</th>
+        <th style="width:30mm;">Precio Unitario</th>
+        <th style="width:30mm;">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${itemRows || '<tr><td colspan="6" style="text-align:center;padding:8mm;">Sin productos</td></tr>'}
+    </tbody>
+  </table>
+
+  <div class="totals-section">
+    <div class="totals">
+      <div class="row"><span>Subtotal</span><span>${fmt(subtotal)}</span></div>
+      <div class="row"><span>Descuento</span><span>${fmt(discount)}</span></div>
+      <div class="row"><span>Transporte</span><span>${fmt(shipping)}</span></div>
+      <div class="row grand"><span>TOTAL GENERAL</span><span>${fmt(total)}</span></div>
+    </div>
+  </div>
+
+  <div class="bottom">
+    <div class="conditions">
+      <h4>📋 Condiciones Generales</h4>
+      <ul>
+        <li>Los productos viajan por cuenta y riesgo del comprador.</li>
+        <li>Cualquier reclamación debe hacerse dentro de las 48h después de la recepción.</li>
+        <li>Pagos: transferencia bancaria o efectivo según condiciones acordadas.</li>
+      </ul>
+    </div>
+    <div class="signature">
+      <div class="sig-line">Firma y sello del cliente</div>
+    </div>
+  </div>
+
+  <div class="thanks">¡GRACIAS POR SU CONFIANZA!</div>
+
+  <div class="footer">
+    <div class="col"><div class="ic">💧</div><div class="t">Calidad</div><div class="d">Productos de alta calidad<br>para tu higiene diaria</div></div>
+    <div class="col"><div class="ic">🛡</div><div class="t">Confianza</div><div class="d">Comprometidos con tu<br>satisfacción</div></div>
+    <div class="col"><div class="ic">🌿</div><div class="t">Responsabilidad</div><div class="d">Respetuosos con el medio<br>ambiente</div></div>
+  </div>
+</div>
+<script>
+function sendEmail() {
+  const email = '${safe(customer?.email || '')}';
+  const name = '${safe(customer?.name || 'Cliente')}';
+  const num = '${safe(order.number)}';
+  if (!email) { alert('El cliente no tiene email configurado.\n\nUse el boton de imprimir para guardar el PDF y adjuntarlo manualmente.'); return; }
+  const subject = encodeURIComponent('Hoja de Pedido ' + num + ' - SAHEL');
+  const body = encodeURIComponent('Estimado/a ' + name + ',\n\nAdjunto encontrara la hoja de pedido ' + num + '.\n\nQuedamos a su disposicion para cualquier consulta.\n\nAtentamente,\nSAHEL - Produits d\'Hygiene');
+  window.location.href = 'mailto:' + email + '?subject=' + subject + '&body=' + body;
+}
+</script>
+</body>
+</html>`
+}
+
+router.get('/order-sheet/:orderId', auth, (req, res) => {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.orderId)
+  if (!order) return res.status(404).send('<h1>Pedido no encontrado</h1>')
+  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id)
+  let items = []
+  try { items = JSON.parse(order.items_json || '[]') } catch {}
+  const html = buildOrderSheetHTML(order, customer, items)
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
+// Order sheet con auth por query string (para abrir desde email)
+router.get('/order-sheet-view/:orderId', (req, res) => {
+  const token = req.query.token
+  if (token) {
+    try {
+      const jwt = require('jsonwebtoken')
+      req.user = jwt.verify(token, process.env.JWT_SECRET || 'cleanerp-dev-secret-change-in-production-9f8e7d6c5b4a3210')
+    } catch (e) {}
+  }
+  return router.handle({ ...req, url: `/order-sheet/${req.params.orderId}`, method: 'GET' }, res, () => {})
+})
+
+// Enviar por email al cliente (mailto link)
+// POST /api/orders/:orderId/send-email
+router.post('/orders/:orderId/send-email', auth, (req, res) => {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.orderId)
+  if (!order) return res.status(404).json({ error: 'Pedido no encontrado' })
+  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id)
+  if (!customer || !customer.email) return res.status(400).json({ error: 'El cliente no tiene email configurado' })
+  const subject = `Hoja de Pedido ${order.number} - SAHEL`
+  const body = `Estimado/a ${customer.name},\n\nAdjuntamos los detalles de su pedido ${order.number}.\n\nPuede consultar el documento completo en: ${req.protocol}://${req.get('host')}/api/order-sheet/${order.id}\n\nQuedamos a su disposicion.\n\nAtentamente,\nSAHEL - Produits d'Hygiene`
+  const mailto = `mailto:${customer.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+  addHistory(req, { action: 'enviar_email', module: 'Pedidos', entityId: order.id, description: `Hoja de pedido ${order.number} enviada por email a ${customer.email}` })
+  res.json({ ok: true, method: 'mailto', to: customer.email, mailto, subject })
+})
+
 // ---------- PRODUCTION ORDERS ----------
 const mapProductionOrder = (o) => o ? ({
   id: o.id,
