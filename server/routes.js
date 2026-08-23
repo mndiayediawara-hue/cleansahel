@@ -1596,3 +1596,169 @@ router.post('/reset', auth, requireRole('admin'), async (_req, res) => {
 // Force: 1786567748.5123284
 
 // Recalls deployed: 1786753297.943492
+
+// ---------- PRINT LABEL (HTML standalone) ----------
+// Genera una página HTML standalone SOLO con la etiqueta, lista para imprimir
+// Uso: GET /api/print-label/:lotId?token=xxx
+router.get('/print-label/:lotId', auth, (req, res) => {
+  const lot = db.prepare('SELECT * FROM lots WHERE id = ?').get(req.params.lotId)
+  if (!lot) return res.status(404).send('<h1>Lote no encontrado</h1>')
+  const product = db.prepare('SELECT * FROM products WHERE id = ?').get(lot.product_id)
+  if (!product) return res.status(404).send('<h1>Producto no encontrado</h1>')
+
+  const producedAt = lot.produced_at ? lot.produced_at.split('T')[0] : new Date().toISOString().split('T')[0]
+  const expiryDate = lot.expiry_date || ''
+  const lotNumber = lot.lot_number || ''
+
+  // HTML standalone con CSS print correcto
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Etiqueta ${lotNumber}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f0f0f0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .printable-label {
+      width: 60mm;
+      min-height: 40mm;
+      padding: 3mm;
+      background: white;
+      border: 1px dashed #ccc;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      font-size: 9pt;
+      color: #000;
+      line-height: 1.2;
+    }
+    .label-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 1px solid #000;
+      padding-bottom: 2mm;
+      margin-bottom: 2mm;
+    }
+    .brand {
+      font-weight: 900;
+      font-size: 11pt;
+      letter-spacing: 1px;
+    }
+    .product-name {
+      font-weight: 700;
+      font-size: 10pt;
+      text-transform: uppercase;
+      margin-bottom: 1mm;
+    }
+    .product-code {
+      font-family: monospace;
+      font-size: 8pt;
+      color: #333;
+      margin-bottom: 2mm;
+    }
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      margin: 1mm 0;
+      font-size: 8pt;
+    }
+    .label { color: #666; }
+    .value { font-weight: 700; }
+    .qr-placeholder {
+      width: 18mm;
+      height: 18mm;
+      border: 1px solid #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: monospace;
+      font-size: 6pt;
+      text-align: center;
+    }
+    .footer {
+      border-top: 1px solid #000;
+      padding-top: 2mm;
+      margin-top: 2mm;
+      font-size: 7pt;
+      text-align: center;
+    }
+    .no-print { text-align: center; margin: 20px 0; }
+    .no-print button {
+      padding: 12px 24px;
+      font-size: 14px;
+      background: #329bff;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      margin: 0 8px;
+    }
+    .no-print button:hover { background: #1666e0; }
+    .no-print button.close { background: #666; }
+    @media print {
+      body { background: white; padding: 0; }
+      .no-print { display: none; }
+      .printable-label {
+        border: none;
+        box-shadow: none;
+      }
+      @page {
+        size: 60mm 40mm;
+        margin: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print">
+    <button onclick="window.print()">🖨️ Imprimir etiqueta</button>
+    <button class="close" onclick="window.close()">Cerrar</button>
+    <p style="margin-top: 16px; color: #666; font-size: 12px;">
+      Tamaño recomendado: 60mm × 40mm · 1 etiqueta por impresión
+    </p>
+  </div>
+  <div class="printable-label">
+    <div class="label-header">
+      <div>
+        <div class="brand">SAHEL</div>
+        <div style="font-size: 7pt; color: #666;">Produits d'Hygiène</div>
+      </div>
+      <div class="qr-placeholder">QR<br>${lotNumber.slice(-6) || '0000'}</div>
+    </div>
+    <div>
+      <div class="product-name">${product.name}</div>
+      <div class="product-code">${product.code || ''}</div>
+      <div class="info-row">
+        <span class="label">Lote:</span>
+        <span class="value">${lotNumber}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Fabricado:</span>
+        <span class="value">${producedAt}</span>
+      </div>
+      ${expiryDate ? `<div class="info-row"><span class="label">Caducidad:</span><span class="value">${expiryDate}</span></div>` : ''}
+      <div class="info-row">
+        <span class="label">Cantidad:</span>
+        <span class="value">${lot.quantity} L</span>
+      </div>
+    </div>
+    <div class="footer">
+      SAHEL · control de calidad
+    </div>
+  </div>
+</body>
+</html>`
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
