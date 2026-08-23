@@ -513,6 +513,384 @@ router.delete('/orders/:id', auth, requireRole('admin'), (req, res) => {
   res.json({ ok: true })
 })
 
+// ---------- INVOICE / FACTURA (HTML standalone) ----------
+// Genera una factura profesional en HTML, lista para imprimir o descargar como PDF
+// Uso: GET /api/invoice/:orderId (requiere auth en header)
+//      GET /api/invoice/:orderId?token=xxx (token en query string)
+router.get('/invoice/:orderId', auth, (req, res) => {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.orderId)
+  if (!order) return res.status(404).send('<h1>Pedido no encontrado</h1>')
+  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(order.customer_id)
+  let items = []
+  try { items = JSON.parse(order.items_json || '[]') } catch {}
+
+  // Obtener info de empresa del config
+  const companyInfo = getConfig('company', { name: 'SAHEL', cif: '', address: '', phone: '', email: '' })
+  const taxRate = getConfig('defaults', { tax: 21 }).tax || 21
+
+  // Calcular totales
+  const subtotal = order.subtotal || 0
+  const tax = order.tax || 0
+  const discount = order.discount || 0
+  const total = order.total || 0
+
+  // Número de factura
+  const invoiceNumber = `FAC-${order.number}`
+
+  const orderDate = order.created_at ? order.created_at.split('T')[0] : new Date().toISOString().split('T')[0]
+  const deliveryDate = order.delivery_date || ''
+
+  // HTML profesional
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Factura ${invoiceNumber}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f0f0f0;
+      color: #1a1a1a;
+      line-height: 1.4;
+    }
+    .no-print {
+      background: #1e293b;
+      color: white;
+      padding: 16px;
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 8px rgba(0,0,0,.2);
+    }
+    .no-print button {
+      padding: 10px 20px;
+      font-size: 14px;
+      background: #329bff;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .no-print button:hover { background: #1666e0; }
+    .no-print button.close { background: #475569; }
+    .no-print button.pdf { background: #10b981; }
+    .no-print button.pdf:hover { background: #059669; }
+
+    .invoice {
+      max-width: 800px;
+      margin: 24px auto;
+      background: white;
+      padding: 40px 48px;
+      box-shadow: 0 4px 16px rgba(0,0,0,.1);
+      border-radius: 4px;
+    }
+    .invoice-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 3px solid #1666e0;
+      padding-bottom: 24px;
+      margin-bottom: 28px;
+    }
+    .company-info { flex: 1; }
+    .company-name {
+      font-size: 26pt;
+      font-weight: 900;
+      color: #1666e0;
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+    }
+    .company-tagline {
+      font-size: 9pt;
+      color: #666;
+      margin-bottom: 12px;
+    }
+    .company-details {
+      font-size: 9pt;
+      line-height: 1.6;
+      color: #555;
+    }
+    .invoice-meta {
+      text-align: right;
+      background: #f0f9ff;
+      padding: 16px 20px;
+      border-radius: 6px;
+      border-left: 4px solid #1666e0;
+    }
+    .invoice-title {
+      font-size: 22pt;
+      font-weight: 800;
+      color: #1666e0;
+      margin-bottom: 8px;
+    }
+    .invoice-number {
+      font-size: 11pt;
+      color: #333;
+      font-family: monospace;
+    }
+    .invoice-date {
+      font-size: 9pt;
+      color: #666;
+      margin-top: 4px;
+    }
+
+    .parties {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin-bottom: 28px;
+    }
+    .party-box {
+      padding: 16px;
+      background: #f8fafc;
+      border-radius: 6px;
+      border-left: 3px solid #329bff;
+    }
+    .party-label {
+      font-size: 8pt;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #666;
+      font-weight: 700;
+      margin-bottom: 6px;
+    }
+    .party-name {
+      font-size: 11pt;
+      font-weight: 700;
+      color: #1a1a1a;
+      margin-bottom: 4px;
+    }
+    .party-details {
+      font-size: 9pt;
+      line-height: 1.5;
+      color: #555;
+    }
+
+    .items-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 24px;
+    }
+    .items-table th {
+      background: #1666e0;
+      color: white;
+      padding: 12px;
+      text-align: left;
+      font-size: 9pt;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      font-weight: 700;
+    }
+    .items-table th.right { text-align: right; }
+    .items-table th.center { text-align: center; }
+    .items-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #e2e8f0;
+      font-size: 9.5pt;
+    }
+    .items-table td.right { text-align: right; }
+    .items-table td.center { text-align: center; }
+    .items-table tr:last-child td { border-bottom: none; }
+    .items-table tr:nth-child(even) { background: #f8fafc; }
+    .item-name { font-weight: 600; }
+    .item-code { font-size: 8pt; color: #666; font-family: monospace; }
+
+    .totals {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 24px;
+    }
+    .totals-box {
+      width: 320px;
+    }
+    .total-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 12px;
+      font-size: 10pt;
+    }
+    .total-row.subtotal { color: #555; }
+    .total-row.discount { color: #10b981; }
+    .total-row.tax { color: #555; }
+    .total-row.grand {
+      background: #1666e0;
+      color: white;
+      font-weight: 800;
+      font-size: 13pt;
+      margin-top: 4px;
+      border-radius: 4px;
+    }
+
+    .footer-info {
+      border-top: 1px solid #e2e8f0;
+      padding-top: 16px;
+      font-size: 8pt;
+      color: #666;
+      line-height: 1.6;
+    }
+    .payment-info {
+      margin-top: 16px;
+      padding: 12px 16px;
+      background: #fef3c7;
+      border-radius: 6px;
+      font-size: 9pt;
+      color: #78350f;
+    }
+
+    @media print {
+      body { background: white; }
+      .no-print { display: none; }
+      .invoice {
+        box-shadow: none;
+        margin: 0;
+        padding: 24px;
+        max-width: 100%;
+      }
+      .invoice-header { border-bottom-color: #000; }
+      .company-name, .invoice-title, .total-row.grand { color: #000; }
+      .total-row.grand { background: #f0f0f0; color: #000; }
+      @page { size: A4; margin: 12mm; }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print">
+    <button onclick="window.print()">🖨️ Imprimir factura</button>
+    <button class="pdf" onclick="window.print()">📄 Descargar como PDF</button>
+    <button class="close" onclick="window.close()">Cerrar</button>
+  </div>
+
+  <div class="invoice">
+    <div class="invoice-header">
+      <div class="company-info">
+        <div class="company-name">${companyInfo.name || 'SAHEL'}</div>
+        <div class="company-tagline">Produits d'Hygiène</div>
+        <div class="company-details">
+          ${companyInfo.cif ? `<div><strong>CIF/NIF:</strong> ${companyInfo.cif}</div>` : ''}
+          ${companyInfo.address ? `<div>${companyInfo.address}</div>` : ''}
+          ${companyInfo.phone ? `<div><strong>Tel:</strong> ${companyInfo.phone}</div>` : ''}
+          ${companyInfo.email ? `<div><strong>Email:</strong> ${companyInfo.email}</div>` : ''}
+        </div>
+      </div>
+      <div class="invoice-meta">
+        <div class="invoice-title">FACTURA</div>
+        <div class="invoice-number">${invoiceNumber}</div>
+        <div class="invoice-date">Fecha: ${orderDate}</div>
+        ${deliveryDate ? `<div class="invoice-date">Entrega: ${deliveryDate}</div>` : ''}
+      </div>
+    </div>
+
+    <div class="parties">
+      <div class="party-box">
+        <div class="party-label">Facturar a</div>
+        <div class="party-name">${customer?.name || 'Cliente'}</div>
+        <div class="party-details">
+          ${customer?.company && customer.company !== customer.name ? `<div>${customer.company}</div>` : ''}
+          ${customer?.cif ? `<div><strong>CIF:</strong> ${customer.cif}</div>` : ''}
+          ${customer?.address ? `<div>${customer.address}</div>` : ''}
+          ${customer?.city ? `<div>${customer.city}${customer.country ? ', ' + customer.country : ''}</div>` : ''}
+          ${customer?.phone ? `<div><strong>Tel:</strong> ${customer.phone}</div>` : ''}
+          ${customer?.email ? `<div><strong>Email:</strong> ${customer.email}</div>` : ''}
+          ${customer?.contact ? `<div><strong>Contacto:</strong> ${customer.contact}</div>` : ''}
+        </div>
+      </div>
+      <div class="party-box">
+        <div class="party-label">Detalles del pedido</div>
+        <div class="party-details">
+          <div><strong>Número de pedido:</strong> ${order.number}</div>
+          <div><strong>Estado:</strong> ${order.status}</div>
+          <div><strong>Fecha pedido:</strong> ${orderDate}</div>
+          ${order.notes ? `<div style="margin-top: 8px;"><strong>Notas:</strong> ${order.notes}</div>` : ''}
+        </div>
+      </div>
+    </div>
+
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th style="width: 50px;" class="center">#</th>
+          <th>Descripción</th>
+          <th class="center" style="width: 80px;">Cantidad</th>
+          <th class="right" style="width: 100px;">P. Unitario</th>
+          <th class="right" style="width: 100px;">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${items.map((it, idx) => {
+          const qty = Number(it.quantity) || 0
+          const price = Number(it.unitPrice) || 0
+          const total = qty * price
+          return `<tr>
+            <td class="center">${idx + 1}</td>
+            <td>
+              <div class="item-name">${it.name || it.productName || 'Producto'}</div>
+              ${it.code ? `<div class="item-code">${it.code}</div>` : ''}
+            </td>
+            <td class="center">${qty} ${it.unit || 'ud'}</td>
+            <td class="right">${price.toFixed(2)} €</td>
+            <td class="right">${total.toFixed(2)} €</td>
+          </tr>`
+        }).join('')}
+      </tbody>
+    </table>
+
+    <div class="totals">
+      <div class="totals-box">
+        <div class="total-row subtotal">
+          <span>Subtotal:</span>
+          <span>${subtotal.toFixed(2)} €</span>
+        </div>
+        ${discount > 0 ? `<div class="total-row discount">
+          <span>Descuento:</span>
+          <span>-${discount.toFixed(2)} €</span>
+        </div>` : ''}
+        <div class="total-row tax">
+          <span>${taxRate}% IVA:</span>
+          <span>${tax.toFixed(2)} €</span>
+        </div>
+        <div class="total-row grand">
+          <span>TOTAL:</span>
+          <span>${total.toFixed(2)} €</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="payment-info">
+      <strong>Forma de pago:</strong> ${getConfig('payment_terms', 'A convenir.Gracias por su confianza.') || 'A convenir.'}
+    </div>
+
+    <div class="footer-info">
+      <div>${companyInfo.name || 'SAHEL'} · Produits d'Hygiène</div>
+      ${companyInfo.cif ? `<div>CIF: ${companyInfo.cif}</div>` : ''}
+      <div style="margin-top: 6px; font-style: italic;">Gracias por su confianza. Para cualquier duda, contacte con nosotros.</div>
+    </div>
+  </div>
+</body>
+</html>`
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
+// Invoice con auth por query string (para abrir en nueva ventana)
+router.get('/invoice-view/:orderId', (req, res) => {
+  const token = req.query.token
+  if (token) {
+    try {
+      const jwt = require('jsonwebtoken')
+      req.user = jwt.verify(token, process.env.JWT_SECRET || 'cleanerp-dev-secret-change-in-production-9f8e7d6c5b4a3210')
+    } catch (e) {}
+  }
+  return router.handle({ ...req, url: `/invoice/${req.params.orderId}`, method: 'GET' }, res, () => {})
+})
+
 // ---------- PRODUCTION ORDERS ----------
 const mapProductionOrder = (o) => o ? ({
   id: o.id,
@@ -1599,7 +1977,200 @@ router.post('/reset', auth, requireRole('admin'), async (_req, res) => {
 
 // ---------- PRINT LABEL (HTML standalone) ----------
 // Genera una página HTML standalone SOLO con la etiqueta, lista para imprimir
-// Uso: GET /api/print-label/:lotId?token=xxx
+// Uso: GET /api/print-label/:lotId?token=xxx (token opcional si viene en query)
+// Uso: GET /api/print-label/rml/:rmlId?token=xxx (etiqueta de materia prima)
+router.get('/print-label/rml/:rmlId', auth, (req, res) => {
+  const rml = db.prepare(`
+    SELECT rml.*, rm.name as material_name, rm.code as material_code, rm.unit as material_unit
+    FROM raw_material_lots rml
+    LEFT JOIN raw_materials rm ON rm.id = rml.raw_material_id
+    WHERE rml.id = ?
+  `).get(req.params.rmlId)
+  if (!rml) return res.status(404).send('<h1>Lote de materia prima no encontrado</h1>')
+
+  const receivedAt = rml.received_at ? rml.received_at.split('T')[0] : new Date().toISOString().split('T')[0]
+  const expiryDate = rml.expiry_date || ''
+  const supplierName = rml.supplier_name || '—'
+  const supplierLot = rml.code || ''
+  const internalLot = `MP-${rml.id.slice(-6).toUpperCase()}`
+
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Etiqueta ${internalLot}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #f0f0f0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 20px;
+    }
+    .printable-label {
+      width: 80mm;
+      min-height: 60mm;
+      padding: 3mm;
+      background: white;
+      border: 1px dashed #999;
+      display: flex;
+      flex-direction: column;
+      gap: 2mm;
+      font-size: 9pt;
+      color: #000;
+      line-height: 1.25;
+    }
+    .label-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid #000;
+      padding-bottom: 2mm;
+    }
+    .brand {
+      font-weight: 900;
+      font-size: 12pt;
+      letter-spacing: 1px;
+    }
+    .material-name {
+      font-weight: 700;
+      font-size: 10pt;
+      text-transform: uppercase;
+    }
+    .material-code {
+      font-family: monospace;
+      font-size: 8pt;
+      color: #555;
+    }
+    .section {
+      border-top: 1px solid #ccc;
+      padding-top: 1.5mm;
+    }
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      margin: 0.8mm 0;
+      font-size: 8.5pt;
+    }
+    .label { color: #555; }
+    .value { font-weight: 700; }
+    .internal {
+      font-family: monospace;
+      font-size: 11pt;
+      font-weight: 800;
+      background: #f0f0f0;
+      padding: 2mm;
+      text-align: center;
+      letter-spacing: 1px;
+    }
+    .footer {
+      border-top: 1px solid #000;
+      padding-top: 2mm;
+      margin-top: auto;
+      font-size: 7pt;
+      text-align: center;
+      color: #555;
+    }
+    .no-print { text-align: center; margin: 20px 0; }
+    .no-print button {
+      padding: 12px 24px;
+      font-size: 14px;
+      background: #329bff;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      margin: 0 8px;
+    }
+    .no-print button:hover { background: #1666e0; }
+    .no-print button.close { background: #666; }
+    @media print {
+      body { background: white; padding: 0; }
+      .no-print { display: none; }
+      .printable-label {
+        border: none;
+        box-shadow: none;
+      }
+      @page {
+        size: 80mm 60mm;
+        margin: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="no-print">
+    <button onclick="window.print()">🖨️ Imprimir etiqueta</button>
+    <button class="close" onclick="window.close()">Cerrar</button>
+    <p style="margin-top: 16px; color: #666; font-size: 12px;">
+      Etiqueta materia prima · 80mm × 60mm
+    </p>
+  </div>
+  <div class="printable-label">
+    <div class="label-header">
+      <div>
+        <div class="brand">SAHEL</div>
+        <div style="font-size: 7pt; color: #666;">Materia Prima</div>
+      </div>
+      <div style="text-align: right; font-size: 7pt;">
+        <div class="label">Lote interno</div>
+        <div style="font-weight: 700; font-size: 10pt;">${internalLot}</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="material-name">${rml.material_name || ''}</div>
+      <div class="material-code">${rml.material_code || ''} · ${rml.material_unit || ''}</div>
+    </div>
+
+    <div class="internal">${supplierLot}</div>
+
+    <div>
+      <div class="info-row">
+        <span class="label">Proveedor:</span>
+        <span class="value">${supplierName}</span>
+      </div>
+      <div class="info-row">
+        <span class="label">Recepción:</span>
+        <span class="value">${receivedAt}</span>
+      </div>
+      ${expiryDate ? `<div class="info-row"><span class="label">Caducidad:</span><span class="value" style="color: #c00;">${expiryDate}</span></div>` : ''}
+      <div class="info-row">
+        <span class="label">Cantidad:</span>
+        <span class="value" style="font-size: 11pt;">${rml.quantity} ${rml.material_unit || 'ud'}</span>
+      </div>
+    </div>
+
+    <div class="footer">
+      SAHEL · control de calidad
+    </div>
+  </div>
+</body>
+</html>`
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
+// Genera etiqueta de MP con auth por query string
+router.get('/print-rml/:rmlId', (req, res) => {
+  // Auth opcional por query string
+  const token = req.query.token
+  if (token) {
+    try {
+      const jwt = require('jsonwebtoken')
+      req.user = jwt.verify(token, process.env.JWT_SECRET || 'cleanerp-dev-secret-change-in-production-9f8e7d6c5b4a3210')
+    } catch (e) {
+      // Token inválido, continuar sin auth
+    }
+  }
+  return router.handle({ ...req, url: `/print-label/rml/${req.params.rmlId}`, method: 'GET' }, res, () => {})
+})
+
 router.get('/print-label/:lotId', auth, (req, res) => {
   const lot = db.prepare('SELECT * FROM lots WHERE id = ?').get(req.params.lotId)
   if (!lot) return res.status(404).send('<h1>Lote no encontrado</h1>')
