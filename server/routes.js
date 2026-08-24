@@ -592,8 +592,21 @@ router.put('/orders/:id', auth, requirePermission('sales', 'edit'), (req, res) =
     db.prepare('UPDATE customers SET total_purchases = total_purchases + ? WHERE id = ?').run(order.total, order.customer_id)
   }
   if (newStatus === 'confirmado' && before.status !== 'confirmado' && before.status !== 'entregado' && before.status !== 'cancelado') {
+    // CREAR RESERVAS en lugar de descontar directamente
+    const items = JSON.parse(before.items_json)
+    for (const it of items) {
+      db.prepare(`INSERT INTO stock_reservations (id, product_id, order_id, quantity, status, created_at) VALUES (?,?,?,?,?,?)`)
+        .run(uid('res-'), it.productId, before.id, it.quantity, 'active', new Date().toISOString())
+    }
     deductStock(before)
   }
+  // Si se cancela un pedido confirmado o entregado, liberar reservas
+  if (newStatus === 'cancelado' && (before.status === 'confirmado' || before.status === 'pendiente' || before.status === 'preparando')) {
+    db.prepare(`UPDATE stock_reservations SET status = 'released', released_at = ? WHERE order_id = ? AND status = 'active'`)
+      .run(new Date().toISOString(), before.id)
+  }
+  // Si se marca como preparando, las reservas se mantienen activas
+  // Si se entrega, las reservas se mantienen (ya se desconto stock)
   db.prepare('UPDATE orders SET customer_id=?, items_json=?, subtotal=?, tax=?, discount=?, total=?, status=?, delivery_date=?, notes=? WHERE id=?')
     .run(b.customerId || before.customer_id, JSON.stringify(b.items || JSON.parse(before.items_json)), b.subtotal ?? before.subtotal, b.tax ?? before.tax, b.discount ?? before.discount, b.total ?? before.total, newStatus, b.deliveryDate ?? before.delivery_date, b.notes ?? before.notes, req.params.id)
   addHistory(req, { action: 'modificar', module: 'Pedidos', entityId: req.params.id, description: `Pedido ${before.number} → ${newStatus}${touched ? ' (stock descontado)' : ''}`, before: mapOrder(before) })
@@ -3566,3 +3579,290 @@ router.get('/delivery-mobile', (req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8')
   res.send(html)
 })
+
+// ============================================================
+// MODULOS CRITICOS - Fase 1
+// ============================================================
+
+// ---------- 1. STOCK RESERVADO ----------
+function getReservedStock(productId) {
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(quantity), 0) AS reserved
+    FROM stock_reservations
+    WHERE product_id = ? AND status = 'active'
+  `).get(productId)
+  return row.reserved || 0
+}
+
+// GET /api/products/:id/availability - stock disponible
+router.get('/products/:id/availability', auth, (req, res) => {
+  const p = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id)
+  if (!p) return res.status(404).json({ error: 'Producto no encontrado' })
+  const reserved = getReservedStock(req.params.id)
+  const available = Math.max(0, p.stock - reserved)
+  res.json({
+    productId: p.id, productName: p.name,
+    stock: p.stock, reserved, available, canSell: available > 0
+  })
+})
+
+// GET /api/inventory/availability
+router.get('/inventory/availability', auth, (_req, res) => {
+  const products = db.prepare('SELECT * FROM products WHERE active = 1 ORDER BY name').all()
+  const result = products.map(p => {
+    const reserved = getReservedStock(p.id)
+    const available = Math.max(0, p.stock - reserved)
+    return {
+      id: p.id, code: p.code, name: p.name,
+      bottleSize: p.bottle_size, price: p.price,
+      stock: p.stock, reserved, available,
+      status: available <= 0 ? 'agotado' : (available < p.min_stock ? 'bajo' : 'ok')
+    }
+  })
+  res.json(result)
+})
+
+// ---------- 2. TRAZABILIDAD INVERSA ----------
+// GET /api/traceability/by-material/:id
+router.get('/traceability/by-material/:id', auth, (req, res) => {
+  const materialId = req.params.id
+  let matInfo = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(materialId)
+  if (!matInfo) matInfo = db.prepare('SELECT * FROM packaging WHERE id = ?').get(materialId)
+  if (!matInfo) return res.status(404).json({ error: 'Material no encontrado' })
+
+  const lots = db.prepare(`
+    SELECT l.*, p.name AS product_name, p.code AS product_code
+    FROM lots l
+    LEFT JOIN products p ON p.id = l.product_id
+    WHERE EXISTS (
+      SELECT 1 FROM json_each(l.raw_materials_json) AS item
+      WHERE json_extract(item.value, '$.materialId') = ?
+    )
+    ORDER BY l.produced_at DESC
+  `).all(materialId)
+
+  const enrichedLots = lots.map(l => {
+    let items = []
+    try { items = JSON.parse(l.raw_materials_json || '[]') } catch {}
+    const usedHere = items.find(i => i.materialId === materialId)
+    return {
+      id: l.id, lotNumber: l.lot_number,
+      productName: l.product_name, productCode: l.product_code,
+      quantity: l.quantity, producedAt: l.produced_at, status: l.status,
+      usedQuantity: usedHere?.quantity || 0, usedUnit: usedHere?.unit || ''
+    }
+  })
+
+  res.json({
+    material: { id: matInfo.id, code: matInfo.code, name: matInfo.name, unit: matInfo.unit || 'ud', currentStock: matInfo.stock },
+    lots: enrichedLots,
+    totalLots: enrichedLots.length,
+    totalUsed: enrichedLots.reduce((sum, l) => sum + (l.usedQuantity || 0), 0)
+  })
+})
+
+// GET /api/traceability/by-customer/:id
+router.get('/traceability/by-customer/:id', auth, (req, res) => {
+  const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.id)
+  if (!customer) return res.status(404).json({ error: 'Cliente no encontrado' })
+
+  const orders = db.prepare(`
+    SELECT o.*, u.full_name AS created_by_name
+    FROM orders o
+    LEFT JOIN users u ON u.id = o.created_by
+    WHERE o.customer_id = ?
+    ORDER BY o.created_at DESC
+  `).all(req.params.id)
+
+  const result = orders.map(o => {
+    let items = []
+    try { items = JSON.parse(o.items_json || '[]') } catch {}
+    return {
+      id: o.id, number: o.number, status: o.status, total: o.total,
+      createdAt: o.created_at, createdBy: o.created_by_name,
+      deliveredAt: o.delivered_at, deliveredBy: o.delivered_by, items
+    }
+  })
+
+  res.json({
+    customer: { id: customer.id, code: customer.code, name: customer.name, totalPurchases: customer.total_purchases },
+    orders: result,
+    summary: {
+      totalOrders: result.length,
+      pendingOrders: result.filter(o => !['entregado', 'cancelado'].includes(o.status)).length,
+      deliveredOrders: result.filter(o => o.status === 'entregado').length,
+      totalSpent: result.filter(o => o.status === 'entregado').reduce((s, o) => s + (o.total || 0), 0)
+    }
+  })
+})
+
+// GET /api/traceability/full
+router.get('/traceability/full', auth, (_req, res) => {
+  const lots = db.prepare(`
+    SELECT l.*, p.name AS product_name, p.code AS product_code, u.full_name AS produced_by_name
+    FROM lots l
+    LEFT JOIN products p ON p.id = l.product_id
+    LEFT JOIN users u ON u.id = l.produced_by
+    WHERE l.status = 'completado'
+    ORDER BY l.produced_at DESC
+    LIMIT 100
+  `).all()
+
+  const result = lots.map(l => {
+    let items = []
+    try { items = JSON.parse(l.raw_materials_json || '[]') } catch {}
+    const enriched = items.map(it => {
+      const raw = db.prepare('SELECT name, code, unit FROM raw_materials WHERE id = ?').get(it.materialId)
+      const pkg = db.prepare('SELECT name, code FROM packaging WHERE id = ?').get(it.materialId)
+      return { ...it, materialName: raw?.name || pkg?.name || it.materialId, materialCode: raw?.code || pkg?.code || '', materialUnit: raw?.unit || 'ud' }
+    })
+    return {
+      id: l.id, lotNumber: l.lot_number, productionOrderNumber: l.production_order_number,
+      productName: l.product_name, productCode: l.product_code,
+      quantity: l.quantity, producedAt: l.produced_at, producedBy: l.produced_by_name,
+      materialsUsed: enriched
+    }
+  })
+  res.json(result)
+})
+
+// ---------- 3. ALERTAS DE CADUCIDAD ----------
+router.get('/alerts/expiry', auth, (_req, res) => {
+  const alerts = []
+  const rmls = db.prepare(`
+    SELECT rml.*, rm.name AS material_name, rm.code AS material_code, rm.unit
+    FROM raw_material_lots rml
+    LEFT JOIN raw_materials rm ON rm.id = rml.raw_material_id
+    WHERE rml.expiry_date IS NOT NULL AND rml.expiry_date != ''
+      AND rml.status = 'active' AND rml.remaining > 0
+    ORDER BY rml.expiry_date ASC
+  `).all()
+  for (const r of rmls) {
+    const exp = new Date(r.expiry_date)
+    const days = Math.ceil((exp - new Date()) / (1000 * 60 * 60 * 24))
+    let severity = 'info'
+    if (days < 0) severity = 'critical'
+    else if (days <= 7) severity = 'critical'
+    else if (days <= 15) severity = 'warning'
+    else if (days <= 30) severity = 'info'
+    if (days <= 30) {
+      alerts.push({
+        type: 'rml_expiry', severity,
+        materialId: r.raw_material_id, materialName: r.material_name, materialCode: r.material_code,
+        lotCode: r.code, expiryDate: r.expiry_date, daysToExpiry: days,
+        stock: r.remaining, unit: r.unit
+      })
+    }
+  }
+  res.json({ alerts, count: alerts.length, critical: alerts.filter(a => a.severity === 'critical').length, warning: alerts.filter(a => a.severity === 'warning').length })
+})
+
+router.post('/alerts/expiry/scan', auth, (_req, res) => {
+  let created = 0
+  db.prepare("DELETE FROM notifications WHERE type LIKE 'expiry%'").run()
+  const rmls = db.prepare(`
+    SELECT rml.*, rm.name AS material_name, rm.code AS material_code
+    FROM raw_material_lots rml
+    LEFT JOIN raw_materials rm ON rm.id = rml.raw_material_id
+    WHERE rml.expiry_date IS NOT NULL AND rml.expiry_date != ''
+      AND rml.status = 'active' AND rml.remaining > 0
+  `).all()
+  for (const r of rmls) {
+    const exp = new Date(r.expiry_date)
+    const days = Math.ceil((exp - new Date()) / (1000 * 60 * 60 * 24))
+    if (days <= 30) {
+      const severity = days <= 7 ? 'critical' : (days <= 15 ? 'warning' : 'info')
+      const message = days < 0 ? `CADUCADO hace ${Math.abs(days)} dias: ${r.material_name} (${r.code}) - Lote ${r.code}` : `Caduca en ${days} dias: ${r.material_name} (${r.code}) - Lote ${r.code}`
+      const exists = db.prepare("SELECT id FROM notifications WHERE type='expiry' AND related_id=?").get('rml:'+r.id)
+      if (!exists) {
+        db.prepare(`INSERT INTO notifications (id, type, title, message, severity, read, created_at, related_id) VALUES (?,?,?,?,?,0,?,?)`)
+          .run(uid('n-'), 'expiry', 'Caducidad proxima', message, severity, new Date().toISOString(), 'rml:'+r.id)
+        created++
+      }
+    }
+  }
+  res.json({ ok: true, created, scanned: rmls.length })
+})
+
+// ---------- 4. AJUSTES DE INVENTARIO ----------
+router.get('/inventory/adjustments', auth, (_req, res) => {
+  const rows = db.prepare(`
+    SELECT sa.*, u.full_name AS user_name
+    FROM stock_adjustments sa
+    LEFT JOIN users u ON u.id = sa.created_by
+    ORDER BY sa.created_at DESC
+    LIMIT 200
+  `).all()
+  res.json(rows)
+})
+
+router.post('/inventory/adjustments', auth, requirePermission('inventory', 'edit'), (req, res) => {
+  try {
+    const { materialType, materialId, newStock, reason } = req.body
+    if (!materialType || !materialId || newStock === undefined) return res.status(400).json({ error: 'Faltan datos' })
+    if (!reason || reason.trim() === '') return res.status(400).json({ error: 'Debe especificar el motivo' })
+    let table
+    if (materialType === 'raw') table = 'raw_materials'
+    else if (materialType === 'packaging') table = 'packaging'
+    else if (materialType === 'product') table = 'products'
+    else return res.status(400).json({ error: 'materialType invalido' })
+    const before = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(materialId)
+    if (!before) return res.status(404).json({ error: 'Material no encontrado' })
+    const newStockNum = Number(newStock)
+    if (newStockNum < 0) return res.status(400).json({ error: 'Stock no puede ser negativo' })
+    const diff = newStockNum - before.stock
+    const tx = db.transaction(() => {
+      db.prepare(`UPDATE ${table} SET stock = ? WHERE id = ?`).run(newStockNum, materialId)
+      db.prepare(`INSERT INTO stock_adjustments (id, material_type, material_id, material_name, quantity_before, quantity_after, difference, reason, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`)
+        .run(uid('adj-'), materialType, materialId, before.name || '', before.stock, newStockNum, diff, reason.trim(), req.user.id, new Date().toISOString())
+      db.prepare(`INSERT INTO notifications (id, type, title, message, severity, read, created_at, related_id) VALUES (?,?,?,?,?,0,?,?)`)
+        .run(uid('n-'), 'stock-adjustment', 'Ajuste de inventario', `${before.name}: ${before.stock} → ${newStockNum} (${diff > 0 ? '+' : ''}${diff}) - ${reason}`, diff < 0 ? 'warning' : 'info', new Date().toISOString(), 'adj:' + materialId)
+    })
+    tx()
+    addHistory(req, { action: 'ajuste', module: 'Inventario', entityId: materialId, description: `Ajuste ${before.name}: ${before.stock} → ${newStockNum} (${reason})` })
+    res.json({ ok: true, before: before.stock, after: newStockNum, difference: diff })
+  } catch (e) { res.status(500).json({ error: e.message }) }
+})
+
+// ---------- 5. FIFO/FEFO en produccion ----------
+function getMaterialByFEFO(materialId, materialType, neededQty) {
+  const table = materialType === 'raw' ? 'raw_material_lots' : 'packaging_lots'
+  const matCol = materialType === 'raw' ? 'raw_material_id' : 'packaging_id'
+  const lots = db.prepare(`
+    SELECT * FROM ${table}
+    WHERE ${matCol} = ? AND status = 'active' AND remaining > 0
+    ORDER BY CASE WHEN expiry_date IS NULL OR expiry_date = '' THEN 1 ELSE 0 END, expiry_date ASC, received_at ASC
+  `).all(materialId)
+  const result = []
+  let remaining = neededQty
+  for (const lot of lots) {
+    if (remaining <= 0) break
+    const take = Math.min(remaining, lot.remaining)
+    result.push({ lotId: lot.id, lotCode: lot.code, quantity: take, expiryDate: lot.expiry_date, receivedAt: lot.received_at })
+    remaining -= take
+  }
+  return { allocations: result, shortage: remaining > 0 ? remaining : 0 }
+}
+
+function consumeFIFO(materialId, materialType, quantity) {
+  const table = materialType === 'raw' ? 'raw_material_lots' : 'packaging_lots'
+  const matCol = materialType === 'raw' ? 'raw_material_id' : 'packaging_id'
+  const { allocations, shortage } = getMaterialByFEFO(materialId, materialType, quantity)
+  if (shortage > 0) return { error: 'Stock insuficiente', shortage }
+  for (const alloc of allocations) {
+    db.prepare(`UPDATE ${table} SET remaining = remaining - ? WHERE id = ?`).run(alloc.quantity, alloc.lotId)
+    db.prepare(`UPDATE ${table} SET status = CASE WHEN remaining <= 0 THEN 'consumed' ELSE status END WHERE id = ?`).run(alloc.lotId)
+  }
+  return { allocations, shortage: 0 }
+}
+
+router.get('/inventory/fefo/:type/:id', auth, (req, res) => {
+  const { type, id } = req.params
+  const qty = Number(req.query.quantity) || 1
+  const { allocations, shortage } = getMaterialByFEFO(id, type, qty)
+  res.json({ allocations, shortage, requested: qty })
+})
+
+// ============================================================
+// FIN MODULOS CRITICOS
+// ============================================================

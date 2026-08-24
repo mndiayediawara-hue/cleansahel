@@ -414,6 +414,49 @@ try {
   }
 } catch (e) { console.warn('migration status check:', e.message) }
 db.pragma('foreign_keys = ON')
+
+// ============================================================
+// MIGRACIONES - Modulos criticos Fase 1
+// ============================================================
+
+// 1. Stock reservado
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS stock_reservations (
+      id TEXT PRIMARY KEY,
+      product_id TEXT NOT NULL,
+      order_id TEXT NOT NULL,
+      quantity REAL NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      created_at TEXT NOT NULL,
+      released_at TEXT,
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+      FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE
+    )
+  `)
+  console.log('✓ Migrated: stock_reservations table ready')
+} catch (e) { console.warn('migration stock_reservations:', e.message) }
+
+// 4. Ajustes de inventario
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS stock_adjustments (
+      id TEXT PRIMARY KEY,
+      material_type TEXT NOT NULL,
+      material_id TEXT NOT NULL,
+      material_name TEXT,
+      quantity_before REAL NOT NULL,
+      quantity_after REAL NOT NULL,
+      difference REAL NOT NULL,
+      reason TEXT NOT NULL,
+      created_by TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+    )
+  `)
+  console.log('✓ Migrated: stock_adjustments table ready')
+} catch (e) { console.warn('migration stock_adjustments:', e.message) }
+
 export { SCHEMA }
 
 export function getConfig(key, fallback = null) {
