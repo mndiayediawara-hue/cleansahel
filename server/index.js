@@ -10,15 +10,13 @@ import { db } from './db.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
-// Initialize DB - seed solo si está vacía (preservar datos entre deploys)
-console.log('🌱 Verificando seed inicial...')
-const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get().c
-if (userCount === 0) {
-  console.log('📦 DB vacía, ejecutando seed inicial...')
-  seed({ force: true })
-  console.log('✓ DB inicializada con datos de ejemplo')
-} else {
-  console.log(`✓ DB ya tiene ${userCount} usuarios, saltando seed (datos preservados)`)
+// Initialize DB - SIEMPRE ejecuta el seed (es idempotente, solo añade lo que falta)
+console.log('🌱 Verificando integridad de la BD...')
+try {
+  seed()
+  console.log('✓ Seed verificado - datos esenciales presentes')
+} catch (e) {
+  console.error('❌ Error en seed:', e.message)
 }
 
 const app = express()
@@ -45,6 +43,37 @@ app.post('/api/reset-db', (req, res) => {
   try {
     seed({ force: true })
     res.json({ ok: true, message: 'DB reseteada' })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ENDPOINT PÚBLICO: Reseed (asegurar datos esenciales - idempotente, no borra nada)
+app.post('/api/reseed', (_req, res) => {
+  try {
+    const result = seed()
+    res.json({ ok: true, message: 'Datos esenciales verificados/creados', result })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// ENDPOINT PÚBLICO: Status (ver qué hay en la BD)
+app.get('/api/status', (_req, res) => {
+  try {
+    const counts = {
+      users: db.prepare('SELECT COUNT(*) as c FROM users').get().c,
+      raw_materials: db.prepare('SELECT COUNT(*) as c FROM raw_materials').get().c,
+      packaging: db.prepare('SELECT COUNT(*) as c FROM packaging').get().c,
+      products: db.prepare('SELECT COUNT(*) as c FROM products').get().c,
+      recipes: db.prepare('SELECT COUNT(*) as c FROM recipes').get().c,
+      customers: db.prepare('SELECT COUNT(*) as c FROM customers').get().c,
+      suppliers: db.prepare('SELECT COUNT(*) as c FROM suppliers').get().c,
+      orders: db.prepare('SELECT COUNT(*) as c FROM orders').get().c,
+      lots: db.prepare('SELECT COUNT(*) as c FROM lots').get().c,
+      production_orders: db.prepare('SELECT COUNT(*) as c FROM production_orders').get().c,
+    }
+    res.json({ ok: true, counts, time: new Date().toISOString() })
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
