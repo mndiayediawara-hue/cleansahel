@@ -4033,3 +4033,647 @@ router.get('/inventory/fefo/:type/:id', auth, (req, res) => {
 // FIN MODULOS CRITICOS
 // ============================================================
 
+
+// ============================================================
+// ETIQUETAS DE RECEPCION 4x6 (10.2x15.2cm) - 203 DPI
+// ============================================================
+
+// Función helper: genera el código QR como data URL
+async function generateQRDataURL(text) {
+  try {
+    const QRCode = (await import('qrcode')).default
+    return await QRCode.toDataURL(text, {
+      errorCorrectionLevel: 'M',
+      type: 'image/png',
+      margin: 1,
+      width: 300,
+      color: { dark: '#000000', light: '#FFFFFF' }
+    })
+  } catch (e) {
+    console.error('QR error:', e.message)
+    return null
+  }
+}
+
+// GET /api/reception-label/:type/:id - Genera la etiqueta 4x6 lista para imprimir
+router.get('/reception-label/:type/:id', async (req, res) => {
+  const { type, id } = req.params
+  if (!['raw', 'pkg'].includes(type)) {
+    return res.status(400).send('<h1>Tipo inválido (raw o pkg)</h1>')
+  }
+  
+  let lot = null
+  let material = null
+  let supplier = null
+  
+  if (type === 'raw') {
+    lot = db.prepare('SELECT * FROM raw_material_lots WHERE id = ?').get(id)
+    if (!lot) return res.status(404).send('<h1>Lote no encontrado</h1>')
+    material = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(lot.raw_material_id)
+    if (lot.supplier_id) supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(lot.supplier_id)
+  } else {
+    lot = db.prepare('SELECT * FROM packaging_lots WHERE id = ?').get(id)
+    if (!lot) return res.status(404).send('<h1>Lote no encontrado</h1>')
+    material = db.prepare('SELECT * FROM packaging WHERE id = ?').get(lot.packaging_id)
+    if (lot.supplier_id) supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(lot.supplier_id)
+  }
+  
+  if (!material) return res.status(404).send('<h1>Material no encontrado</h1>')
+  
+  const companyInfo = getConfig('company', { name: 'SAHEL', tagline: 'PRODUITS D\'HYGIÈNE' })
+  const baseUrl = `${req.protocol}://${req.get('host')}`
+  const qrData = `${baseUrl}/api/reception-info/${type}/${id}`
+  const qrUrl = await generateQRDataURL(qrData)
+  
+  const formatDate = (d) => d ? new Date(d).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'
+  const safe = (s) => String(s || '-').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  
+  // Calcular % consumido
+  const used = Number(lot.quantity) - Number(lot.remaining)
+  const percentUsed = lot.quantity > 0 ? Math.round((used / lot.quantity) * 100) : 0
+  
+  // Color según estado
+  let statusColor = '#10b981' // green - activo
+  let statusText = 'ACTIVO'
+  if (lot.status === 'blocked' || lot.status === 'consumed') {
+    statusColor = '#ef4444' // red
+    statusText = lot.status === 'blocked' ? 'BLOQUEADO' : 'AGOTADO'
+  }
+  if (Number(lot.remaining) <= 0) {
+    statusColor = '#6b7280' // gray
+    statusText = 'AGOTADO'
+  }
+  
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Etiqueta ${safe(lot.code)}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  @page { size: 4in 6in; margin: 0; }
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    width: 4in;
+    height: 6in;
+    padding: 0.15in;
+    background: white;
+    color: #000;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .no-print {
+    background: #1f2937;
+    color: white;
+    padding: 10px;
+    text-align: center;
+    margin: -0.15in -0.15in 10px -0.15in;
+  }
+  .no-print button {
+    padding: 8px 16px;
+    background: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin: 0 4px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .no-print button.close { background: #6b7280; }
+  .label {
+    border: 2px solid #000;
+    height: calc(6in - 0.3in);
+    display: flex;
+    flex-direction: column;
+    padding: 0.1in;
+  }
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1.5pt solid #000;
+    padding-bottom: 4px;
+    margin-bottom: 4px;
+  }
+  .logo {
+    font-weight: 900;
+    font-size: 16pt;
+    letter-spacing: 1px;
+  }
+  .logo .tag {
+    font-size: 7pt;
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: #555;
+  }
+  .qr {
+    width: 0.85in;
+    height: 0.85in;
+  }
+  .qr img { width: 100%; height: 100%; }
+  .title {
+    text-align: center;
+    font-size: 8pt;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-weight: 700;
+    margin: 4px 0 2px;
+  }
+  .product {
+    text-align: center;
+    font-size: 14pt;
+    font-weight: 800;
+    margin: 4px 0;
+    line-height: 1.1;
+  }
+  .code {
+    text-align: center;
+    font-size: 9pt;
+    color: #555;
+    font-family: monospace;
+    margin-bottom: 4px;
+  }
+  .qty-box {
+    text-align: center;
+    background: #1e3a8a;
+    color: white;
+    padding: 6px;
+    margin: 6px 0;
+    border-radius: 4px;
+  }
+  .qty-label {
+    font-size: 8pt;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+  }
+  .qty-value {
+    font-size: 24pt;
+    font-weight: 900;
+    line-height: 1;
+  }
+  .qty-unit {
+    font-size: 11pt;
+    font-weight: 600;
+  }
+  .info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 3px 8px;
+    font-size: 8pt;
+    margin-top: 4px;
+  }
+  .info-row { display: flex; flex-direction: column; }
+  .info-label {
+    font-size: 7pt;
+    text-transform: uppercase;
+    color: #666;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+  .info-value {
+    font-size: 9pt;
+    font-weight: 600;
+  }
+  .barcode {
+    text-align: center;
+    font-family: monospace;
+    font-size: 10pt;
+    letter-spacing: 2px;
+    margin-top: 4px;
+    padding: 4px;
+    background: #f3f4f6;
+    border-radius: 3px;
+  }
+  .status {
+    position: absolute;
+    top: 0.2in;
+    right: 0.2in;
+    background: ${statusColor};
+    color: white;
+    padding: 3px 8px;
+    font-size: 7pt;
+    font-weight: 800;
+    border-radius: 3px;
+    letter-spacing: 1px;
+  }
+  .footer {
+    margin-top: auto;
+    text-align: center;
+    font-size: 7pt;
+    color: #666;
+    border-top: 1pt solid #ccc;
+    padding-top: 3px;
+  }
+  @media print {
+    body { padding: 0; }
+    .no-print { display: none; }
+    .label { border: 2px solid #000; height: 6in; }
+  }
+</style>
+</head>
+<body>
+<div class="no-print">
+  <button onclick="window.print()">🖨️ Imprimir etiqueta</button>
+  <button class="close" onclick="window.close()">Cerrar</button>
+</div>
+<div class="label">
+  <div class="status">${statusText}</div>
+  <div class="header">
+    <div class="logo">
+      ${safe(companyInfo.name)}
+      <div class="tag">${safe(companyInfo.tagline || 'PRODUITS D\'HYGIÈNE')}</div>
+    </div>
+    ${qrUrl ? `<div class="qr"><img src="${qrUrl}" alt="QR"></div>` : ''}
+  </div>
+  <div class="title">ETIQUETA DE RECEPCIÓN</div>
+  <div class="product">${safe(material.name)}</div>
+  <div class="code">Cód: ${safe(material.code)}</div>
+  <div class="qty-box">
+    <div class="qty-label">CANTIDAD RECIBIDA</div>
+    <div class="qty-value">${Number(lot.quantity).toLocaleString('es-ES')}</div>
+    <div class="qty-unit">${safe(lot.unit || material.unit)}</div>
+  </div>
+  <div class="info">
+    <div class="info-row">
+      <div class="info-label">Lote</div>
+      <div class="info-value">${safe(lot.code)}</div>
+    </div>
+    <div class="info-row">
+      <div class="info-label">Proveedor</div>
+      <div class="info-value">${supplier ? safe(supplier.name) : (lot.supplier_name || '-')}</div>
+    </div>
+    <div class="info-row">
+      <div class="info-label">Recepción</div>
+      <div class="info-value">${formatDate(lot.received_at)}</div>
+    </div>
+    <div class="info-row">
+      <div class="info-label">Caducidad</div>
+      <div class="info-value">${formatDate(lot.expiry_date)}</div>
+    </div>
+    <div class="info-row">
+      <div class="info-label">Disponible</div>
+      <div class="info-value">${Number(lot.remaining).toLocaleString('es-ES')} / ${Number(lot.quantity).toLocaleString('es-ES')}</div>
+    </div>
+    <div class="info-row">
+      <div class="info-label">${type === 'raw' ? 'Categoría' : 'Tipo'}</div>
+      <div class="info-value">${safe(type === 'raw' ? (material.category || '-') : (material.type || '-'))}</div>
+    </div>
+  </div>
+  <div class="barcode">*${safe(lot.code)}*</div>
+  <div class="footer">
+    ${type === 'raw' ? 'MATERIA PRIMA' : 'ENVASE'} · ${percentUsed}% usado · Escanea el QR para info en tiempo real
+  </div>
+</div>
+<script>
+  // Auto-imprimir si se pasa ?print=1
+  if (window.location.search.includes('print=1')) {
+    setTimeout(() => window.print(), 500);
+  }
+</script>
+</body>
+</html>`
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
+// GET /api/reception-info/:type/:id - Página que se abre al escanear el QR
+// Muestra toda la información del lote EN TIEMPO REAL
+router.get('/reception-info/:type/:id', async (req, res) => {
+  const { type, id } = req.params
+  if (!['raw', 'pkg'].includes(type)) {
+    return res.status(400).send('<h1>Tipo inválido</h1>')
+  }
+  
+  let lot = null
+  let material = null
+  let supplier = null
+  
+  if (type === 'raw') {
+    lot = db.prepare('SELECT * FROM raw_material_lots WHERE id = ?').get(id)
+    if (!lot) return res.status(404).send('<h1>Lote no encontrado</h1>')
+    material = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(lot.raw_material_id)
+    if (lot.supplier_id) supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(lot.supplier_id)
+  } else {
+    lot = db.prepare('SELECT * FROM packaging_lots WHERE id = ?').get(id)
+    if (!lot) return res.status(404).send('<h1>Lote no encontrado</h1>')
+    material = db.prepare('SELECT * FROM packaging WHERE id = ?').get(lot.packaging_id)
+    if (lot.supplier_id) supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(lot.supplier_id)
+  }
+  
+  if (!material) return res.status(404).send('<h1>Material no encontrado</h1>')
+  
+  const used = Number(lot.quantity) - Number(lot.remaining)
+  const percentUsed = lot.quantity > 0 ? Math.round((used / lot.quantity) * 100) : 0
+  const percentLeft = 100 - percentUsed
+  
+  const formatDate = (d) => d ? new Date(d).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'
+  const formatDateTime = (d) => d ? new Date(d).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'
+  const safe = (s) => String(s || '-').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  
+  // Historial de consumo (raw_material_lots_details si existe, sino no)
+  // Por simplicidad, no tenemos tabla de movimientos. Mostramos info actual
+  
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${safe(lot.code)} - ${safe(material.name)}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+    min-height: 100vh;
+    padding: 20px;
+    color: #1f2937;
+  }
+  .container {
+    max-width: 600px;
+    margin: 0 auto;
+    background: white;
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    overflow: hidden;
+  }
+  .header {
+    background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+    color: white;
+    padding: 24px;
+    text-align: center;
+  }
+  .header h1 {
+    font-size: 14pt;
+    margin: 0 0 4px;
+    letter-spacing: 1px;
+  }
+  .header p {
+    font-size: 11pt;
+    margin: 0;
+    opacity: 0.95;
+    font-weight: 500;
+  }
+  .badge {
+    display: inline-block;
+    background: rgba(255,255,255,0.2);
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 9pt;
+    margin-top: 8px;
+  }
+  .progress {
+    padding: 24px;
+    background: #f9fafb;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .progress-label {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    font-size: 10pt;
+  }
+  .progress-label strong { color: #1e3a8a; }
+  .progress-bar {
+    background: #e5e7eb;
+    height: 20px;
+    border-radius: 10px;
+    overflow: hidden;
+    position: relative;
+  }
+  .progress-fill {
+    background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+    height: 100%;
+    border-radius: 10px;
+    transition: width 0.3s;
+  }
+  .progress-text {
+    text-align: center;
+    margin-top: 6px;
+    font-size: 9pt;
+    color: #6b7280;
+  }
+  .info-grid {
+    padding: 20px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .info-item {
+    background: #f9fafb;
+    padding: 12px;
+    border-radius: 8px;
+    border-left: 3px solid #2563eb;
+  }
+  .info-item.full { grid-column: span 2; }
+  .info-label {
+    font-size: 8pt;
+    text-transform: uppercase;
+    color: #6b7280;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+  }
+  .info-value {
+    font-size: 12pt;
+    font-weight: 700;
+    color: #1f2937;
+    margin-top: 2px;
+  }
+  .actions {
+    padding: 20px;
+    background: #f9fafb;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .btn {
+    padding: 10px 20px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    font-size: 10pt;
+    font-weight: 600;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn-primary {
+    background: #1e3a8a;
+    color: white;
+  }
+  .btn-secondary {
+    background: white;
+    color: #1e3a8a;
+    border: 1px solid #1e3a8a;
+  }
+  .footer {
+    padding: 16px;
+    text-align: center;
+    color: #6b7280;
+    font-size: 9pt;
+    background: #f9fafb;
+  }
+  .refresh-info {
+    background: #fef3c7;
+    border-left: 3px solid #f59e0b;
+    padding: 8px 12px;
+    margin: 16px 20px;
+    border-radius: 6px;
+    font-size: 9pt;
+    color: #92400e;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <h1>${safe(companyInfo.name || 'SAHEL')}</h1>
+    <p>${safe(material.name)}</p>
+    <div class="badge">${type === 'raw' ? 'MATERIA PRIMA' : 'ENVASE'} · Lote ${safe(lot.code)}</div>
+  </div>
+  
+  <div class="progress">
+    <div class="progress-label">
+      <span>Disponible: <strong>${Number(lot.remaining).toLocaleString('es-ES')} ${safe(lot.unit || material.unit)}</strong></span>
+      <span>Recibido: <strong>${Number(lot.quantity).toLocaleString('es-ES')} ${safe(lot.unit || material.unit)}</strong></span>
+    </div>
+    <div class="progress-bar">
+      <div class="progress-fill" style="width: ${percentLeft}%"></div>
+    </div>
+    <div class="progress-text">
+      ${percentUsed}% consumido · ${percentLeft}% disponible
+    </div>
+  </div>
+  
+  <div class="info-grid">
+    <div class="info-item">
+      <div class="info-label">Código material</div>
+      <div class="info-value">${safe(material.code)}</div>
+    </div>
+    <div class="info-item">
+      <div class="info-label">Lote interno</div>
+      <div class="info-value">${safe(lot.code)}</div>
+    </div>
+    <div class="info-item">
+      <div class="info-label">Proveedor</div>
+      <div class="info-value">${supplier ? safe(supplier.name) : (lot.supplier_name || '-')}</div>
+    </div>
+    <div class="info-item">
+      <div class="info-label">Factura</div>
+      <div class="info-value">${safe(lot.invoice || '-')}</div>
+    </div>
+    <div class="info-item">
+      <div class="info-label">Recepción</div>
+      <div class="info-value">${formatDate(lot.received_at)}</div>
+    </div>
+    <div class="info-item">
+      <div class="info-label">Caducidad</div>
+      <div class="info-value">${formatDate(lot.expiry_date)}</div>
+    </div>
+    <div class="info-item">
+      <div class="info-label">${type === 'raw' ? 'Categoría' : 'Tipo'}</div>
+      <div class="info-value">${safe(type === 'raw' ? (material.category || '-') : (material.type || '-'))}</div>
+    </div>
+    <div class="info-item">
+      <div class="info-label">Estado</div>
+      <div class="info-value">${safe(lot.status || 'active')}</div>
+    </div>
+    <div class="info-item full">
+      <div class="info-label">Notas</div>
+      <div class="info-value">${safe(lot.notes || 'Sin notas')}</div>
+    </div>
+  </div>
+  
+  <div class="refresh-info">
+    ℹ️ Esta información se actualiza en tiempo real. La cantidad disponible cambia automáticamente al usar el material.
+  </div>
+  
+  <div class="actions">
+    <a href="${req.protocol}://${req.get('host')}/api/reception-label/${type}/${id}?print=1" class="btn btn-primary" target="_blank">🖨️ Imprimir etiqueta</a>
+    <a href="${req.protocol}://${req.get('host')}" class="btn btn-secondary">← Volver a la app</a>
+  </div>
+  
+  <div class="footer">
+    Última actualización: ${formatDateTime(new Date().toISOString())} · SAHEL ERP
+  </div>
+</div>
+<script>
+  // Auto-refresh cada 30 segundos para ver cambios en tiempo real
+  setTimeout(() => location.reload(), 30000);
+</script>
+</body>
+</html>`
+  res.setHeader('Content-Type', 'text/html; charset=utf-8')
+  res.send(html)
+})
+
+// GET /api/reception-info-json/:type/:id - JSON con la info del lote (para el QR scan)
+router.get('/reception-info-json/:type/:id', auth, (req, res) => {
+  const { type, id } = req.params
+  if (!['raw', 'pkg'].includes(type)) {
+    return res.status(400).json({ error: 'Tipo inválido' })
+  }
+  
+  let lot = null
+  let material = null
+  let supplier = null
+  
+  if (type === 'raw') {
+    lot = db.prepare('SELECT * FROM raw_material_lots WHERE id = ?').get(id)
+    if (!lot) return res.status(404).json({ error: 'Lote no encontrado' })
+    material = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(lot.raw_material_id)
+    if (lot.supplier_id) supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(lot.supplier_id)
+  } else {
+    lot = db.prepare('SELECT * FROM packaging_lots WHERE id = ?').get(id)
+    if (!lot) return res.status(404).json({ error: 'Lote no encontrado' })
+    material = db.prepare('SELECT * FROM packaging WHERE id = ?').get(lot.packaging_id)
+    if (lot.supplier_id) supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(lot.supplier_id)
+  }
+  
+  if (!material) return res.status(404).json({ error: 'Material no encontrado' })
+  
+  res.json({
+    type,
+    lot: {
+      id: lot.id,
+      code: lot.code,
+      quantity: lot.quantity,
+      remaining: lot.remaining,
+      unit: lot.unit || material.unit,
+      receivedAt: lot.received_at,
+      expiryDate: lot.expiry_date,
+      status: lot.status,
+      notes: lot.notes
+    },
+    material: {
+      id: material.id,
+      code: material.code,
+      name: material.name,
+      category: material.category,
+      type: material.type,
+      location: material.location
+    },
+    supplier: supplier ? { name: supplier.name, phone: supplier.phone, email: supplier.email } : (lot.supplier_name ? { name: lot.supplier_name } : null),
+    percentUsed: lot.quantity > 0 ? Math.round(((lot.quantity - lot.remaining) / lot.quantity) * 100) : 0
+  })
+})
+
+// GET /api/reception-labels - Lista todas las recepciones recientes
+router.get('/reception-labels', auth, (_req, res) => {
+  const raw = db.prepare(`
+    SELECT 'raw' as type, id, code, raw_material_id as material_id, quantity, remaining, unit, 
+           received_at, expiry_date, status
+    FROM raw_material_lots
+    UNION ALL
+    SELECT 'pkg' as type, id, code, packaging_id as material_id, quantity, remaining, unit,
+           received_at, expiry_date, status
+    FROM packaging_lots
+    ORDER BY received_at DESC
+    LIMIT 50
+  `).all()
+  res.json(raw)
+})
