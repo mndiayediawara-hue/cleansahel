@@ -2914,11 +2914,12 @@ router.get('/raw-material-lots', auth, (_req, res) => {
 
 router.post('/raw-material-lots', auth, requirePermission('purchases', 'create'), (req, res) => {
   const b = req.body || {}
-  const { rawMaterialId, quantity, supplierId, supplierName, invoice, receivedAt, expiryDate, notes } = b
+  const { rawMaterialId, quantity, quantityReceived, quantityRemaining, supplierId, supplierName, invoice, receivedAt, expiryDate, notes, internalLotNumber, supplierLotNumber, manufactureDate, certificates } = b
   if (!rawMaterialId) return res.status(400).json({ error: 'Falta rawMaterialId' })
   const material = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(rawMaterialId)
   if (!material) return res.status(404).json({ error: 'Materia prima no encontrada' })
-  const qty = Number(quantity)
+  // Aceptar quantity, quantityReceived, o quantityRemaining como cantidad
+  const qty = Number(quantity ?? quantityReceived ?? quantityRemaining)
   if (!Number.isFinite(qty) || qty <= 0) return res.status(400).json({ error: 'Cantidad inválida' })
 
   // Generar código único
@@ -2987,11 +2988,12 @@ router.get('/packaging-lots', auth, (_req, res) => {
 })
 router.post('/packaging-lots', auth, requirePermission('purchases', 'create'), (req, res) => {
   const b = req.body || {}
-  const { packagingId, quantity, supplierId, supplierName, invoice, receivedAt, expiryDate, notes } = b
+  const { packagingId, quantity, quantityReceived, quantityRemaining, supplierId, supplierName, invoice, receivedAt, expiryDate, notes, internalLotNumber, supplierLotNumber, manufactureDate, certificates } = b
   if (!packagingId) return res.status(400).json({ error: 'Falta packagingId' })
   const packaging = db.prepare('SELECT * FROM packaging WHERE id = ?').get(packagingId)
   if (!packaging) return res.status(404).json({ error: 'Envase no encontrado' })
-  const qty = Number(quantity)
+  // Aceptar quantity, quantityReceived, o quantityRemaining como cantidad
+  const qty = Number(quantity ?? quantityReceived ?? quantityRemaining)
   if (!Number.isFinite(qty) || qty <= 0) return res.status(400).json({ error: 'Cantidad inválida' })
 
   const year = new Date().getFullYear()
