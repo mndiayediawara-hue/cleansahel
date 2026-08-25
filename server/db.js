@@ -454,7 +454,16 @@ try {
       FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
     )
   `)
-  console.log('✓ Migrated: stock_adjustments table ready')
+  // Añadir columna lot_id a stock_adjustments si no existe
+try {
+  const adjCols = db.prepare("PRAGMA table_info(stock_adjustments)").all()
+  if (!adjCols.find(c => c.name === 'lot_id')) {
+    db.exec("ALTER TABLE stock_adjustments ADD COLUMN lot_id TEXT")
+    console.log('✓ Migrated: added lot_id column to stock_adjustments')
+  }
+} catch (e) { console.warn('migration stock_adjustments lot_id:', e.message) }
+
+console.log('✓ Migrated: stock_adjustments table ready')
 } catch (e) { console.warn('migration stock_adjustments:', e.message) }
 
 export { SCHEMA }
