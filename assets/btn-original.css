@@ -1,0 +1,87 @@
+/* ============================================================
+   BTN-ORIGINAL
+   Restaura los colores originales de los botones
+   (azul brillante Tailwind blue-500 #329bff)
+   ============================================================ */
+
+.btn-primary,
+button.btn-primary,
+a.btn-primary {
+  background-color: #329bff !important;
+  border-color: #329bff !important;
+  color: #ffffff !important;
+}
+
+.btn-primary:hover,
+button.btn-primary:hover,
+a.btn-primary:hover {
+  background-color: #1666e0 !important;
+  border-color: #1666e0 !important;
+  color: #ffffff !important;
+}
+
+.btn-primary:focus,
+button.btn-primary:focus,
+a.btn-primary:focus {
+  background-color: #329bff !important;
+  border-color: #329bff !important;
+  box-shadow: 0 0 0 3px rgba(50, 155, 255, 0.3) !important;
+}
+
+.bg-brand-500,
+button.bg-brand-500,
+a.bg-brand-500 {
+  background-color: #329bff !important;
+}
+
+.bg-brand-600,
+button.bg-brand-600,
+a.bg-brand-600 {
+  background-color: #1b7df5 !important;
+}
+
+.bg-brand-700,
+button.bg-brand-700,
+a.bg-brand-700 {
+  background-color: #1666e0 !important;
+}
+
+.hover\:bg-brand-500:hover,
+.hover\:bg-brand-600:hover,
+.hover\:bg-brand-700:hover {
+  background-color: #1666e0 !important;
+}
+
+.from-brand-500 {
+  --tw-gradient-from: #329bff !important;
+}
+
+.via-brand-600 {
+  --tw-gradient-stops: var(--tw-gradient-from), #1b7df5 var(--tw-gradient-via-position), var(--tw-gradient-to) !important;
+}
+
+.to-brand-700 {
+  --tw-gradient-to: #1666e0 !important;
+}
+
+button[class*="bg-brand-"],
+a[class*="bg-brand-"] {
+  background-color: #329bff !important;
+}
+
+button[class*="bg-brand-"]:hover,
+a[class*="bg-brand-"]:hover {
+  background-color: #1666e0 !important;
+}
+
+.nav-item.active,
+.nav-item-active {
+  background-color: rgba(50, 155, 255, 0.1) !important;
+  color: #329bff !important;
+}
+
+.dark .nav-item.active,
+.dark .nav-item-active {
+  background-color: rgba(50, 155, 255, 0.3) !important;
+  color: #329bff !important;
+}
