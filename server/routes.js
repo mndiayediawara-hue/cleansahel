@@ -4664,7 +4664,7 @@ router.get('/reception-info-json/:type/:id', auth, (req, res) => {
 router.get('/reception-labels', auth, (_req, res) => {
   try {
     const raw = db.prepare(`SELECT id, code, raw_material_id as material_id, quantity, remaining, unit, received_at, expiry_date, status FROM raw_material_lots ORDER BY received_at DESC LIMIT 50`).all()
-    const pkg = db.prepare(`SELECT id, code, packaging_id as material_id, quantity, remaining, unit, received_at, expiry_date, status FROM packaging_lots ORDER BY received_at DESC LIMIT 50`).all()
+    const pkg = db.prepare(`SELECT id, code, packaging_id as material_id, quantity, remaining, received_at, expiry_date, status FROM packaging_lots ORDER BY received_at DESC LIMIT 50`).all()
     const combined = [
       ...raw.map(l => ({ ...l, type: 'raw' })),
       ...pkg.map(l => ({ ...l, type: 'pkg' }))
