@@ -5057,7 +5057,7 @@ router.post('/production-orders/from-order/:orderId', auth, requirePermission('p
       
       // Calcular materiales necesarios según receta
       let materials = []
-      try { materials = JSON.parse(recipe.materials_json || '[]') } catch {}
+      try { materials = JSON.parse(recipe.items_json || '[]') } catch {}
       const neededMaterials = materials.map(m => {
         const ratio = (item.quantity || 1) / (recipe.batch_size || 1)
         return {
@@ -5118,7 +5118,7 @@ router.post('/production-orders/:id/complete', auth, requirePermission('producti
     const recipe = po.recipe_id ? db.prepare('SELECT * FROM recipes WHERE id = ?').get(po.recipe_id) : null
     let materials = []
     if (recipe) {
-      try { materials = JSON.parse(recipe.materials_json || '[]') } catch {}
+      try { materials = JSON.parse(recipe.items_json || '[]') } catch {}
     }
     
     // Generar código de lote PT
