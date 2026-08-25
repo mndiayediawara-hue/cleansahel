@@ -325,12 +325,25 @@
     try {
       let lotData = null;
 
-      // 1. Obtener datos por código
+      // 1. Obtener datos por código (con fallback por tipo)
       if (lotCode) {
         try {
           const byCode = await api(`/api/lots/by-code/${encodeURIComponent(lotCode)}`);
           lotData = byCode.lot || byCode;
-        } catch {}
+        } catch {
+          // Fallback: buscar por tipo específico
+          try {
+            if (type === 'raw') {
+              const lots = await api('/api/lots-central?type=raw&limit=500');
+              const found = (lots.results || lots).find(l => l.code === lotCode);
+              if (found) lotData = found;
+            } else if (type === 'envase' || type === 'embalaje') {
+              const lots = await api('/api/lots-central?type=envase&limit=500');
+              const found = (lots.results || lots).find(l => l.code === lotCode);
+              if (found) lotData = found;
+            }
+          } catch {}
+        }
       }
 
       // 2. Trazabilidad
@@ -347,7 +360,7 @@
 
       clearTimeout(timeoutId);
 
-      const lot = lotData || {};
+      const lot = (lotData && lotData.lot) ? lotData.lot : (lotData || {});
       const qty = lot.quantityRemaining !== undefined ? lot.quantityRemaining : lot.quantity || '-';
       const total = lot.quantityReceived !== undefined ? lot.quantityReceived : lot.quantity || qty;
       const unit = lot.unit || '';
