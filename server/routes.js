@@ -3985,19 +3985,10 @@ router.post('/inventory/adjustments', auth, requirePermission('inventory', 'edit
     if (lotId && lotTable) {
       const lot = db.prepare(`SELECT * FROM ${lotTable} WHERE id = ?`).get(lotId)
       if (lot) {
-        // Calcular nuevo remaining proporcional
-        // Si newStock es el stock total del material, remaining se reduce proporcionalmente
-        // Si newStock es solo el nuevo remaining del lote, usarlo directamente
-        let newRemaining = lot.remaining
-        if (newStockNum === before.stock) {
-          // Caso 1: ajustar todo el material
-          // Mantener proporcion del lote en el stock total
-          const proportion = before.stock > 0 ? lot.remaining / before.stock : 0
-          newRemaining = Math.max(0, proportion * newStockNum)
-        } else if (newStockNum <= lot.remaining) {
-          // Caso 2: newStock representa el nuevo remaining del lote
-          newRemaining = newStockNum
-        }
+        // newStockNum es el nuevo valor del stock del material
+        // La diferencia (diff) se resta del remaining del lote proporcionalmente
+        // Si diff = -100 y remaining=500, nuevo remaining = 400
+        const newRemaining = Math.max(0, lot.remaining + diff)
         const lotDiff = newRemaining - lot.remaining
         db.prepare(`UPDATE ${lotTable} SET remaining = ? WHERE id = ?`).run(newRemaining, lotId)
         db.prepare(`UPDATE ${lotTable} SET status = CASE WHEN remaining <= 0 THEN 'consumed' ELSE status END WHERE id = ?`).run(lotId)
