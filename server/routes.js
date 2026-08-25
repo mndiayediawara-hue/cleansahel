@@ -1529,9 +1529,9 @@ function buildOrderSheetHTML(order, customer, items) {
   .no-print button { padding: 10px 18px; font-size: 12px; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; font-family: inherit; }
   .no-print button:hover { background: #1d4ed8; }
   .no-print button.close { background: #6b7280; }
-  .sheet { width: 210mm; min-height: auto; margin: 0 auto; background: white; padding: 12mm 14mm; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
+  .sheet { width: 210mm; min-height: auto; margin: 0 auto; background: white; padding: 8mm 10mm; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
 
-  .header { display: grid; grid-template-columns: 50mm 1fr 65mm; gap: 5mm; align-items: start; padding-bottom: 5mm; border-bottom: 1.2pt solid #1e3a8a; margin-bottom: 5mm; }
+  .header { display: grid; grid-template-columns: 45mm 1fr 60mm; gap: 3mm; align-items: start; padding-bottom: 3mm; border-bottom: 1.2pt solid #1e3a8a; margin-bottom: 3mm; }
   .logo-box { border: 0.6pt solid #cbd5e1; padding: 2mm; text-align: center; }
   .logo-fallback { color: #1e3a8a; font-weight: 900; font-size: 20pt; letter-spacing: 1px; padding: 6mm 4mm; }
   .logo-fallback .tag { font-size: 7pt; font-weight: 600; letter-spacing: 2.5px; color: #475569; display: block; margin-top: 2mm; }
@@ -1548,7 +1548,7 @@ function buildOrderSheetHTML(order, customer, items) {
   .order-box .lbl2 { font-size: 7.5pt; color: #1e3a8a; text-transform: uppercase; letter-spacing: 2px; font-weight: 700; margin-top: 2mm; }
   .order-box .date { font-size: 10pt; color: #1e3a8a; font-weight: 700; margin-top: 1mm; }
 
-  .info-section { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin-bottom: 5mm; }
+  .info-section { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; margin-bottom: 3mm; }
   .info-box { border: 0.6pt solid #cbd5e1; }
   .info-box h3 { background: #1e3a8a; color: white; padding: 2mm 4mm; font-size: 8.5pt; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; }
   .info-box .body { padding: 3mm 4mm; }
@@ -1557,32 +1557,34 @@ function buildOrderSheetHTML(order, customer, items) {
   .info-row .lbl { font-weight: 700; color: #1e3a8a; width: 28mm; flex-shrink: 0; }
   .info-row .val { color: #1f2937; flex: 1; }
 
-  table.items { width: 100%; border-collapse: collapse; margin-bottom: 5mm; }
-  table.items thead th { background: #1e3a8a; color: white; padding: 2.5mm 3mm; text-align: center; font-size: 8pt; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }
-  table.items tbody td { padding: 2.5mm 3mm; border-bottom: 0.4pt solid #e5e7eb; font-size: 8.5pt; vertical-align: top; }
+  table.items { width: 100%; border-collapse: collapse; margin-bottom: 3mm; }
+  table.items thead th { background: #1e3a8a; color: white; padding: 1.5mm 2mm; text-align: center; font-size: 8pt; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; }
+  table.items tbody td { padding: 1.5mm 2mm; border-bottom: 0.4pt solid #e5e7eb; font-size: 8.5pt; vertical-align: top; }
   table.items tbody tr:nth-child(even) { background: #f9fafb; }
 
-  .totals-section { display: flex; justify-content: flex-end; margin-bottom: 5mm; }
+  .totals-section { display: flex; justify-content: flex-end; margin-bottom: 3mm; }
   .totals { width: 70mm; }
-  .totals .row { display: flex; justify-content: space-between; padding: 1.5mm 3mm; font-size: 9pt; }
-  .totals .row.grand { background: #1e3a8a; color: white; font-weight: 800; font-size: 10.5pt; padding: 2.5mm 3mm; }
+  .totals .row { display: flex; justify-content: space-between; padding: 1mm 3mm; font-size: 9pt; }
+  .totals .row.grand { background: #1e3a8a; color: white; font-weight: 800; font-size: 10.5pt; padding: 2mm 3mm; }
 
-  .bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 5mm; margin-bottom: 4mm; }
-  .conditions { border: 0.6pt solid #cbd5e1; padding: 3mm 4mm; }
-  .conditions h4 { color: #1e3a8a; font-size: 8.5pt; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; margin-bottom: 2mm; display: flex; align-items: center; gap: 2mm; }
-  .conditions ul { list-style: disc; padding-left: 4mm; font-size: 8pt; color: #475569; line-height: 1.6; }
-  .signature { border: 0.6pt solid #cbd5e1; padding: 3mm 4mm; display: flex; flex-direction: column; justify-content: flex-end; min-height: 40mm; }
-  .signature .sig-line { border-top: 0.5pt solid #6b7280; margin-top: 18mm; padding-top: 1.5mm; text-align: center; font-size: 8pt; color: #475569; }
+  .bottom { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; margin-bottom: 2mm; }
+  .conditions { border: 0.6pt solid #cbd5e1; padding: 2mm 3mm; }
+  .conditions h4 { color: #1e3a8a; font-size: 8.5pt; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 700; margin-bottom: 1mm; display: flex; align-items: center; gap: 2mm; }
+  .conditions ul { list-style: disc; padding-left: 4mm; font-size: 7.5pt; color: #475569; line-height: 1.4; }
+  .signature { border: 0.6pt solid #cbd5e1; padding: 2mm 3mm; display: flex; flex-direction: column; justify-content: flex-end; min-height: 25mm; }
+  .signature .sig-line { border-top: 0.5pt solid #6b7280; margin-top: 10mm; padding-top: 1.5mm; text-align: center; font-size: 8pt; color: #475569; }
 
-  .thanks { text-align: center; color: #1e3a8a; font-size: 12pt; font-weight: 800; letter-spacing: 2.5px; margin: 5mm 0 4mm; }
+  .thanks { text-align: center; color: #1e3a8a; font-size: 11pt; font-weight: 800; letter-spacing: 2.5px; margin: 3mm 0 2mm; }
 
-  .footer { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4mm; border-top: 1pt solid #cbd5e1; padding-top: 4mm; }
-  .footer .col { text-align: center; }
-  .footer .col .ic { color: #2563eb; font-size: 18pt; margin-bottom: 1mm; }
-  .footer .col .t { color: #1e3a8a; font-size: 9pt; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 1mm; }
-  .footer .col .d { font-size: 7.5pt; color: #4b5563; line-height: 1.5; }
+  .footer { display: none; }
 
-  @media print { body { background: white; padding: 0; } .no-print { display: none; } .sheet { box-shadow: none; padding: 8mm 10mm; width: 100%; max-width: 210mm; page-break-after: avoid; page-break-inside: avoid; } @page { size: A4; margin: 0; } }
+  @media print {
+    body { background: white; padding: 0; margin: 0; }
+    .no-print { display: none; }
+    .sheet { box-shadow: none; padding: 6mm 8mm; width: 100%; max-width: 210mm; margin: 0; }
+    @page { size: A4; margin: 0; }
+    @page :first { margin-bottom: 0; }
+  }
 </style>
 </head>
 <body>
@@ -1678,12 +1680,6 @@ function buildOrderSheetHTML(order, customer, items) {
   </div>
 
   <div class="thanks">¡GRACIAS POR SU CONFIANZA!</div>
-
-  <div class="footer">
-    <div class="col"><div class="ic">💧</div><div class="t">Calidad</div><div class="d">Productos de alta calidad<br>para tu higiene diaria</div></div>
-    <div class="col"><div class="ic">🛡</div><div class="t">Confianza</div><div class="d">Comprometidos con tu<br>satisfacción</div></div>
-    <div class="col"><div class="ic">🌿</div><div class="t">Responsabilidad</div><div class="d">Respetuosos con el medio<br>ambiente</div></div>
-  </div>
 </div>
 <script>
 function sendEmail() {
