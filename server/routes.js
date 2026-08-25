@@ -253,10 +253,18 @@ router.post('/packaging', auth, requirePermission('packaging', 'create'), (req, 
   } else if (!name) {
     name = `PK${entryNumber}`
   }
-  db.prepare(`INSERT INTO packaging (id, code, name, type, size, stock, min_stock, max_stock, price, supplier_id, location, last_updated, entry_number) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(id, code, name, b.type || 'Botella', b.size || null, b.stock || 0, b.minStock || 0, b.maxStock || 0, b.price || 0, b.supplierId || null, b.location || '', new Date().toISOString(), entryNumber)
-  addHistory(req, { action: 'crear', module: 'Embalaje', entityId: id, description: `Creado material ${name} (${code})` })
-  res.json({ id, code, name, entryNumber })
+  // Auto-clasificar: envase vs embalaje
+  let category = b.category
+  if (!category) {
+    const nameLower = name.toLowerCase()
+    const typeLower = (b.type || '').toLowerCase()
+    category = /caja|pal[ée]s?|pallet|film|separador|cinta|burbuja|bolsa|cart[oó]n|wrap|stretch/.test(nameLower) ||
+               /caja|pal[ée]s?|pallet/.test(typeLower) ? 'embalaje' : 'envase'
+  }
+  db.prepare(`INSERT INTO packaging (id, code, name, type, size, stock, min_stock, max_stock, price, supplier_id, location, last_updated, entry_number, category) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(id, code, name, b.type || 'Botella', b.size || null, b.stock || 0, b.minStock || 0, b.maxStock || 0, b.price || 0, b.supplierId || null, b.location || '', new Date().toISOString(), entryNumber, category)
+  addHistory(req, { action: 'crear', module: category === 'embalaje' ? 'Embalaje' : 'Envase', entityId: id, description: `Creado ${category} ${name} (${code})` })
+  res.json({ id, code, name, entryNumber, category })
 })
 router.put('/packaging/:id', auth, requirePermission('packaging', 'edit'), (req, res) => {
   const b = req.body
@@ -2992,14 +3000,21 @@ router.post('/packaging-lots', auth, requirePermission('purchases', 'create'), (
   const { packagingId, quantity, quantityReceived, quantityRemaining, supplierId, supplierName, invoice, receivedAt, expiryDate, notes, internalLotNumber, supplierLotNumber, manufactureDate, certificates } = b
   if (!packagingId) return res.status(400).json({ error: 'Falta packagingId' })
   const packaging = db.prepare('SELECT * FROM packaging WHERE id = ?').get(packagingId)
-  if (!packaging) return res.status(404).json({ error: 'Envase no encontrado' })
+  if (!packaging) return res.status(404).json({ error: 'Envase/Embalaje no encontrado' })
   // Aceptar quantity, quantityReceived, o quantityRemaining como cantidad
   const qty = Number(quantity ?? quantityReceived ?? quantityRemaining)
   if (!Number.isFinite(qty) || qty <= 0) return res.status(400).json({ error: 'Cantidad inválida' })
 
-  const year = new Date().getFullYear()
-  const count = db.prepare("SELECT COUNT(*) c FROM packaging_lots WHERE code LIKE ?").get(`PKL-${year}-%`).c
-  const code = b.code || `PKL-${year}-${String(count + 1).padStart(4, '0')}`
+  // Generar código según categoría (ENV- o EMB-)
+  const category = packaging.category || 'envase'
+  const prefix = category === 'embalaje' ? 'EMB-' : 'ENV-'
+  const row = db.prepare(`SELECT code FROM packaging_lots WHERE code LIKE ? ORDER BY length(code) DESC, code DESC LIMIT 1`).get(`${prefix}%`)
+  let nextNum = 1
+  if (row?.code) {
+    const m = row.code.match(/(\d+)$/)
+    if (m) nextNum = parseInt(m[1], 10) + 1
+  }
+  const code = b.code || `${prefix}${String(nextNum).padStart(5, '0')}`
 
   const id = uid('pkl-')
   const now = new Date().toISOString()
@@ -4703,26 +4718,46 @@ router.get('/reception-labels', auth, (_req, res) => {
 // ============================================================
 
 // GET /api/lots/next-code/:type - Genera el siguiente número de lote
-// type = 'raw' (MP) | 'pkg' (envase) | 'product' (producto terminado)
+// type = 'raw' (MP) | 'envase' | 'embalaje' | 'product' (PT) | 'production' (OP)
 router.get('/lots/next-code/:type', auth, (req, res) => {
   const { type } = req.params
   const year = new Date().getFullYear()
   let code = ''
   
   if (type === 'raw') {
-    // MP-00025
+    // MP-00025 - sin año
     const prefix = 'MP-'
-    const row = db.prepare(`SELECT code FROM raw_material_lots WHERE code LIKE ? ORDER BY code DESC LIMIT 1`).get(`${prefix}%`)
+    const row = db.prepare(`SELECT code FROM raw_material_lots WHERE code LIKE ? ORDER BY length(code) DESC, code DESC LIMIT 1`).get(`${prefix}%`)
     let nextNum = 1
     if (row?.code) {
       const m = row.code.match(/(\d+)$/)
       if (m) nextNum = parseInt(m[1], 10) + 1
     }
     code = `${prefix}${String(nextNum).padStart(5, '0')}`
-  } else if (type === 'pkg') {
-    // EN-00012
-    const prefix = 'EN-'
-    const row = db.prepare(`SELECT code FROM packaging_lots WHERE code LIKE ? ORDER BY code DESC LIMIT 1`).get(`${prefix}%`)
+  } else if (type === 'envase') {
+    // ENV-00012 - sin año
+    const prefix = 'ENV-'
+    const row = db.prepare(`SELECT code FROM packaging_lots WHERE code LIKE ? ORDER BY length(code) DESC, code DESC LIMIT 1`).get(`${prefix}%`)
+    let nextNum = 1
+    if (row?.code) {
+      const m = row.code.match(/(\d+)$/)
+      if (m) nextNum = parseInt(m[1], 10) + 1
+    }
+    code = `${prefix}${String(nextNum).padStart(5, '0')}`
+  } else if (type === 'embalaje') {
+    // EMB-00008 - sin año
+    const prefix = 'EMB-'
+    const row = db.prepare(`SELECT code FROM packaging_lots WHERE code LIKE ? ORDER BY length(code) DESC, code DESC LIMIT 1`).get(`${prefix}%`)
+    let nextNum = 1
+    if (row?.code) {
+      const m = row.code.match(/(\d+)$/)
+      if (m) nextNum = parseInt(m[1], 10) + 1
+    }
+    code = `${prefix}${String(nextNum).padStart(5, '0')}`
+  } else if (type === 'pkg' || type === 'packaging') {
+    // Legacy: envase por defecto
+    const prefix = 'ENV-'
+    const row = db.prepare(`SELECT code FROM packaging_lots WHERE code LIKE ? ORDER BY length(code) DESC, code DESC LIMIT 1`).get(`${prefix}%`)
     let nextNum = 1
     if (row?.code) {
       const m = row.code.match(/(\d+)$/)
@@ -4730,7 +4765,7 @@ router.get('/lots/next-code/:type', auth, (req, res) => {
     }
     code = `${prefix}${String(nextNum).padStart(5, '0')}`
   } else if (type === 'product') {
-    // PT-2026-0001
+    // PT-2026-0001 - con año
     const prefix = 'PT-'
     const row = db.prepare(`SELECT lot_number as code FROM lots WHERE lot_number LIKE ? ORDER BY lot_number DESC LIMIT 1`).get(`${prefix}${year}-%`)
     let nextNum = 1
@@ -4740,7 +4775,7 @@ router.get('/lots/next-code/:type', auth, (req, res) => {
     }
     code = `${prefix}${year}-${String(nextNum).padStart(4, '0')}`
   } else if (type === 'production') {
-    // OP-2026-0001
+    // OP-2026-0001 - con año
     const prefix = 'OP-'
     const row = db.prepare(`SELECT number as code FROM production_orders WHERE number LIKE ? ORDER BY number DESC LIMIT 1`).get(`${prefix}${year}-%`)
     let nextNum = 1
@@ -4750,10 +4785,10 @@ router.get('/lots/next-code/:type', auth, (req, res) => {
     }
     code = `${prefix}${year}-${String(nextNum).padStart(4, '0')}`
   } else {
-    return res.status(400).json({ error: 'Tipo inválido (raw, pkg, product, production)' })
+    return res.status(400).json({ error: 'Tipo inválido. Use: raw, envase, embalaje, product, production' })
   }
   
-  res.json({ code, type, year })
+  res.json({ code, type, year, prefix: code.split('-')[0] + '-' })
 })
 
 // GET /api/lots-central - Búsqueda unificada de todos los tipos de lote
@@ -4813,12 +4848,13 @@ router.get('/lots-central', auth, (req, res) => {
       }
     }
     
-    // Lotes de envases
-    if (!type || type === 'pkg' || type === 'all') {
+    // Lotes de envases y embalajes
+    if (!type || type === 'envase' || type === 'embalaje' || type === 'pkg' || type === 'all') {
       let sql = `SELECT 
         pl.id, pl.code, pl.quantity as quantity_received, pl.remaining as quantity_remaining,
         pl.unit, pl.invoice, pl.received_at, pl.expiry_date, pl.status, pl.notes,
-        pl.supplier_id, pl.supplier_name, pl.packaging_id,
+        pl.supplier_id, pl.supplier_name, pl.packaging_id, pl.internal_lot_number, pl.supplier_lot_number,
+        COALESCE(p.category, 'envase') as category,
         p.name as material_name, p.code as material_code, p.type as material_type
       FROM packaging_lots pl
       LEFT JOIN packaging p ON pl.packaging_id = p.id
@@ -4833,14 +4869,22 @@ router.get('/lots-central', auth, (req, res) => {
       if (supplierId) { sql += ` AND pl.supplier_id = ?`; params.push(supplierId) }
       if (startDate) { sql += ` AND pl.received_at >= ?`; params.push(startDate) }
       if (endDate) { sql += ` AND pl.received_at <= ?`; params.push(endDate) }
+      // Filtrar por categoría específica
+      if (type === 'envase') sql += ` AND (p.category = 'envase' OR p.category IS NULL)`
+      if (type === 'embalaje') sql += ` AND p.category = 'embalaje'`
       sql += ` ORDER BY pl.received_at DESC LIMIT ?`
       params.push(Number(limit))
       const rows = db.prepare(sql).all(...params)
       for (const r of rows) {
+        const t = (r.category === 'embalaje') ? 'embalaje' : 'envase'
+        if (type && type !== 'all' && type !== t && type !== 'pkg') continue
         results.push({
-          type: 'pkg',
+          type: t,
+          category: t,
           id: r.id,
           code: r.code,
+          internalLotNumber: r.internal_lot_number,
+          supplierLotNumber: r.supplier_lot_number,
           quantityReceived: r.quantity_received,
           quantityRemaining: r.quantity_remaining,
           unit: r.unit || 'ud',
@@ -5194,6 +5238,123 @@ router.post('/production-orders/:id/complete', auth, requirePermission('producti
       },
       consumptions,
       productionOrder: { id: po.id, number: po.number, status: 'acabada' }
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// GET /api/lots/by-code/:code - Búsqueda directa de un lote por su código
+// Detecta automáticamente el tipo según el prefijo (MP-, ENV-, EMB-, PT-, OP-)
+router.get('/lots/by-code/:code', auth, (req, res) => {
+  try {
+    const { code } = req.params
+    const codeUpper = code.toUpperCase()
+    
+    if (codeUpper.startsWith('MP-')) {
+      const lot = db.prepare(`
+        SELECT rml.*, rm.name as material_name, rm.code as material_code
+        FROM raw_material_lots rml
+        LEFT JOIN raw_materials rm ON rml.raw_material_id = rm.id
+        WHERE rml.code = ? OR rml.internal_lot_number = ?
+        LIMIT 1
+      `).get(codeUpper, code)
+      if (!lot) return res.status(404).json({ error: 'Lote no encontrado' })
+      return res.json({ type: 'raw', lot })
+    } else if (codeUpper.startsWith('ENV-') || codeUpper.startsWith('EMB-')) {
+      const lot = db.prepare(`
+        SELECT pl.*, p.name as material_name, p.code as material_code, p.category
+        FROM packaging_lots pl
+        LEFT JOIN packaging p ON pl.packaging_id = p.id
+        WHERE pl.code = ? OR pl.internal_lot_number = ?
+        LIMIT 1
+      `).get(codeUpper, code)
+      if (!lot) return res.status(404).json({ error: 'Lote no encontrado' })
+      return res.json({ type: lot.category || 'envase', lot })
+    } else if (codeUpper.startsWith('PT-')) {
+      const lot = db.prepare(`
+        SELECT l.*, p.name as product_name, p.code as product_code
+        FROM lots l
+        LEFT JOIN products p ON l.product_id = p.id
+        WHERE l.lot_number = ?
+        LIMIT 1
+      `).get(codeUpper)
+      if (!lot) return res.status(404).json({ error: 'Lote no encontrado' })
+      return res.json({ type: 'product', lot })
+    } else if (codeUpper.startsWith('OP-')) {
+      const po = db.prepare(`
+        SELECT po.*, p.name as product_name, p.code as product_code
+        FROM production_orders po
+        LEFT JOIN products p ON po.product_id = p.id
+        WHERE po.number = ?
+        LIMIT 1
+      `).get(codeUpper)
+      if (!po) return res.status(404).json({ error: 'Orden no encontrada' })
+      return res.json({ type: 'production', lot: po })
+    } else {
+      return res.status(400).json({ error: 'Prefijo no reconocido. Use MP-, ENV-, EMB-, PT- u OP-' })
+    }
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// GET /api/lots/:id/reverse-traceability - Trazabilidad inversa
+// Dado un lote de MP/envase/embalaje, devuelve en qué lotes de PT se ha utilizado
+router.get('/lots/:id/reverse-traceability', auth, (req, res) => {
+  try {
+    const { id } = req.params
+    const consumptions = db.prepare(`
+      SELECT lc.*, l.lot_number as production_lot_code, l.produced_at, l.status as lot_status,
+             p.name as product_name, p.code as product_code
+      FROM lot_consumptions lc
+      LEFT JOIN lots l ON lc.production_lot_id = l.id
+      LEFT JOIN products p ON l.product_id = p.id
+      WHERE lc.source_lot_id = ?
+      ORDER BY lc.consumed_at DESC
+    `).all(id)
+    
+    if (consumptions.length === 0) {
+      return res.json({ usedIn: [], message: 'Este lote aún no se ha utilizado en ninguna producción' })
+    }
+    
+    res.json({
+      usedIn: consumptions.map(c => ({
+        productionLotId: c.production_lot_id,
+        productionLotCode: c.production_lot_code,
+        producedAt: c.produced_at,
+        lotStatus: c.lot_status,
+        productName: c.product_name,
+        productCode: c.product_code,
+        quantityConsumed: c.quantity_consumed,
+        unit: c.unit,
+        consumedAt: c.consumed_at
+      }))
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// GET /api/lots-catalog - Catálogo de tipos para el sidebar
+router.get('/lots-catalog', auth, (_req, res) => {
+  try {
+    const counts = {
+      raw: db.prepare(`SELECT COUNT(*) c FROM raw_material_lots WHERE status = 'active'`).get().c,
+      envase: db.prepare(`SELECT COUNT(*) c FROM packaging_lots pl LEFT JOIN packaging p ON pl.packaging_id = p.id WHERE pl.status = 'active' AND (p.category = 'envase' OR p.category IS NULL)`).get().c,
+      embalaje: db.prepare(`SELECT COUNT(*) c FROM packaging_lots pl LEFT JOIN packaging p ON pl.packaging_id = p.id WHERE pl.status = 'active' AND p.category = 'embalaje'`).get().c,
+      product: db.prepare(`SELECT COUNT(*) c FROM lots`).get().c,
+      production: db.prepare(`SELECT COUNT(*) c FROM production_orders WHERE status != 'acabada'`).get().c
+    }
+    res.json({
+      counts,
+      lastCodes: {
+        raw: (db.prepare(`SELECT code FROM raw_material_lots ORDER BY length(code) DESC, code DESC LIMIT 1`).get() || {}).code,
+        envase: (db.prepare(`SELECT code FROM packaging_lots WHERE code LIKE 'ENV-%' ORDER BY length(code) DESC, code DESC LIMIT 1`).get() || {}).code,
+        embalaje: (db.prepare(`SELECT code FROM packaging_lots WHERE code LIKE 'EMB-%' ORDER BY length(code) DESC, code DESC LIMIT 1`).get() || {}).code,
+        product: (db.prepare(`SELECT lot_number as code FROM lots ORDER BY lot_number DESC LIMIT 1`).get() || {}).code,
+        production: (db.prepare(`SELECT number as code FROM production_orders ORDER BY number DESC LIMIT 1`).get() || {}).code
+      }
     })
   } catch (e) {
     res.status(500).json({ error: e.message })

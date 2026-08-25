@@ -532,6 +532,30 @@ try {
   }
 } catch (e) { console.warn('migration lots fields:', e.message) }
 
+// Migración: packaging.category para distinguir envases de embalajes
+try {
+  const pkgCols = db.prepare("PRAGMA table_info(packaging)").all()
+  if (!pkgCols.find(c => c.name === 'category')) {
+    db.exec("ALTER TABLE packaging ADD COLUMN category TEXT DEFAULT 'envase'")
+    console.log('✓ Migrated: added category to packaging')
+  }
+  // Clasificar automáticamente los existentes
+  const all = db.prepare("SELECT id, name, type FROM packaging WHERE category IS NULL OR category = '' OR category = 'envase'").all()
+  const updateStmt = db.prepare("UPDATE packaging SET category = ? WHERE id = ?")
+  let updated = 0
+  for (const p of all) {
+    const name = (p.name || '').toLowerCase()
+    const type = (p.type || '').toLowerCase()
+    // Palabras clave para embalaje
+    const isEmbalaje = /caja|pal[ée]s?|pallet|film|separador|etiqueta adhesiva|cinta|burbuja|film|bolsa|cart[oó]n|wrap/.test(name) ||
+                       /caja|pal[ée]s?|pallet/.test(type)
+    const cat = isEmbalaje ? 'embalaje' : 'envase'
+    updateStmt.run(cat, p.id)
+    updated++
+  }
+  if (updated > 0) console.log(`✓ Clasificados ${updated} packaging como envase/embalaje`)
+} catch (e) { console.warn('migration packaging category:', e.message) }
+
 // 4. Ajustes de inventario
 try {
   db.exec(`
