@@ -5163,6 +5163,18 @@ router.post('/production-orders/:id/complete', auth, requirePermission('producti
     let materials = []
     if (recipe) {
       try { materials = JSON.parse(recipe.items_json || '[]') } catch {}
+      // Enriquecer con nombre del material
+      for (const m of materials) {
+        if (!m.name) {
+          if (m.materialType === 'packaging' || m.materialType === 'pkg') {
+            const p = db.prepare('SELECT name FROM packaging WHERE id = ?').get(m.materialId)
+            m.name = p?.name || 'Material'
+          } else {
+            const rm = db.prepare('SELECT name FROM raw_materials WHERE id = ?').get(m.materialId)
+            m.name = rm?.name || 'Material'
+          }
+        }
+      }
     }
     
     // Generar código de lote PT
