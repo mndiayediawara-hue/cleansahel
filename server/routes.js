@@ -5036,9 +5036,7 @@ router.post('/production-orders/from-order/:orderId', auth, requirePermission('p
       if (!product) continue
       
       // Buscar receta
-      const recipe = db.prepare(`
-        SELECT * FROM recipes WHERE product_id = ? ORDER BY created_at DESC LIMIT 1
-      `).get(product.id)
+      const recipe = db.prepare(`SELECT * FROM recipes WHERE product_id = ? ORDER BY updated_at DESC LIMIT 1`).get(product.id)
       if (!recipe) {
         created.push({ productId: product.id, productName: product.name, error: 'Sin receta' })
         continue
