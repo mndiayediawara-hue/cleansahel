@@ -463,7 +463,7 @@ try {
   }
 } catch (e) { console.warn('migration stock_adjustments lot_id:', e.message) }
 
-console.log('✓ Migrated: stock_adjustments table ready')
+console.log("✓ Migrated: stock_adjustments table ready (with lot_id support)")
 } catch (e) { console.warn('migration stock_adjustments:', e.message) }
 
 export { SCHEMA }
