@@ -90,6 +90,8 @@
       'Respaldo': 'Respaldo', 'Idioma y moneda': 'Idioma y moneda',
       'Cerrar sesión': 'Cerrar sesión', 'Mi perfil': 'Mi perfil',
       'Buscar clientes, productos, pedidos, lotes...': 'Buscar clientes, productos, pedidos, lotes...',
+    
+      'articulos con stock bajo': 'artículos con stock bajo',
     },
     fr: {
       'Dashboard': 'Tableau de bord', 'Alertas': 'Alertes', 'Búsqueda': 'Recherche', 'Escáner': 'Scanner',
@@ -172,6 +174,8 @@
       'Respaldo': 'Sauvegarde', 'Idioma y moneda': 'Langue et monnaie',
       'Cerrar sesión': 'Déconnexion', 'Mi perfil': 'Mon profil',
       'Buscar clientes, productos, pedidos, lotes...': 'Rechercher clients, produits, commandes, lots...',
+    
+      'articulos con stock bajo': 'articles en stock bas',
     },
     en: {
       'Dashboard': 'Dashboard', 'Alertas': 'Alerts', 'Búsqueda': 'Search', 'Escáner': 'Scanner',
@@ -254,6 +258,8 @@
       'Respaldo': 'Backup', 'Idioma y moneda': 'Language and currency',
       'Cerrar sesión': 'Logout', 'Mi perfil': 'My profile',
       'Buscar clientes, productos, pedidos, lotes...': 'Search customers, products, orders, lots...',
+    
+      'articulos con stock bajo': 'items with low stock',
     },
     pt: {
       'Dashboard': 'Painel', 'Alertas': 'Alertas', 'Búsqueda': 'Pesquisa', 'Escáner': 'Scanner',
@@ -336,6 +342,8 @@
       'Respaldo': 'Backup', 'Idioma y moneda': 'Idioma e moeda',
       'Cerrar sesión': 'Terminar sessão', 'Mi perfil': 'O meu perfil',
       'Buscar clientes, productos, pedidos, lotes...': 'Pesquisar clientes, produtos, pedidos, lotes...',
+    
+      'articulos con stock bajo': 'artigos com stock baixo',
     }
   };
 
@@ -437,8 +445,12 @@
     }
   }, 500);
 
-  setInterval(applyAll, 2000);
+  setInterval(applyAll, 800);
 
+  window.addEventListener('i18n-change', (e) => {
+    // Disparado por el selector de idioma en la app
+    setTimeout(() => { applyAll(); }, 50);
+  });
   window.addEventListener('storage', (e) => {
     if (e.key === 'cleanerp-lang') {
       window.location.reload();
