@@ -4662,16 +4662,15 @@ router.get('/reception-info-json/:type/:id', auth, (req, res) => {
 
 // GET /api/reception-labels - Lista todas las recepciones recientes
 router.get('/reception-labels', auth, (_req, res) => {
-  const raw = db.prepare(`
-    SELECT 'raw' as type, id, code, raw_material_id as material_id, quantity, remaining, unit, 
-           received_at, expiry_date, status
-    FROM raw_material_lots
-    UNION ALL
-    SELECT 'pkg' as type, id, code, packaging_id as material_id, quantity, remaining, unit,
-           received_at, expiry_date, status
-    FROM packaging_lots
-    ORDER BY received_at DESC
-    LIMIT 50
-  `).all()
-  res.json(raw)
+  try {
+    const raw = db.prepare(`SELECT id, code, raw_material_id as material_id, quantity, remaining, unit, received_at, expiry_date, status FROM raw_material_lots ORDER BY received_at DESC LIMIT 50`).all()
+    const pkg = db.prepare(`SELECT id, code, packaging_id as material_id, quantity, remaining, unit, received_at, expiry_date, status FROM packaging_lots ORDER BY received_at DESC LIMIT 50`).all()
+    const combined = [
+      ...raw.map(l => ({ ...l, type: 'raw' })),
+      ...pkg.map(l => ({ ...l, type: 'pkg' }))
+    ].sort((a, b) => (b.received_at || '').localeCompare(a.received_at || '')).slice(0, 50)
+    res.json(combined)
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
 })
