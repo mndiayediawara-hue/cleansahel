@@ -5309,7 +5309,7 @@ router.get('/lots/by-code/:code', auth, (req, res) => {
     const { code } = req.params
     const codeUpper = code.toUpperCase()
     
-    if (codeUpper.startsWith('MP-')) {
+    if (codeUpper.startsWith('MP-') || codeUpper.startsWith('RML-')) {
       const lot = db.prepare(`
         SELECT rml.*, rm.name as material_name, rm.code as material_code
         FROM raw_material_lots rml
