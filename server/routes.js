@@ -3463,7 +3463,7 @@ router.get('/customer-card/:code', (req, res) => {
   if (!customer) return res.status(404).send('<h1>Cliente no encontrado</h1>')
 
   const companyInfo = getConfig('company', { name: 'SAHEL', tagline: 'Produits d\'Hygiène' })
-  const deliveryUrl = `${req.protocol}://${req.get('host')}/api/delivery-mobile?code=${encodeURIComponent(customer.code)}`
+  const deliveryUrl = `https://cleansahel.onrender.com/api/delivery-mobile?code=${encodeURIComponent(customer.code)}`
   // QR generado en cliente con qrcode.js (CDN) - funciona offline y nunca falla
   const companyName = (companyInfo.name || 'SAHEL').toUpperCase()
   const tagline = (companyInfo.tagline || 'Produits d\'Hygiène').replace(/'/g, "\\'")
@@ -3691,7 +3691,7 @@ router.get('/delivery-mobile', (req, res) => {
   </div>
   <div id="toast" class="toast"></div>
   <script>
-    const API = 'https://cleansahel.onrender.com/api'
+    const API = window.location.origin + '/api'
     let token = localStorage.getItem('cleanerp-token') || new URLSearchParams(window.location.search).get('token')
     if (token) { localStorage.setItem('cleanerp-token', token); showMain() } else { document.getElementById('loginSection').classList.remove('hidden') }
     function showToast(msg, color) { const t = document.getElementById('toast'); t.textContent = msg; t.style.background = color || '#1f2937'; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2500) }
