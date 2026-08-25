@@ -4865,7 +4865,7 @@ router.get('/lots-central', auth, (req, res) => {
       let sql = `SELECT 
         l.id, l.lot_number as code, l.quantity, l.status, l.produced_at, l.expiry_date,
         l.produced_by, l.notes, l.product_id, l.recipe_id, l.production_order_id,
-        p.name as product_name, p.code as product_code, p.unit as product_unit,
+        p.name as product_name, p.code as product_code, p.bottle_size as product_unit,
         po.number as production_order_number, po.pedido_id as order_id,
         u.full_name as produced_by_name,
         o.number as order_number, o.customer_name as customer_name
@@ -4931,7 +4931,7 @@ router.get('/lots-central', auth, (req, res) => {
 router.get('/lots/:id/traceability', auth, (req, res) => {
   try {
     const lot = db.prepare(`
-      SELECT l.*, p.name as product_name, p.code as product_code, p.unit as product_unit
+      SELECT l.*, p.name as product_name, p.code as product_code, p.bottle_size as product_unit
       FROM lots l
       LEFT JOIN products p ON l.product_id = p.id
       WHERE l.id = ?
