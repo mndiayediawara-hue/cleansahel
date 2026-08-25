@@ -1,27 +1,14 @@
-
 services:
   - type: web
-  - name: cleansahel-v2
-  - runtime: node
-  - plan: free
-  - buildCommand: npm install --no-audit && npm run build
-  - startCommand: npm start
-  - autoDeploy: true
-  - envVars:
-    - key: NODE_ENV
-      value: production
-    - key: JWT_SECRET
-      generateValue: true
-    - key: PORT
-      value: 10000
-    - key: ADMIN_PASSWORD
-      sync: false
-    - key: PRODUCCION_PASSWORD
-      sync: false
-    - key: CONTABILIDAD_PASSWORD
-      sync: false
-    - key: RESET_TOKEN
-      sync: false
-    - key: DB_PATH
-      value: /opt/render/project/src/data/cleanerp.db
-  - healthCheckPath: /api/health
+    name: cleansahel-api
+    env: node
+    region: frankfurt
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/status
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true

@@ -1,8 +1,5 @@
 node_modules/
-dist/
-data/
-*.log
 .env
 .env.local
-.attachments/
-test-browser.cjs
+dist/
+.DS_Store
