@@ -4868,12 +4868,13 @@ router.get('/lots-central', auth, (req, res) => {
         p.name as product_name, p.code as product_code, p.bottle_size as product_unit,
         po.number as production_order_number, po.pedido_id as order_id,
         u.full_name as produced_by_name,
-        o.number as order_number, o.customer_name as customer_name
+        o.number as order_number, c.name as customer_name
       FROM lots l
       LEFT JOIN products p ON l.product_id = p.id
       LEFT JOIN production_orders po ON l.production_order_id = po.id
       LEFT JOIN users u ON l.produced_by = u.id
       LEFT JOIN orders o ON po.pedido_id = o.id
+      LEFT JOIN customers c ON o.customer_id = c.id
       WHERE 1=1`
       const params = []
       if (query) {
