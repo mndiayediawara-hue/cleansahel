@@ -280,6 +280,25 @@ CREATE TABLE IF NOT EXISTS production_orders (
   FOREIGN KEY (created_by) REFERENCES users(id)
 );
 
+
+-- lot_consumptions: trazabilidad de que lotes de MP/envase se usaron en cada lote de producto terminado
+CREATE TABLE IF NOT EXISTS lot_consumptions (
+  id TEXT PRIMARY KEY,
+  production_lot_id TEXT NOT NULL,
+  production_order_id TEXT,
+  source_type TEXT NOT NULL,  -- 'raw' | 'pkg'
+  source_lot_id TEXT NOT NULL,
+  source_lot_code TEXT,
+  material_id TEXT NOT NULL,
+  material_name TEXT,
+  quantity_consumed REAL NOT NULL,
+  unit TEXT,
+  consumed_at TEXT NOT NULL,
+  consumed_by TEXT,
+  FOREIGN KEY (production_lot_id) REFERENCES lots(id) ON DELETE CASCADE,
+  FOREIGN KEY (consumed_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
 -- recalls: retiradas de producto
 CREATE TABLE IF NOT EXISTS recalls (
   id TEXT PRIMARY KEY,
@@ -436,6 +455,30 @@ try {
   `)
   console.log('✓ Migrated: stock_reservations table ready')
 } catch (e) { console.warn('migration stock_reservations:', e.message) }
+
+
+// Migración: lot_consumptions table
+try {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS lot_consumptions (
+      id TEXT PRIMARY KEY,
+      production_lot_id TEXT NOT NULL,
+      production_order_id TEXT,
+      source_type TEXT NOT NULL,
+      source_lot_id TEXT NOT NULL,
+      source_lot_code TEXT,
+      material_id TEXT NOT NULL,
+      material_name TEXT,
+      quantity_consumed REAL NOT NULL,
+      unit TEXT,
+      consumed_at TEXT NOT NULL,
+      consumed_by TEXT,
+      FOREIGN KEY (production_lot_id) REFERENCES lots(id) ON DELETE CASCADE,
+      FOREIGN KEY (consumed_by) REFERENCES users(id) ON DELETE SET NULL
+    )
+  `)
+  console.log('✓ Migrated: lot_consumptions table ready')
+} catch (e) { console.warn('migration lot_consumptions:', e.message) }
 
 // 4. Ajustes de inventario
 try {

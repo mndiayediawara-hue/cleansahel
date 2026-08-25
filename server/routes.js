@@ -4696,3 +4696,506 @@ router.get('/reception-labels', auth, (_req, res) => {
     res.status(500).json({ error: e.message })
   }
 })
+
+// ============================================================
+// LOTES CENTRALIZADO - Generación auto, trazabilidad, flujo
+// ============================================================
+
+// GET /api/lots/next-code/:type - Genera el siguiente número de lote
+// type = 'raw' (MP) | 'pkg' (envase) | 'product' (producto terminado)
+router.get('/lots/next-code/:type', auth, (req, res) => {
+  const { type } = req.params
+  const year = new Date().getFullYear()
+  let code = ''
+  
+  if (type === 'raw') {
+    // MP-00025
+    const prefix = 'MP-'
+    const row = db.prepare(`SELECT code FROM raw_material_lots WHERE code LIKE ? ORDER BY code DESC LIMIT 1`).get(`${prefix}%`)
+    let nextNum = 1
+    if (row?.code) {
+      const m = row.code.match(/(\d+)$/)
+      if (m) nextNum = parseInt(m[1], 10) + 1
+    }
+    code = `${prefix}${String(nextNum).padStart(5, '0')}`
+  } else if (type === 'pkg') {
+    // EN-00012
+    const prefix = 'EN-'
+    const row = db.prepare(`SELECT code FROM packaging_lots WHERE code LIKE ? ORDER BY code DESC LIMIT 1`).get(`${prefix}%`)
+    let nextNum = 1
+    if (row?.code) {
+      const m = row.code.match(/(\d+)$/)
+      if (m) nextNum = parseInt(m[1], 10) + 1
+    }
+    code = `${prefix}${String(nextNum).padStart(5, '0')}`
+  } else if (type === 'product') {
+    // PT-2026-0001
+    const prefix = 'PT-'
+    const row = db.prepare(`SELECT lot_number as code FROM lots WHERE lot_number LIKE ? ORDER BY lot_number DESC LIMIT 1`).get(`${prefix}${year}-%`)
+    let nextNum = 1
+    if (row?.code) {
+      const m = row.code.match(/(\d+)$/)
+      if (m) nextNum = parseInt(m[1], 10) + 1
+    }
+    code = `${prefix}${year}-${String(nextNum).padStart(4, '0')}`
+  } else if (type === 'production') {
+    // OP-2026-0001
+    const prefix = 'OP-'
+    const row = db.prepare(`SELECT number as code FROM production_orders WHERE number LIKE ? ORDER BY number DESC LIMIT 1`).get(`${prefix}${year}-%`)
+    let nextNum = 1
+    if (row?.code) {
+      const m = row.code.match(/(\d+)$/)
+      if (m) nextNum = parseInt(m[1], 10) + 1
+    }
+    code = `${prefix}${year}-${String(nextNum).padStart(4, '0')}`
+  } else {
+    return res.status(400).json({ error: 'Tipo inválido (raw, pkg, product, production)' })
+  }
+  
+  res.json({ code, type, year })
+})
+
+// GET /api/lots-central - Búsqueda unificada de todos los tipos de lote
+// Soporta filtros: type, query, status, supplierId, productId, orderId, startDate, endDate
+router.get('/lots-central', auth, (req, res) => {
+  try {
+    const { type, query, status, supplierId, productId, orderId, startDate, endDate, limit = 100 } = req.query
+    const results = []
+    
+    // Lotes de MP
+    if (!type || type === 'raw' || type === 'all') {
+      let sql = `SELECT 
+        rml.id, rml.code, rml.internal_lot_number, rml.supplier_lot_number,
+        rml.quantity as quantity_received, rml.remaining as quantity_remaining,
+        rml.unit, rml.invoice, rml.received_at, rml.expiry_date, rml.status, rml.notes,
+        rml.supplier_id, rml.supplier_name, rml.raw_material_id,
+        rm.name as material_name, rm.code as material_code, rm.category as material_category
+      FROM raw_material_lots rml
+      LEFT JOIN raw_materials rm ON rml.raw_material_id = rm.id
+      WHERE 1=1`
+      const params = []
+      if (query) {
+        sql += ` AND (rml.code LIKE ? OR rml.internal_lot_number LIKE ? OR rml.supplier_lot_number LIKE ? OR rm.name LIKE ? OR rml.invoice LIKE ?)`
+        const q = `%${query}%`
+        params.push(q, q, q, q, q)
+      }
+      if (status) { sql += ` AND rml.status = ?`; params.push(status) }
+      if (supplierId) { sql += ` AND rml.supplier_id = ?`; params.push(supplierId) }
+      if (startDate) { sql += ` AND rml.received_at >= ?`; params.push(startDate) }
+      if (endDate) { sql += ` AND rml.received_at <= ?`; params.push(endDate) }
+      sql += ` ORDER BY rml.received_at DESC LIMIT ?`
+      params.push(Number(limit))
+      const rows = db.prepare(sql).all(...params)
+      for (const r of rows) {
+        results.push({
+          type: 'raw',
+          id: r.id,
+          code: r.code,
+          internalLotNumber: r.internal_lot_number,
+          supplierLotNumber: r.supplier_lot_number,
+          quantityReceived: r.quantity_received,
+          quantityRemaining: r.quantity_remaining,
+          unit: r.unit,
+          invoice: r.invoice,
+          receivedAt: r.received_at,
+          expiryDate: r.expiry_date,
+          status: r.status,
+          notes: r.notes,
+          supplierId: r.supplier_id,
+          supplierName: r.supplier_name,
+          materialId: r.raw_material_id,
+          materialName: r.material_name,
+          materialCode: r.material_code,
+          materialCategory: r.material_category,
+          percentUsed: r.quantity_received > 0 ? Math.round(((r.quantity_received - r.quantity_remaining) / r.quantity_received) * 100) : 0
+        })
+      }
+    }
+    
+    // Lotes de envases
+    if (!type || type === 'pkg' || type === 'all') {
+      let sql = `SELECT 
+        pl.id, pl.code, pl.quantity as quantity_received, pl.remaining as quantity_remaining,
+        pl.unit, pl.invoice, pl.received_at, pl.expiry_date, pl.status, pl.notes,
+        pl.supplier_id, pl.supplier_name, pl.packaging_id,
+        p.name as material_name, p.code as material_code, p.type as material_type
+      FROM packaging_lots pl
+      LEFT JOIN packaging p ON pl.packaging_id = p.id
+      WHERE 1=1`
+      const params = []
+      if (query) {
+        sql += ` AND (pl.code LIKE ? OR p.name LIKE ? OR pl.invoice LIKE ?)`
+        const q = `%${query}%`
+        params.push(q, q, q)
+      }
+      if (status) { sql += ` AND pl.status = ?`; params.push(status) }
+      if (supplierId) { sql += ` AND pl.supplier_id = ?`; params.push(supplierId) }
+      if (startDate) { sql += ` AND pl.received_at >= ?`; params.push(startDate) }
+      if (endDate) { sql += ` AND pl.received_at <= ?`; params.push(endDate) }
+      sql += ` ORDER BY pl.received_at DESC LIMIT ?`
+      params.push(Number(limit))
+      const rows = db.prepare(sql).all(...params)
+      for (const r of rows) {
+        results.push({
+          type: 'pkg',
+          id: r.id,
+          code: r.code,
+          quantityReceived: r.quantity_received,
+          quantityRemaining: r.quantity_remaining,
+          unit: r.unit || 'ud',
+          invoice: r.invoice,
+          receivedAt: r.received_at,
+          expiryDate: r.expiry_date,
+          status: r.status,
+          notes: r.notes,
+          supplierId: r.supplier_id,
+          supplierName: r.supplier_name,
+          materialId: r.packaging_id,
+          materialName: r.material_name,
+          materialCode: r.material_code,
+          materialType: r.material_type,
+          percentUsed: r.quantity_received > 0 ? Math.round(((r.quantity_received - r.quantity_remaining) / r.quantity_received) * 100) : 0
+        })
+      }
+    }
+    
+    // Lotes de producto terminado
+    if (!type || type === 'product' || type === 'all') {
+      let sql = `SELECT 
+        l.id, l.lot_number as code, l.quantity, l.status, l.produced_at, l.expiry_date,
+        l.produced_by, l.notes, l.product_id, l.recipe_id, l.production_order_id,
+        p.name as product_name, p.code as product_code, p.unit as product_unit,
+        po.number as production_order_number, po.pedido_id as order_id,
+        u.full_name as produced_by_name,
+        o.number as order_number, o.customer_name as customer_name
+      FROM lots l
+      LEFT JOIN products p ON l.product_id = p.id
+      LEFT JOIN production_orders po ON l.production_order_id = po.id
+      LEFT JOIN users u ON l.produced_by = u.id
+      LEFT JOIN orders o ON po.pedido_id = o.id
+      WHERE 1=1`
+      const params = []
+      if (query) {
+        sql += ` AND (l.lot_number LIKE ? OR p.name LIKE ? OR p.code LIKE ?)`
+        const q = `%${query}%`
+        params.push(q, q, q)
+      }
+      if (status) { sql += ` AND l.status = ?`; params.push(status) }
+      if (productId) { sql += ` AND l.product_id = ?`; params.push(productId) }
+      if (orderId) { sql += ` AND po.pedido_id = ?`; params.push(orderId) }
+      if (startDate) { sql += ` AND l.produced_at >= ?`; params.push(startDate) }
+      if (endDate) { sql += ` AND l.produced_at <= ?`; params.push(endDate) }
+      sql += ` ORDER BY l.produced_at DESC LIMIT ?`
+      params.push(Number(limit))
+      const rows = db.prepare(sql).all(...params)
+      for (const r of rows) {
+        results.push({
+          type: 'product',
+          id: r.id,
+          code: r.code,
+          quantity: r.quantity,
+          unit: r.product_unit,
+          producedAt: r.produced_at,
+          expiryDate: r.expiry_date,
+          status: r.status,
+          notes: r.notes,
+          productId: r.product_id,
+          productName: r.product_name,
+          productCode: r.product_code,
+          productionOrderId: r.production_order_id,
+          productionOrderNumber: r.production_order_number,
+          orderId: r.order_id,
+          orderNumber: r.order_number,
+          customerName: r.customer_name,
+          producedBy: r.produced_by,
+          producedByName: r.produced_by_name
+        })
+      }
+    }
+    
+    // Ordenar por fecha
+    results.sort((a, b) => {
+      const da = a.receivedAt || a.producedAt || ''
+      const db_ = b.receivedAt || b.producedAt || ''
+      return db_.localeCompare(da)
+    })
+    
+    res.json({ results: results.slice(0, Number(limit)), total: results.length })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// GET /api/lots/:id/traceability - Trazabilidad completa de un lote de producto terminado
+router.get('/lots/:id/traceability', auth, (req, res) => {
+  try {
+    const lot = db.prepare(`
+      SELECT l.*, p.name as product_name, p.code as product_code, p.unit as product_unit
+      FROM lots l
+      LEFT JOIN products p ON l.product_id = p.id
+      WHERE l.id = ?
+    `).get(req.params.id)
+    if (!lot) return res.status(404).json({ error: 'Lote no encontrado' })
+    
+    // Consumos de MP/envases
+    const consumptions = db.prepare(`
+      SELECT * FROM lot_consumptions WHERE production_lot_id = ? ORDER BY consumed_at ASC
+    `).all(req.params.id)
+    
+    // Enriquecer con info de los lotes de origen
+    const enrichedConsumptions = consumptions.map(c => {
+      let sourceLot = null
+      if (c.source_type === 'raw') {
+        sourceLot = db.prepare(`
+          SELECT rml.*, rm.name as material_name, rm.code as material_code
+          FROM raw_material_lots rml
+          LEFT JOIN raw_materials rm ON rml.raw_material_id = rm.id
+          WHERE rml.id = ?
+        `).get(c.source_lot_id)
+      } else {
+        sourceLot = db.prepare(`
+          SELECT pl.*, p.name as material_name, p.code as material_code
+          FROM packaging_lots pl
+          LEFT JOIN packaging p ON pl.packaging_id = p.id
+          WHERE pl.id = ?
+        `).get(c.source_lot_id)
+      }
+      return {
+        ...c,
+        source_lot: sourceLot ? {
+          code: sourceLot.code,
+          material_name: sourceLot.material_name,
+          material_code: sourceLot.material_code,
+          received_at: sourceLot.received_at,
+          expiry_date: sourceLot.expiry_date,
+          supplier_name: sourceLot.supplier_name,
+          invoice: sourceLot.invoice
+        } : null
+      }
+    })
+    
+    // Orden de producción vinculada
+    let productionOrder = null
+    if (lot.production_order_id) {
+      productionOrder = db.prepare(`
+        SELECT po.*, u.full_name as created_by_name
+        FROM production_orders po
+        LEFT JOIN users u ON po.created_by = u.id
+        WHERE po.id = ?
+      `).get(lot.production_order_id)
+    }
+    
+    // Pedido vinculado
+    let order = null
+    if (productionOrder?.pedido_id) {
+      order = db.prepare(`SELECT * FROM orders WHERE id = ?`).get(productionOrder.pedido_id)
+      if (order) {
+        try { order.items = JSON.parse(order.items_json || '[]') } catch {}
+      }
+    }
+    
+    res.json({
+      lot: {
+        id: lot.id,
+        code: lot.lot_number,
+        productId: lot.product_id,
+        productName: lot.product_name,
+        productCode: lot.product_code,
+        productUnit: lot.product_unit,
+        quantity: lot.quantity,
+        status: lot.status,
+        producedAt: lot.produced_at,
+        expiryDate: lot.expiry_date,
+        notes: lot.notes
+      },
+      productionOrder,
+      order,
+      consumptions: enrichedConsumptions
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// POST /api/production-orders/from-order/:orderId
+// Crea una orden de producción desde un pedido
+router.post('/production-orders/from-order/:orderId', auth, requirePermission('production', 'create'), (req, res) => {
+  try {
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.orderId)
+    if (!order) return res.status(404).json({ error: 'Pedido no encontrado' })
+    let items
+    try { items = JSON.parse(order.items_json || '[]') } catch { items = [] }
+    if (items.length === 0) return res.status(400).json({ error: 'El pedido no tiene items' })
+    
+    // Por simplicidad, crear una orden por producto diferente
+    const created = []
+    for (const item of items) {
+      const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.productId)
+      if (!product) continue
+      
+      // Buscar receta
+      const recipe = db.prepare(`
+        SELECT * FROM recipes WHERE product_id = ? ORDER BY created_at DESC LIMIT 1
+      `).get(product.id)
+      if (!recipe) {
+        created.push({ productId: product.id, productName: product.name, error: 'Sin receta' })
+        continue
+      }
+      
+      // Generar número de orden
+      const year = new Date().getFullYear()
+      const count = db.prepare("SELECT COUNT(*) c FROM production_orders WHERE number LIKE ?").get(`OP-${year}-%`).c
+      const number = `OP-${year}-${String(count + 1).padStart(4, '0')}`
+      
+      const id = uid('po-')
+      const now = new Date().toISOString()
+      db.prepare(`
+        INSERT INTO production_orders (id, number, product_id, recipe_id, quantity, status, pedido_id, notes, created_by, created_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?)
+      `).run(id, number, product.id, recipe.id, item.quantity || 1, 'pendiente', order.id, 
+             `Creada desde pedido ${order.number}`, req.user.id, now)
+      
+      // Calcular materiales necesarios según receta
+      let materials = []
+      try { materials = JSON.parse(recipe.materials_json || '[]') } catch {}
+      const neededMaterials = materials.map(m => {
+        const ratio = (item.quantity || 1) / (recipe.batch_size || 1)
+        return {
+          materialId: m.materialId,
+          materialType: m.materialType || 'raw',
+          name: m.name,
+          quantityNeeded: m.quantity * ratio,
+          unit: m.unit
+        }
+      })
+      
+      // Calcular disponibilidad con FIFO/FEFO
+      const availability = []
+      for (const m of neededMaterials) {
+        const { allocations, shortage } = getMaterialByFEFO(m.materialId, m.materialType, m.quantityNeeded)
+        availability.push({
+          ...m,
+          allocations,
+          shortage,
+          available: shortage === 0
+        })
+      }
+      
+      created.push({
+        productionOrderId: id,
+        number,
+        productId: product.id,
+        productName: product.name,
+        productCode: product.code,
+        quantity: item.quantity,
+        status: 'pendiente',
+        neededMaterials: availability
+      })
+    }
+    
+    addHistory(req, {
+      action: 'crear', module: 'Producción', entityId: order.id,
+      description: `Órdenes de producción creadas desde pedido ${order.number} (${created.length})`
+    })
+    
+    res.json({ ok: true, orderId: order.id, productionOrders: created })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// POST /api/production-orders/:id/complete
+// Completa una orden de producción: descuenta MPs/envases, genera lote de PT
+router.post('/production-orders/:id/complete', auth, requirePermission('production', 'edit'), (req, res) => {
+  try {
+    const po = db.prepare('SELECT * FROM production_orders WHERE id = ?').get(req.params.id)
+    if (!po) return res.status(404).json({ error: 'Orden de producción no encontrada' })
+    if (po.status === 'acabada') return res.status(400).json({ error: 'La orden ya está completada' })
+    
+    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(po.product_id)
+    if (!product) return res.status(404).json({ error: 'Producto no encontrado' })
+    
+    const recipe = po.recipe_id ? db.prepare('SELECT * FROM recipes WHERE id = ?').get(po.recipe_id) : null
+    let materials = []
+    if (recipe) {
+      try { materials = JSON.parse(recipe.materials_json || '[]') } catch {}
+    }
+    
+    // Generar código de lote PT
+    const year = new Date().getFullYear()
+    const count = db.prepare("SELECT COUNT(*) c FROM lots WHERE lot_number LIKE ?").get(`PT-${year}-%`).c
+    const lotNumber = `PT-${year}-${String(count + 1).padStart(4, '0')}`
+    
+    const lotId = uid('lot-')
+    const now = new Date().toISOString()
+    
+    // Calcular expiry por defecto: 1 año para la mayoría
+    const expiryDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
+    
+    // Insertar el lote de PT
+    db.prepare(`
+      INSERT INTO lots (id, lot_number, product_id, recipe_id, quantity, raw_materials_json, produced_by, produced_at, status, notes, production_order_id, expiry_date)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(lotId, lotNumber, po.product_id, po.recipe_id, po.quantity, JSON.stringify(materials), 
+           req.user.id, now, 'completado', `Producido desde ${po.number}`, po.id, expiryDate)
+    
+    // Consumir materiales (FIFO/FEFO) y registrar trazabilidad
+    const consumptions = []
+    for (const m of materials) {
+      const ratio = po.quantity / (recipe.batch_size || 1)
+      const needed = m.quantity * ratio
+      const { allocations, shortage } = getMaterialByFEFO(m.materialId, m.materialType || 'raw', needed)
+      
+      if (shortage > 0) {
+        return res.status(400).json({ 
+          error: `Stock insuficiente de ${m.name}: faltan ${shortage} ${m.unit}`,
+          shortage: { materialId: m.materialId, materialName: m.name, missing: shortage }
+        })
+      }
+      
+      for (const alloc of allocations) {
+        const table = m.materialType === 'pkg' ? 'packaging_lots' : 'raw_material_lots'
+        db.prepare(`UPDATE ${table} SET remaining = remaining - ? WHERE id = ?`).run(alloc.quantity, alloc.lotId)
+        db.prepare(`UPDATE ${table} SET status = CASE WHEN remaining <= 0 THEN 'consumed' ELSE status END WHERE id = ?`).run(alloc.lotId)
+        
+        // Registrar consumo para trazabilidad
+        const consId = uid('cons-')
+        db.prepare(`
+          INSERT INTO lot_consumptions (id, production_lot_id, production_order_id, source_type, source_lot_id, source_lot_code, material_id, material_name, quantity_consumed, unit, consumed_at, consumed_by)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+        `).run(consId, lotId, po.id, m.materialType === 'pkg' ? 'pkg' : 'raw', alloc.lotId, alloc.lotCode, m.materialId, m.name, alloc.quantity, m.unit, now, req.user.id)
+        
+        consumptions.push({ sourceLot: alloc.lotCode, material: m.name, quantity: alloc.quantity, unit: m.unit })
+      }
+    }
+    
+    // Sumar al stock de producto terminado
+    db.prepare('UPDATE products SET stock = stock + ?, last_updated = ? WHERE id = ?').run(po.quantity, now, po.product_id)
+    
+    // Marcar la orden de producción como completada
+    db.prepare(`UPDATE production_orders SET status = 'acabada', finished_at = ? WHERE id = ?`).run(now, po.id)
+    
+    addHistory(req, {
+      action: 'completar', module: 'Producción', entityId: po.id,
+      description: `Producción ${po.number} completada → Lote ${lotNumber} (${po.quantity} ud) de ${product.name}`
+    })
+    
+    res.json({
+      ok: true,
+      lot: {
+        id: lotId,
+        code: lotNumber,
+        productId: product.id,
+        productName: product.name,
+        productCode: product.code,
+        quantity: po.quantity,
+        producedAt: now,
+        expiryDate
+      },
+      consumptions,
+      productionOrder: { id: po.id, number: po.number, status: 'acabada' }
+    })
+  } catch (e) {
+    res.status(500).json({ error: e.message })
+  }
+})
