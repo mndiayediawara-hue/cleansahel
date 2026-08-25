@@ -5170,7 +5170,7 @@ router.post('/production-orders/:id/complete', auth, requirePermission('producti
     }
     
     // Sumar al stock de producto terminado
-    db.prepare('UPDATE products SET stock = stock + ?, last_updated = ? WHERE id = ?').run(po.quantity, now, po.product_id)
+    db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(po.quantity, po.product_id)
     
     // Marcar la orden de producción como completada
     db.prepare(`UPDATE production_orders SET status = 'acabada', finished_at = ? WHERE id = ?`).run(now, po.id)
