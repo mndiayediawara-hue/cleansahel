@@ -463,11 +463,29 @@
     // Disparado por el selector de idioma en la app
     setTimeout(() => { applyAll(); }, 50);
   });
-  window.addEventListener('storage', (e) => {
+window.addEventListener('storage', (e) => {
     if (e.key === 'cleanerp-lang') {
       window.location.reload();
     }
   });
+
+  // Detectar cambios en el selector de idioma (botón con texto ES/FR/EN/PT)
+  document.addEventListener('click', (e) => {
+    const target = e.target;
+    if (!target) return;
+    const text = (target.textContent || '').trim().toUpperCase();
+    // Si hace click en un botón que parece un selector de idioma
+    if (['ES', 'FR', 'EN', 'PT'].includes(text) || 
+        (target.tagName === 'BUTTON' && /^[A-Z]{2}$/.test(text))) {
+      // Esperar a que el localStorage se actualice y recargar
+      setTimeout(() => {
+        const newLang = localStorage.getItem('cleanerp-lang');
+        if (newLang && newLang !== lastLang) {
+          window.location.reload();
+        }
+      }, 200);
+    }
+  }, true);  // capture phase para interceptar antes
 
   window.__tr = tr;
   window.__i18nDict = dict;
