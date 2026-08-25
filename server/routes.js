@@ -2929,9 +2929,10 @@ router.post('/raw-material-lots', auth, requirePermission('purchases', 'create')
 
   const id = uid('rml-')
   const now = new Date().toISOString()
-  db.prepare(`INSERT INTO raw_material_lots (id, raw_material_id, code, quantity, remaining, unit, supplier_id, supplier_name, invoice, received_at, expiry_date, status, notes, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+  db.prepare(`INSERT INTO raw_material_lots (id, raw_material_id, code, quantity, remaining, unit, supplier_id, supplier_name, invoice, received_at, expiry_date, status, notes, created_at, internal_lot_number, supplier_lot_number, manufacture_date) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(id, rawMaterialId, code, qty, qty, material.unit, supplierId || null, supplierName || null, invoice || null,
-         receivedAt || now, expiryDate || null, 'active', notes || null, now)
+         receivedAt || now, expiryDate || null, 'active', notes || null, now,
+         internalLotNumber || null, supplierLotNumber || null, manufactureDate || null)
 
   // Sumar al stock del material
   db.prepare('UPDATE raw_materials SET stock = stock + ?, last_updated = ? WHERE id = ?').run(qty, now, rawMaterialId)

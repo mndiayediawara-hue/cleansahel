@@ -457,6 +457,7 @@ try {
 } catch (e) { console.warn('migration stock_reservations:', e.message) }
 
 
+
 // Migración: lot_consumptions table
 try {
   db.exec(`
@@ -479,6 +480,44 @@ try {
   `)
   console.log('✓ Migrated: lot_consumptions table ready')
 } catch (e) { console.warn('migration lot_consumptions:', e.message) }
+
+// Migración: añadir campos a raw_material_lots
+try {
+  const rmlCols = db.prepare("PRAGMA table_info(raw_material_lots)").all()
+  if (!rmlCols.find(c => c.name === 'internal_lot_number')) {
+    db.exec("ALTER TABLE raw_material_lots ADD COLUMN internal_lot_number TEXT")
+    console.log('✓ Migrated: added internal_lot_number to raw_material_lots')
+  }
+  if (!rmlCols.find(c => c.name === 'supplier_lot_number')) {
+    db.exec("ALTER TABLE raw_material_lots ADD COLUMN supplier_lot_number TEXT")
+    console.log('✓ Migrated: added supplier_lot_number to raw_material_lots')
+  }
+  if (!rmlCols.find(c => c.name === 'manufacture_date')) {
+    db.exec("ALTER TABLE raw_material_lots ADD COLUMN manufacture_date TEXT")
+    console.log('✓ Migrated: added manufacture_date to raw_material_lots')
+  }
+} catch (e) { console.warn('migration raw_material_lots fields:', e.message) }
+
+// Migración: añadir campos a packaging_lots
+try {
+  const pkgCols = db.prepare("PRAGMA table_info(packaging_lots)").all()
+  if (!pkgCols.find(c => c.name === 'internal_lot_number')) {
+    db.exec("ALTER TABLE packaging_lots ADD COLUMN internal_lot_number TEXT")
+    console.log('✓ Migrated: added internal_lot_number to packaging_lots')
+  }
+  if (!pkgCols.find(c => c.name === 'supplier_lot_number')) {
+    db.exec("ALTER TABLE packaging_lots ADD COLUMN supplier_lot_number TEXT")
+    console.log('✓ Migrated: added supplier_lot_number to packaging_lots')
+  }
+  if (!pkgCols.find(c => c.name === 'manufacture_date')) {
+    db.exec("ALTER TABLE packaging_lots ADD COLUMN manufacture_date TEXT")
+    console.log('✓ Migrated: added manufacture_date to packaging_lots')
+  }
+  if (!pkgCols.find(c => c.name === 'unit')) {
+    db.exec("ALTER TABLE packaging_lots ADD COLUMN unit TEXT")
+    console.log('✓ Migrated: added unit to packaging_lots')
+  }
+} catch (e) { console.warn('migration packaging_lots fields:', e.message) }
 
 // 4. Ajustes de inventario
 try {
