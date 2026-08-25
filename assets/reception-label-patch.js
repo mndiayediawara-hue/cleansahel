@@ -11,7 +11,7 @@
 
   const API_BASE = (() => {
     const PN = (typeof window !== 'undefined' && window.PN) || '';
-    return PN || 'https://cleansahel-production.up.railway.app';
+    return PN || 'https://cleansahel.onrender.com';
   })();
 
   const getToken = () => {

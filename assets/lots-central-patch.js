@@ -12,7 +12,7 @@
   window.__lotsCentralPatchLoaded = true;
 
   const API_BASE = (() => {
-    try { return window.PN || 'https://cleansahel-production.up.railway.app'; } catch { return 'https://cleansahel-production.up.railway.app'; }
+    try { return window.PN || 'https://cleansahel.onrender.com'; } catch { return 'https://cleansahel.onrender.com'; }
   })();
 
   const getToken = () => {

@@ -573,11 +573,7 @@ try {
         finished_at TEXT,
         production_order_number TEXT,
         produced_by TEXT,
-        raw_materials_json TEXT,
-        FOREIGN KEY (raw_material_id) REFERENCES raw_materials(id),
-        FOREIGN KEY (packaging_id) REFERENCES packaging(id),
-        FOREIGN KEY (product_id) REFERENCES products(id),
-        FOREIGN KEY (production_order_id) REFERENCES production_orders(id)
+        raw_materials_json TEXT
       )
     `)
     console.log('✓ Migrated: lots table recreated with unified schema')
