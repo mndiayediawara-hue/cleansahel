@@ -366,7 +366,7 @@
   }
 
   // Traducir un text node
-  function translateTextNode(node) {
+  function translateTextNode(node, currentLang) {
     if (!node || node.nodeType !== Node.TEXT_NODE) return;
     const raw = node.nodeValue || '';
     if (!raw.trim()) return;
@@ -374,7 +374,7 @@
     if (txt.length < 2 || txt.length > 80) return;
     const key = esToKey[txt] || esToKey[norm(txt)];
     if (key) {
-      const newText = tr(key);
+      const newText = (dict[currentLang] && dict[currentLang][key]) || dict.es[key] || key;
       if (newText !== txt) {
         node.nodeValue = raw.replace(txt, newText);
       }
@@ -382,50 +382,62 @@
   }
 
   // Recorrer todos los nodos
-  function translateElement(el) {
+  function translateElement(el, currentLang) {
     if (!el) return;
     if (el.nodeType === Node.ELEMENT_NODE) {
       const tag = el.tagName;
       if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'SVG' || tag === 'PATH') return;
+      const trLocal = (key) => {
+        if (!currentLang || !dict[currentLang]) return dict.es[key] || key;
+        return dict[currentLang][key] || dict.es[key] || key;
+      };
       if (tag === 'INPUT' || tag === 'TEXTAREA') {
         if (el.placeholder) {
           const k = esToKey[el.placeholder] || esToKey[norm(el.placeholder)];
-          if (k) el.placeholder = tr(k);
+          if (k) el.placeholder = trLocal(k);
         }
         if (el.title) {
           const k = esToKey[el.title] || esToKey[norm(el.title)];
-          if (k) el.title = tr(k);
+          if (k) el.title = trLocal(k);
         }
         if (el.getAttribute('aria-label')) {
           const al = el.getAttribute('aria-label');
           const k = esToKey[al] || esToKey[norm(al)];
-          if (k) el.setAttribute('aria-label', tr(k));
+          if (k) el.setAttribute('aria-label', trLocal(k));
         }
         return;
       }
       if (el.title) {
         const k = esToKey[el.title] || esToKey[norm(el.title)];
-        if (k) el.title = tr(k);
+        if (k) el.title = trLocal(k);
       }
       const al = el.getAttribute('aria-label');
       if (al) {
         const k = esToKey[al] || esToKey[norm(al)];
-        if (k) el.setAttribute('aria-label', tr(k));
+        if (k) el.setAttribute('aria-label', trLocal(k));
       }
       for (const child of el.childNodes) {
         if (child.nodeType === Node.TEXT_NODE) {
-          translateTextNode(child);
+          translateTextNode(child, currentLang);
         } else {
-          translateElement(child);
+          translateElement(child, currentLang);
         }
       }
     } else if (el.nodeType === Node.TEXT_NODE) {
-      translateTextNode(el);
+      translateTextNode(el, currentLang);
     }
   }
 
+  let lastLang = null;
   function applyAll() {
-    translateElement(document.body);
+    // Re-leer el idioma cada vez (puede cambiar)
+    const currentLang = (localStorage.getItem('cleanerp-lang') || 'es').toLowerCase();
+    if (currentLang !== lastLang) {
+      lastLang = currentLang;
+      window.__currentLang = currentLang;
+    }
+    translateElement(document.body, currentLang);
+    document.documentElement.lang = currentLang;
   }
 
   if (document.readyState === 'loading') {
