@@ -3964,12 +3964,14 @@ router.get('/inventory/adjustments', auth, (_req, res) => {
 
 router.post('/inventory/adjustments', auth, requirePermission('inventory', 'edit'), (req, res) => {
   try {
-    const { materialType, materialId, newStock, reason } = req.body
+    const { materialType, materialId, newStock, reason, lotId } = req.body
     if (!materialType || !materialId || newStock === undefined) return res.status(400).json({ error: 'Faltan datos' })
     if (!reason || reason.trim() === '') return res.status(400).json({ error: 'Debe especificar el motivo' })
     let table
-    if (materialType === 'raw') table = 'raw_materials'
-    else if (materialType === 'packaging') table = 'packaging'
+    let lotTable
+    let lotCol
+    if (materialType === 'raw') { table = 'raw_materials'; lotTable = 'raw_material_lots'; lotCol = 'raw_material_id' }
+    else if (materialType === 'packaging') { table = 'packaging'; lotTable = 'packaging_lots'; lotCol = 'packaging_id' }
     else if (materialType === 'product') table = 'products'
     else return res.status(400).json({ error: 'materialType invalido' })
     const before = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(materialId)
@@ -3977,16 +3979,43 @@ router.post('/inventory/adjustments', auth, requirePermission('inventory', 'edit
     const newStockNum = Number(newStock)
     if (newStockNum < 0) return res.status(400).json({ error: 'Stock no puede ser negativo' })
     const diff = newStockNum - before.stock
+    
+    // Si se especifica lotId, ajustar el lote tambien (para trazabilidad)
+    let lotUpdate = null
+    if (lotId && lotTable) {
+      const lot = db.prepare(`SELECT * FROM ${lotTable} WHERE id = ?`).get(lotId)
+      if (lot) {
+        // Calcular nuevo remaining proporcional
+        // Si newStock es el stock total del material, remaining se reduce proporcionalmente
+        // Si newStock es solo el nuevo remaining del lote, usarlo directamente
+        let newRemaining = lot.remaining
+        if (newStockNum === before.stock) {
+          // Caso 1: ajustar todo el material
+          // Mantener proporcion del lote en el stock total
+          const proportion = before.stock > 0 ? lot.remaining / before.stock : 0
+          newRemaining = Math.max(0, proportion * newStockNum)
+        } else if (newStockNum <= lot.remaining) {
+          // Caso 2: newStock representa el nuevo remaining del lote
+          newRemaining = newStockNum
+        }
+        const lotDiff = newRemaining - lot.remaining
+        db.prepare(`UPDATE ${lotTable} SET remaining = ? WHERE id = ?`).run(newRemaining, lotId)
+        db.prepare(`UPDATE ${lotTable} SET status = CASE WHEN remaining <= 0 THEN 'consumed' ELSE status END WHERE id = ?`).run(lotId)
+        lotUpdate = { lotId, before: lot.remaining, after: newRemaining, diff: lotDiff }
+      }
+    }
+    
     const tx = db.transaction(() => {
       db.prepare(`UPDATE ${table} SET stock = ? WHERE id = ?`).run(newStockNum, materialId)
-      db.prepare(`INSERT INTO stock_adjustments (id, material_type, material_id, material_name, quantity_before, quantity_after, difference, reason, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`)
-        .run(uid('adj-'), materialType, materialId, before.name || '', before.stock, newStockNum, diff, reason.trim(), req.user.id, new Date().toISOString())
+      const adjId = uid('adj-')
+      db.prepare(`INSERT INTO stock_adjustments (id, material_type, material_id, material_name, lot_id, quantity_before, quantity_after, difference, reason, created_by, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(adjId, materialType, materialId, before.name || '', lotId || null, before.stock, newStockNum, diff, reason.trim(), req.user.id, new Date().toISOString())
       db.prepare(`INSERT INTO notifications (id, type, title, message, severity, read, created_at, related_id) VALUES (?,?,?,?,?,0,?,?)`)
-        .run(uid('n-'), 'stock-adjustment', 'Ajuste de inventario', `${before.name}: ${before.stock} → ${newStockNum} (${diff > 0 ? '+' : ''}${diff}) - ${reason}`, diff < 0 ? 'warning' : 'info', new Date().toISOString(), 'adj:' + materialId)
+        .run(uid('n-'), 'stock-adjustment', 'Ajuste de inventario', `${before.name}: ${before.stock} → ${newStockNum} (${diff > 0 ? '+' : ''}${diff}) - ${reason}${lotUpdate ? ` [Lote: ${lotUpdate.before} → ${lotUpdate.after}]` : ''}`, diff < 0 ? 'warning' : 'info', new Date().toISOString(), 'adj:' + materialId)
     })
     tx()
-    addHistory(req, { action: 'ajuste', module: 'Inventario', entityId: materialId, description: `Ajuste ${before.name}: ${before.stock} → ${newStockNum} (${reason})` })
-    res.json({ ok: true, before: before.stock, after: newStockNum, difference: diff })
+    addHistory(req, { action: 'ajuste', module: 'Inventario', entityId: materialId, description: `Ajuste ${before.name}: ${before.stock} → ${newStockNum} (${reason})${lotUpdate ? ` (Lote ${lotUpdate.lotId}: ${lotUpdate.before} → ${lotUpdate.after})` : ''}` })
+    res.json({ ok: true, before: before.stock, after: newStockNum, difference: diff, lot: lotUpdate })
   } catch (e) { res.status(500).json({ error: e.message }) }
 })
 
