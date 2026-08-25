@@ -519,6 +519,19 @@ try {
   }
 } catch (e) { console.warn('migration packaging_lots fields:', e.message) }
 
+// Migración: añadir expiry_date y production_order_id a lots
+try {
+  const lotCols = db.prepare("PRAGMA table_info(lots)").all()
+  if (!lotCols.find(c => c.name === 'expiry_date')) {
+    db.exec("ALTER TABLE lots ADD COLUMN expiry_date TEXT")
+    console.log('✓ Migrated: added expiry_date to lots')
+  }
+  if (!lotCols.find(c => c.name === 'production_order_id')) {
+    db.exec("ALTER TABLE lots ADD COLUMN production_order_id TEXT")
+    console.log('✓ Migrated: added production_order_id to lots')
+  }
+} catch (e) { console.warn('migration lots fields:', e.message) }
+
 // 4. Ajustes de inventario
 try {
   db.exec(`
