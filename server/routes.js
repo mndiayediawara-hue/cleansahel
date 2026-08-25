@@ -4368,12 +4368,10 @@ router.get('/reception-info/:type/:id', async (req, res) => {
   const percentUsed = lot.quantity > 0 ? Math.round((used / lot.quantity) * 100) : 0
   const percentLeft = 100 - percentUsed
   
+  const companyInfo = getConfig('company', { name: 'SAHEL', tagline: 'PRODUITS D\'HYGIÈNE' })
   const formatDate = (d) => d ? new Date(d).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'
   const formatDateTime = (d) => d ? new Date(d).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'
   const safe = (s) => String(s || '-').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  
-  // Historial de consumo (raw_material_lots_details si existe, sino no)
-  // Por simplicidad, no tenemos tabla de movimientos. Mostramos info actual
   
   const html = `<!DOCTYPE html>
 <html lang="es">
