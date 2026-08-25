@@ -1069,7 +1069,7 @@ router.get('/order-sheet/:orderId', (req, res) => {
 
     .sheet {
       width: 210mm;
-      min-height: 297mm;
+      min-height: auto;
       margin: 0 auto;
       background: white;
       padding: 14mm 16mm;
@@ -1529,7 +1529,7 @@ function buildOrderSheetHTML(order, customer, items) {
   .no-print button { padding: 10px 18px; font-size: 12px; background: #2563eb; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: 500; font-family: inherit; }
   .no-print button:hover { background: #1d4ed8; }
   .no-print button.close { background: #6b7280; }
-  .sheet { width: 210mm; min-height: 297mm; margin: 0 auto; background: white; padding: 12mm 14mm; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
+  .sheet { width: 210mm; min-height: auto; margin: 0 auto; background: white; padding: 12mm 14mm; box-shadow: 0 2px 12px rgba(0,0,0,.12); }
 
   .header { display: grid; grid-template-columns: 50mm 1fr 65mm; gap: 5mm; align-items: start; padding-bottom: 5mm; border-bottom: 1.2pt solid #1e3a8a; margin-bottom: 5mm; }
   .logo-box { border: 0.6pt solid #cbd5e1; padding: 2mm; text-align: center; }
@@ -1582,7 +1582,7 @@ function buildOrderSheetHTML(order, customer, items) {
   .footer .col .t { color: #1e3a8a; font-size: 9pt; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 1mm; }
   .footer .col .d { font-size: 7.5pt; color: #4b5563; line-height: 1.5; }
 
-  @media print { body { background: white; padding: 0; } .no-print { display: none; } .sheet { box-shadow: none; padding: 0; width: 100%; } @page { size: A4; margin: 0; } }
+  @media print { body { background: white; padding: 0; } .no-print { display: none; } .sheet { box-shadow: none; padding: 8mm 10mm; width: 100%; max-width: 210mm; page-break-after: avoid; page-break-inside: avoid; } @page { size: A4; margin: 0; } }
 </style>
 </head>
 <body>
