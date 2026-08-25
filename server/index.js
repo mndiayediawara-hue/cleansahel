@@ -82,15 +82,15 @@ app.get('/api/status', (_req, res) => {
 // Mount all API routes
 app.use('/api', apiRoutes)
 
-// Servir archivos estaticos del backend (scripts, etc.)
-const serverAssetsPath = path.join(__dirname, 'assets')
-if (fs.existsSync(serverAssetsPath)) {
-  app.use('/assets', express.static(serverAssetsPath))
-}
-
-// Serve React build
+// Servir archivos estáticos: assets/ del proyecto (patches + bundles)
+const rootAssetsPath = path.join(__dirname, '..', 'assets')
+// dist/ para el build de React
 const distPath = path.join(__dirname, '..', 'dist')
 if (fs.existsSync(distPath)) {
+  // Primero assets/ del proyecto (patches), luego dist/ para el build
+  if (fs.existsSync(rootAssetsPath)) {
+    app.use('/assets', express.static(rootAssetsPath))
+  }
   app.use(express.static(distPath))
   app.get(/^(?!\/api).*/, (_req, res) => {
     res.sendFile(path.join(distPath, 'index.html'))
