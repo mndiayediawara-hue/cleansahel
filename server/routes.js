@@ -864,6 +864,15 @@ router.get('/invoice/:orderId', auth, (req, res) => {
       @page { size: A4; margin: 12mm; }
     }
   </style>
+  <script>
+  (function(){
+    const urlParams = new URLSearchParams(window.location.search);
+    const lang = (urlParams.get('lang') || localStorage.getItem('cleanerp-lang') || 'es').toLowerCase();
+    const s = document.createElement('script');
+    s.src = window.location.origin + '/assets/doc-i18n.js';
+    document.head.appendChild(s);
+  })();
+  </script>
 </head>
 <body>
   <div class="no-print">
@@ -1586,6 +1595,17 @@ function buildOrderSheetHTML(order, customer, items) {
     @page :first { margin-bottom: 0; }
   }
 </style>
+<script>
+(function(){
+  // Detectar idioma
+  const urlParams = new URLSearchParams(window.location.search);
+  const lang = (urlParams.get('lang') || localStorage.getItem('cleanerp-lang') || 'es').toLowerCase();
+  // Cargar script de traduccion
+  const s = document.createElement('script');
+  s.src = window.location.origin + '/assets/doc-i18n.js';
+  document.head.appendChild(s);
+})();
+</script>
 </head>
 <body>
 <div class="no-print">
