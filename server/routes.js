@@ -421,7 +421,9 @@ const mapCust = (c) => ({
   id: c.id, code: c.code, name: c.name, company: c.company, cif: c.cif,
   address: c.address, city: c.city, country: c.country, phone: c.phone,
   email: c.email, contact: c.contact, notes: c.notes,
-  totalPurchases: c.total_purchases, createdAt: c.created_at
+  totalPurchases: c.total_purchases, createdAt: c.created_at,
+  language: c.language || 'es',
+  currency: c.currency || 'FCFA'
 })
 
 router.get('/customers', auth, (_req, res) => {
@@ -445,8 +447,8 @@ router.post('/customers', auth, requirePermission('customers', 'create'), (req, 
       const nextNo = (maxCode?.max_no || 0) + 1
       code = `CL-${String(nextNo).padStart(5, '0')}`
     }
-    db.prepare('INSERT INTO customers (id, code, name, company, cif, address, city, country, phone, email, contact, notes, total_purchases, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0,?)')
-      .run(id, code, b.name, b.company || '', b.cif || '', b.address || '', b.city || '', b.country || '', b.phone || '', b.email || '', b.contact || '', b.notes || '', new Date().toISOString())
+    db.prepare('INSERT INTO customers (id, code, name, company, cif, address, city, country, phone, email, contact, notes, total_purchases, language, currency, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0,?,?,?)')
+      .run(id, code, b.name, b.company || '', b.cif || '', b.address || '', b.city || '', b.country || '', b.phone || '', b.email || '', b.contact || '', b.notes || '', b.language || 'es', b.currency || 'FCFA', new Date().toISOString())
     addHistory(req, { action: 'crear', module: 'Clientes', entityId: id, description: `Creado cliente ${b.name} (${code})` })
     res.json({ id, code })
   } catch (e) {
@@ -456,8 +458,8 @@ router.post('/customers', auth, requirePermission('customers', 'create'), (req, 
 })
 router.put('/customers/:id', auth, requirePermission('customers', 'edit'), (req, res) => {
   const b = req.body
-  db.prepare('UPDATE customers SET code=?, name=?, company=?, cif=?, address=?, city=?, country=?, phone=?, email=?, contact=?, notes=? WHERE id=?')
-    .run(b.code, b.name, b.company, b.cif, b.address, b.city, b.country, b.phone, b.email, b.contact, b.notes, req.params.id)
+  db.prepare('UPDATE customers SET code=?, name=?, company=?, cif=?, address=?, city=?, country=?, phone=?, email=?, contact=?, notes=?, language=?, currency=? WHERE id=?')
+    .run(b.code, b.name, b.company, b.cif, b.address, b.city, b.country, b.phone, b.email, b.contact, b.notes, b.language || 'es', b.currency || 'FCFA', req.params.id)
   addHistory(req, { action: 'modificar', module: 'Clientes', entityId: req.params.id, description: `Modificado cliente ${b.name}` })
   res.json({ ok: true })
 })
@@ -3689,7 +3691,7 @@ router.get('/delivery-mobile', (req, res) => {
   </div>
   <div id="toast" class="toast"></div>
   <script>
-    const API = 'https://cleansahel-production.up.railway.app/api'
+    const API = 'https://cleansahel.onrender.com/api'
     let token = localStorage.getItem('cleanerp-token') || new URLSearchParams(window.location.search).get('token')
     if (token) { localStorage.setItem('cleanerp-token', token); showMain() } else { document.getElementById('loginSection').classList.remove('hidden') }
     function showToast(msg, color) { const t = document.getElementById('toast'); t.textContent = msg; t.style.background = color || '#1f2937'; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2500) }

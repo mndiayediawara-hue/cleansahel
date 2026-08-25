@@ -125,6 +125,8 @@ CREATE TABLE IF NOT EXISTS customers (
   contact TEXT,
   notes TEXT,
   total_purchases REAL DEFAULT 0,
+  language TEXT DEFAULT 'es',
+  currency TEXT DEFAULT 'FCFA',
   created_at TEXT NOT NULL
 );
 
@@ -426,7 +428,24 @@ try {
     db.exec("ALTER TABLE orders ADD COLUMN delivered_by TEXT")
     console.log('✓ Migrated: added delivered_by column to orders')
   }
+  if (!colsOrders.find(c => c.name === 'currency')) {
+    db.exec("ALTER TABLE orders ADD COLUMN currency TEXT DEFAULT 'FCFA'")
+    console.log('✓ Migrated: added currency column to orders')
+  }
 } catch (e) { console.warn('migration orders delivery:', e.message) }
+
+// Add language and currency to customers (safe migration)
+try {
+  const colsCust = db.prepare("PRAGMA table_info(customers)").all()
+  if (!colsCust.find(c => c.name === 'language')) {
+    db.exec("ALTER TABLE customers ADD COLUMN language TEXT DEFAULT 'es'")
+    console.log('✓ Migrated: added language column to customers')
+  }
+  if (!colsCust.find(c => c.name === 'currency')) {
+    db.exec("ALTER TABLE customers ADD COLUMN currency TEXT DEFAULT 'FCFA'")
+    console.log('✓ Migrated: added currency column to customers')
+  }
+} catch (e) { console.warn('migration customers language/currency:', e.message) }
   const colsLots3 = db.prepare("PRAGMA table_info(lots)").all()
   if (!colsLots3.find(c => c.name === 'status') && !colsLots3.find(c => c.name === 'status_safe_check')) {
     // No hacemos nada, status ya existe en el schema
