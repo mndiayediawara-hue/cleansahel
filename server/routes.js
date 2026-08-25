@@ -409,7 +409,7 @@ router.delete('/lots/:id', auth, requirePermission('lots', 'delete'), (req, res)
     action: 'eliminar', 
     module: 'Producción', 
     entityId: req.params.id, 
-    description: `Eliminado lote ${lot.lot_number} (producto ${lot.product_id}, cantidad ${lot.quantity}L)` 
+    description: `Eliminado lote ${lot.code || lot.lot_number} (producto ${lot.product_id}, cantidad ${lot.quantity}L)` 
   })
   res.json({ ok: true, id: req.params.id, message: 'Lote eliminado y stock devuelto' })
 })
@@ -2107,7 +2107,7 @@ const mapLot = (l) => {
   const result = (l.status === 'pendiente' || l.status === 'en_curso') ? canProduceLot(l.id) : { canProduce: true, shortages: [] }
   return {
     id: l.id,
-    lotNumber: l.lot_number,
+    lotNumber: l.code || l.lot_number || '',
     productionOrderNumber: l.production_order_number || '',
     productId: l.product_id,
     recipeId: l.recipe_id || '',
@@ -2115,7 +2115,7 @@ const mapLot = (l) => {
     rawMaterialsUsed: JSON.parse(l.raw_materials_json || '[]'),
     producedBy: l.produced_by,
     machineId: l.machine_id || undefined,
-    producedAt: l.produced_at,
+    producedAt: l.received_at || l.produced_at,
     expiryDate: l.expiry_date || undefined,
     status: l.status,
     notes: l.notes,
@@ -2276,7 +2276,7 @@ router.patch('/lots/:id/status', auth, requirePermission('production', 'edit'), 
   }
   addHistory(req, {
     action: 'cambiar_estado', module: 'Producción', entityId: req.params.id,
-    description: `Lote ${lot.lot_number} → ${status}`
+    description: `Lote ${lot.code || lot.lot_number} → ${status}`
   })
   res.json({ ok: true, id: req.params.id, status })
 })
@@ -2507,8 +2507,8 @@ router.get('/dashboard', auth, (_req, res) => {
     .map(o => ({ id: o.id, number: o.number, customer: o.customer_name, total: o.total, status: o.status, createdAt: o.created_at }))
   const recentPurchases = db.prepare(`SELECT p.*, s.name as supplier_name FROM purchases p LEFT JOIN suppliers s ON s.id = p.supplier_id ORDER BY p.date DESC LIMIT 5`).all()
     .map(p => ({ id: p.id, number: p.number, supplier: p.supplier_name, total: p.total, date: p.date }))
-  const recentLots = db.prepare(`SELECT l.*, p.name as product_name FROM lots l LEFT JOIN products p ON p.id = l.product_id ORDER BY l.produced_at DESC LIMIT 5`).all()
-    .map(l => ({ id: l.id, lotNumber: l.lot_number, product: l.product_name, quantity: l.quantity, status: l.status, producedAt: l.produced_at }))
+  const recentLots = db.prepare(`SELECT l.*, p.name as product_name FROM lots l LEFT JOIN products p ON p.id = l.product_id ORDER BY l.received_at DESC LIMIT 5`).all()
+    .map(l => ({ id: l.id, lotNumber: l.code || l.lot_number, product: l.product_name, quantity: l.quantity || l.quantity_received, status: l.status, producedAt: l.received_at || l.produced_at }))
   const unreadNotifs = db.prepare("SELECT COUNT(*) c FROM notifications WHERE read = 0").get().c
 
   res.json({
@@ -2930,26 +2930,47 @@ router.post('/raw-material-lots', auth, requirePermission('purchases', 'create')
   const qty = Number(quantity ?? quantityReceived ?? quantityRemaining)
   if (!Number.isFinite(qty) || qty <= 0) return res.status(400).json({ error: 'Cantidad inválida' })
 
-  // Generar código único
-  const year = new Date().getFullYear()
-  const count = db.prepare("SELECT COUNT(*) c FROM raw_material_lots WHERE code LIKE ?").get(`RML-${year}-%`).c
-  const code = b.code || `RML-${year}-${String(count + 1).padStart(4, '0')}`
+  const now = new Date().toISOString()
+
+  // ─────────────────────────────────────────────
+  // UNIFICADO: generar código MP- y grabar en lots + raw_material_lots
+  // ─────────────────────────────────────────────
+  let code = b.code
+  if (!code) {
+    // Siguiente código MP-
+    const row = db.prepare(`SELECT code FROM lots WHERE code LIKE 'MP-%' ORDER BY length(code) DESC, code DESC LIMIT 1`).get()
+    let nextNum = 1
+    if (row?.code) {
+      const m = row.code.match(/(\d+)$/)
+      if (m) nextNum = parseInt(m[1], 10) + 1
+    }
+    code = `MP-${String(nextNum).padStart(5, '0')}`
+  }
 
   const id = uid('rml-')
-  const now = new Date().toISOString()
+  const lotId = uid('lot-')
+
+  // 1. Insertar en raw_material_lots (tabla de detalle de materia prima)
   db.prepare(`INSERT INTO raw_material_lots (id, raw_material_id, code, quantity, remaining, unit, supplier_id, supplier_name, invoice, received_at, expiry_date, status, notes, created_at, internal_lot_number, supplier_lot_number, manufacture_date) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(id, rawMaterialId, code, qty, qty, material.unit, supplierId || null, supplierName || null, invoice || null,
          receivedAt || now, expiryDate || null, 'active', notes || null, now,
-         internalLotNumber || null, supplierLotNumber || null, manufactureDate || null)
+         internalLotNumber || code, supplierLotNumber || null, manufactureDate || null)
 
-  // Sumar al stock del material
+  // 2. Insertar en lots (TABLA ÚNICA de lotes para toda la app)
+  db.prepare(`INSERT OR IGNORE INTO lots (id, code, type, reference_id, raw_material_id, packaging_id, product_id, production_order_id, quantity, quantity_received, quantity_remaining, unit, supplier_id, supplier_name, invoice, received_at, expiry_date, status, notes, created_at, internal_lot_number, supplier_lot_number, manufacture_date) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(lotId, code, 'raw', id, rawMaterialId, null, null, null, qty, qty, qty, material.unit,
+         supplierId || null, supplierName || null, invoice || null,
+         receivedAt || now, expiryDate || null, 'active', notes || null, now,
+         internalLotNumber || code, supplierLotNumber || null, manufactureDate || null)
+
+  // 3. Sumar al stock del material
   db.prepare('UPDATE raw_materials SET stock = stock + ?, last_updated = ? WHERE id = ?').run(qty, now, rawMaterialId)
 
   addHistory(req, {
     action: 'compra', module: 'Materias Primas', entityId: id,
     description: `Entrada de ${qty} ${material.unit} de ${material.name} (Lote ${code}${invoice ? ' — Factura ' + invoice : ''})`
   })
-  res.json({ ok: true, id, code })
+  res.json({ ok: true, id, code, lotId })
 })
 
 router.put('/raw-material-lots/:id', auth, requirePermission('purchases', 'edit'), (req, res) => {
@@ -3005,29 +3026,46 @@ router.post('/packaging-lots', auth, requirePermission('purchases', 'create'), (
   const qty = Number(quantity ?? quantityReceived ?? quantityRemaining)
   if (!Number.isFinite(qty) || qty <= 0) return res.status(400).json({ error: 'Cantidad inválida' })
 
-  // Generar código según categoría (ENV- o EMB-)
+  const now = new Date().toISOString()
   const category = packaging.category || 'envase'
+  const lotType = category === 'embalaje' ? 'embalaje' : 'envase'
   const prefix = category === 'embalaje' ? 'EMB-' : 'ENV-'
-  const row = db.prepare(`SELECT code FROM packaging_lots WHERE code LIKE ? ORDER BY length(code) DESC, code DESC LIMIT 1`).get(`${prefix}%`)
-  let nextNum = 1
-  if (row?.code) {
-    const m = row.code.match(/(\d+)$/)
-    if (m) nextNum = parseInt(m[1], 10) + 1
+
+  // ─────────────────────────────────────────────
+  // UNIFICADO: generar código y grabar en lots + packaging_lots
+  // ─────────────────────────────────────────────
+  let code = b.code
+  if (!code) {
+    const row = db.prepare(`SELECT code FROM lots WHERE code LIKE ? ORDER BY length(code) DESC, code DESC LIMIT 1`).get(`${prefix}%`)
+    let nextNum = 1
+    if (row?.code) {
+      const m = row.code.match(/(\d+)$/)
+      if (m) nextNum = parseInt(m[1], 10) + 1
+    }
+    code = `${prefix}${String(nextNum).padStart(5, '0')}`
   }
-  const code = b.code || `${prefix}${String(nextNum).padStart(5, '0')}`
 
   const id = uid('pkl-')
-  const now = new Date().toISOString()
+  const lotId = uid('lot-')
+
+  // 1. Insertar en packaging_lots
   db.prepare(`INSERT INTO packaging_lots (id, packaging_id, code, quantity, remaining, supplier_id, supplier_name, invoice, received_at, expiry_date, status, notes, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(id, packagingId, code, qty, qty, supplierId || null, supplierName || null, invoice || null,
          receivedAt || now, expiryDate || null, 'active', notes || null, now)
+
+  // 2. Insertar en lots (TABLA ÚNICA)
+  db.prepare(`INSERT OR IGNORE INTO lots (id, code, type, reference_id, raw_material_id, packaging_id, product_id, production_order_id, quantity, quantity_received, quantity_remaining, unit, supplier_id, supplier_name, invoice, received_at, expiry_date, status, notes, created_at, internal_lot_number, supplier_lot_number, manufacture_date) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    .run(lotId, code, lotType, id, null, packagingId, null, null, qty, qty, qty, 'ud',
+         supplierId || null, supplierName || null, invoice || null,
+         receivedAt || now, expiryDate || null, 'active', notes || null, now,
+         internalLotNumber || code, supplierLotNumber || null, manufactureDate || null)
 
   db.prepare('UPDATE packaging SET stock = stock + ?, last_updated = ? WHERE id = ?').run(qty, now, packagingId)
   addHistory(req, {
     action: 'compra', module: 'Almacén', entityId: id,
     description: `Entrada de ${qty} ud de ${packaging.name} (Lote ${code}${invoice ? ' — Factura ' + invoice : ''})`
   })
-  res.json({ ok: true, id, code })
+  res.json({ ok: true, id, code, lotId })
 })
 
 router.delete('/packaging-lots/:id', auth, requirePermission('purchases', 'delete'), (req, res) => {
@@ -3258,9 +3296,9 @@ router.get('/print-label/:lotId', auth, (req, res) => {
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(lot.product_id)
   if (!product) return res.status(404).send('<h1>Producto no encontrado</h1>')
 
-  const producedAt = lot.produced_at ? lot.produced_at.split('T')[0] : new Date().toISOString().split('T')[0]
+  const producedAt = lot.received_at || lot.produced_at ? (lot.received_at || lot.produced_at).split('T')[0] : new Date().toISOString().split('T')[0]
   const expiryDate = lot.expiry_date || ''
-  const lotNumber = lot.lot_number || ''
+  const lotNumber = lot.code || lot.lot_number || ''
 
   // HTML standalone con CSS print correcto
   const html = `<!DOCTYPE html>
@@ -3830,9 +3868,9 @@ router.get('/traceability/by-material/:id', auth, (req, res) => {
     try { items = JSON.parse(l.raw_materials_json || '[]') } catch {}
     const usedHere = items.find(i => i.materialId === materialId)
     return {
-      id: l.id, lotNumber: l.lot_number,
+      id: l.id, lotNumber: l.code || l.lot_number,
       productName: l.product_name, productCode: l.product_code,
-      quantity: l.quantity, producedAt: l.produced_at, status: l.status,
+      quantity: l.quantity, producedAt: l.received_at || l.produced_at, status: l.status,
       usedQuantity: usedHere?.quantity || 0, usedUnit: usedHere?.unit || ''
     }
   })
@@ -4904,13 +4942,15 @@ router.get('/lots-central', auth, (req, res) => {
       }
     }
     
-    // Lotes de producto terminado
+    // Lotes de producto terminado (desde tabla unificada lots)
     if (!type || type === 'product' || type === 'all') {
       let sql = `SELECT 
-        l.id, l.lot_number as code, l.quantity, l.status, l.produced_at, l.expiry_date,
+        l.id, l.code, l.quantity as quantity_received, l.quantity_remaining, l.unit, l.status,
+        l.received_at as produced_at, l.expiry_date,
         l.produced_by, l.notes, l.product_id, l.recipe_id, l.production_order_id,
-        p.name as product_name, p.code as product_code, p.bottle_size as product_unit,
-        po.number as production_order_number, po.pedido_id as order_id,
+        l.production_order_number,
+        p.name as product_name, p.code as product_code,
+        po.number as production_order_number2, po.pedido_id as order_id,
         u.full_name as produced_by_name,
         o.number as order_number, c.name as customer_name
       FROM lots l
@@ -4919,19 +4959,19 @@ router.get('/lots-central', auth, (req, res) => {
       LEFT JOIN users u ON l.produced_by = u.id
       LEFT JOIN orders o ON po.pedido_id = o.id
       LEFT JOIN customers c ON o.customer_id = c.id
-      WHERE 1=1`
+      WHERE l.type = 'product'`
       const params = []
       if (query) {
-        sql += ` AND (l.lot_number LIKE ? OR p.name LIKE ? OR p.code LIKE ?)`
+        sql += ` AND (l.code LIKE ? OR p.name LIKE ? OR p.code LIKE ?)`
         const q = `%${query}%`
         params.push(q, q, q)
       }
       if (status) { sql += ` AND l.status = ?`; params.push(status) }
       if (productId) { sql += ` AND l.product_id = ?`; params.push(productId) }
       if (orderId) { sql += ` AND po.pedido_id = ?`; params.push(orderId) }
-      if (startDate) { sql += ` AND l.produced_at >= ?`; params.push(startDate) }
-      if (endDate) { sql += ` AND l.produced_at <= ?`; params.push(endDate) }
-      sql += ` ORDER BY l.produced_at DESC LIMIT ?`
+      if (startDate) { sql += ` AND l.received_at >= ?`; params.push(startDate) }
+      if (endDate) { sql += ` AND l.received_at <= ?`; params.push(endDate) }
+      sql += ` ORDER BY l.received_at DESC LIMIT ?`
       params.push(Number(limit))
       const rows = db.prepare(sql).all(...params)
       for (const r of rows) {
@@ -4939,8 +4979,10 @@ router.get('/lots-central', auth, (req, res) => {
           type: 'product',
           id: r.id,
           code: r.code,
-          quantity: r.quantity,
-          unit: r.product_unit,
+          quantityReceived: r.quantity_received,
+          quantityRemaining: r.quantity_remaining,
+          quantity: r.quantity_received,
+          unit: r.unit || 'ud',
           producedAt: r.produced_at,
           expiryDate: r.expiry_date,
           status: r.status,
@@ -4949,7 +4991,7 @@ router.get('/lots-central', auth, (req, res) => {
           productName: r.product_name,
           productCode: r.product_code,
           productionOrderId: r.production_order_id,
-          productionOrderNumber: r.production_order_number,
+          productionOrderNumber: r.production_order_number || r.production_order_number2,
           orderId: r.order_id,
           orderNumber: r.order_number,
           customerName: r.customer_name,
@@ -5043,14 +5085,15 @@ router.get('/lots/:id/traceability', auth, (req, res) => {
     res.json({
       lot: {
         id: lot.id,
-        code: lot.lot_number,
+        code: lot.code || lot.lot_number,
         productId: lot.product_id,
         productName: lot.product_name,
         productCode: lot.product_code,
         productUnit: lot.product_unit,
-        quantity: lot.quantity,
+        quantity: lot.quantity_received || lot.quantity,
+        quantityRemaining: lot.quantity_remaining,
         status: lot.status,
-        producedAt: lot.produced_at,
+        producedAt: lot.received_at || lot.produced_at,
         expiryDate: lot.expiry_date,
         notes: lot.notes
       },
@@ -5179,8 +5222,13 @@ router.post('/production-orders/:id/complete', auth, requirePermission('producti
     
     // Generar código de lote PT
     const year = new Date().getFullYear()
-    const count = db.prepare("SELECT COUNT(*) c FROM lots WHERE lot_number LIKE ?").get(`PT-${year}-%`).c
-    const lotNumber = `PT-${year}-${String(count + 1).padStart(4, '0')}`
+    const row = db.prepare(`SELECT code FROM lots WHERE code LIKE ? ORDER BY length(code) DESC, code DESC LIMIT 1`).get(`PT-${year}-%`)
+    let nextNum = 1
+    if (row?.code) {
+      const m = row.code.match(/(\d+)$/)
+      if (m) nextNum = parseInt(m[1], 10) + 1
+    }
+    const lotCode = `PT-${year}-${String(nextNum).padStart(4, '0')}`
     
     const lotId = uid('lot-')
     const now = new Date().toISOString()
@@ -5188,12 +5236,12 @@ router.post('/production-orders/:id/complete', auth, requirePermission('producti
     // Calcular expiry por defecto: 1 año para la mayoría
     const expiryDate = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
     
-    // Insertar el lote de PT
+    // Insertar el lote de PT en la tabla unificada lots
     db.prepare(`
-      INSERT INTO lots (id, lot_number, product_id, recipe_id, quantity, raw_materials_json, produced_by, produced_at, status, notes, production_order_id, expiry_date)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-    `).run(lotId, lotNumber, po.product_id, po.recipe_id, po.quantity, JSON.stringify(materials), 
-           req.user.id, now, 'completado', `Producido desde ${po.number}`, po.id, expiryDate)
+      INSERT INTO lots (id, code, type, reference_id, product_id, production_order_id, quantity, quantity_received, quantity_remaining, unit, status, notes, created_at, recipe_id, produced_by, expiry_date, raw_materials_json, production_order_number)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(lotId, lotCode, 'product', lotId, po.product_id, po.id, po.quantity, po.quantity, po.quantity, product.unit || 'ud',
+           'completado', `Producido desde ${po.number}`, now, po.recipe_id, req.user.id, expiryDate, JSON.stringify(materials), po.number)
     
     // Consumir materiales (FIFO/FEFO) y registrar trazabilidad
     const consumptions = []
@@ -5233,14 +5281,14 @@ router.post('/production-orders/:id/complete', auth, requirePermission('producti
     
     addHistory(req, {
       action: 'completar', module: 'Producción', entityId: po.id,
-      description: `Producción ${po.number} completada → Lote ${lotNumber} (${po.quantity} ud) de ${product.name}`
+      description: `Producción ${po.number} completada → Lote ${lotCode} (${po.quantity} ud) de ${product.name}`
     })
     
     res.json({
       ok: true,
       lot: {
         id: lotId,
-        code: lotNumber,
+        code: lotCode,
         productId: product.id,
         productName: product.name,
         productCode: product.code,
@@ -5288,7 +5336,7 @@ router.get('/lots/by-code/:code', auth, (req, res) => {
         SELECT l.*, p.name as product_name, p.code as product_code
         FROM lots l
         LEFT JOIN products p ON l.product_id = p.id
-        WHERE l.lot_number = ?
+        WHERE l.code = ?
         LIMIT 1
       `).get(codeUpper)
       if (!lot) return res.status(404).json({ error: 'Lote no encontrado' })
@@ -5317,7 +5365,7 @@ router.get('/lots/:id/reverse-traceability', auth, (req, res) => {
   try {
     const { id } = req.params
     const consumptions = db.prepare(`
-      SELECT lc.*, l.lot_number as production_lot_code, l.produced_at, l.status as lot_status,
+      SELECT lc.*, l.code as production_lot_code, l.received_at as produced_at, l.status as lot_status,
              p.name as product_name, p.code as product_code
       FROM lot_consumptions lc
       LEFT JOIN lots l ON lc.production_lot_id = l.id
@@ -5349,23 +5397,24 @@ router.get('/lots/:id/reverse-traceability', auth, (req, res) => {
 })
 
 // GET /api/lots-catalog - Catálogo de tipos para el sidebar
+// Lee de la tabla UNIFICADA lots para todos los tipos
 router.get('/lots-catalog', auth, (_req, res) => {
   try {
     const counts = {
-      raw: db.prepare(`SELECT COUNT(*) c FROM raw_material_lots WHERE status = 'active'`).get().c,
-      envase: db.prepare(`SELECT COUNT(*) c FROM packaging_lots pl LEFT JOIN packaging p ON pl.packaging_id = p.id WHERE pl.status = 'active' AND (p.category = 'envase' OR p.category IS NULL)`).get().c,
-      embalaje: db.prepare(`SELECT COUNT(*) c FROM packaging_lots pl LEFT JOIN packaging p ON pl.packaging_id = p.id WHERE pl.status = 'active' AND p.category = 'embalaje'`).get().c,
-      product: db.prepare(`SELECT COUNT(*) c FROM lots`).get().c,
+      raw: db.prepare(`SELECT COUNT(*) c FROM lots WHERE type = 'raw'`).get().c,
+      envase: db.prepare(`SELECT COUNT(*) c FROM lots WHERE type = 'envase'`).get().c,
+      embalaje: db.prepare(`SELECT COUNT(*) c FROM lots WHERE type = 'embalaje'`).get().c,
+      product: db.prepare(`SELECT COUNT(*) c FROM lots WHERE type = 'product'`).get().c,
       production: db.prepare(`SELECT COUNT(*) c FROM production_orders WHERE status != 'acabada'`).get().c
     }
     res.json({
       counts,
       lastCodes: {
-        raw: (db.prepare(`SELECT code FROM raw_material_lots ORDER BY length(code) DESC, code DESC LIMIT 1`).get() || {}).code,
-        envase: (db.prepare(`SELECT code FROM packaging_lots WHERE code LIKE 'ENV-%' ORDER BY length(code) DESC, code DESC LIMIT 1`).get() || {}).code,
-        embalaje: (db.prepare(`SELECT code FROM packaging_lots WHERE code LIKE 'EMB-%' ORDER BY length(code) DESC, code DESC LIMIT 1`).get() || {}).code,
-        product: (db.prepare(`SELECT lot_number as code FROM lots ORDER BY lot_number DESC LIMIT 1`).get() || {}).code,
-        production: (db.prepare(`SELECT number as code FROM production_orders ORDER BY number DESC LIMIT 1`).get() || {}).code
+        raw: (db.prepare(`SELECT code FROM lots WHERE type = 'raw' ORDER BY length(code) DESC, code DESC LIMIT 1`).get() || {}).code || null,
+        envase: (db.prepare(`SELECT code FROM lots WHERE type = 'envase' ORDER BY length(code) DESC, code DESC LIMIT 1`).get() || {}).code || null,
+        embalaje: (db.prepare(`SELECT code FROM lots WHERE type = 'embalaje' ORDER BY length(code) DESC, code DESC LIMIT 1`).get() || {}).code || null,
+        product: (db.prepare(`SELECT code FROM lots WHERE type = 'product' ORDER BY length(code) DESC, code DESC LIMIT 1`).get() || {}).code || null,
+        production: (db.prepare(`SELECT number as code FROM production_orders ORDER BY number DESC LIMIT 1`).get() || {}).code || null
       }
     })
   } catch (e) {

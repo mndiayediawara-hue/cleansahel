@@ -530,7 +530,68 @@ try {
     db.exec("ALTER TABLE lots ADD COLUMN production_order_id TEXT")
     console.log('✓ Migrated: added production_order_id to lots')
   }
-} catch (e) { console.warn('migration lots fields:', e.message) }
+
+  // ─── UNIFICADO: recrear tabla lots con esquema completo ───
+  // Esto limpia el esquema antiguo (lot_number, raw_materials_json) y
+  // establece lots como la tabla ÚNICA para todos los tipos de lote.
+  try {
+    // Guardar datos de producción existentes (solo PT lots del old schema)
+    const oldLots = db.prepare(`SELECT id, lot_number, product_id, recipe_id, quantity, raw_materials_json, produced_by, produced_at, status, notes, production_order_id, expiry_date FROM lots WHERE lot_number LIKE 'PT-%' OR lot_number LIKE 'LOT-%'`).all()
+    const oldData = oldLots.map(l => ({
+      id: l.id, lot_number: l.lot_number, product_id: l.product_id, recipe_id: l.recipe_id,
+      quantity: l.quantity, raw_materials_json: l.raw_materials_json, produced_by: l.produced_by,
+      produced_at: l.produced_at, status: l.status, notes: l.notes,
+      production_order_id: l.production_order_id, expiry_date: l.expiry_date
+    }))
+
+    db.exec('DROP TABLE IF EXISTS lots')
+    db.exec(`
+      CREATE TABLE lots (
+        id TEXT PRIMARY KEY,
+        code TEXT UNIQUE NOT NULL,
+        type TEXT NOT NULL,
+        reference_id TEXT,
+        raw_material_id TEXT,
+        packaging_id TEXT,
+        product_id TEXT,
+        production_order_id TEXT,
+        quantity REAL DEFAULT 0,
+        quantity_received REAL DEFAULT 0,
+        quantity_remaining REAL DEFAULT 0,
+        unit TEXT,
+        supplier_id TEXT,
+        supplier_name TEXT,
+        invoice TEXT,
+        received_at TEXT,
+        expiry_date TEXT,
+        status TEXT NOT NULL,
+        notes TEXT,
+        created_at TEXT NOT NULL,
+        recipe_id TEXT,
+        machine_id TEXT,
+        started_at TEXT,
+        finished_at TEXT,
+        production_order_number TEXT,
+        produced_by TEXT,
+        raw_materials_json TEXT,
+        FOREIGN KEY (raw_material_id) REFERENCES raw_materials(id),
+        FOREIGN KEY (packaging_id) REFERENCES packaging(id),
+        FOREIGN KEY (product_id) REFERENCES products(id),
+        FOREIGN KEY (production_order_id) REFERENCES production_orders(id)
+      )
+    `)
+    console.log('✓ Migrated: lots table recreated with unified schema')
+
+    // Restaurar datos de producción en el nuevo esquema
+    const insert = db.prepare(`INSERT INTO lots (id, code, type, reference_id, product_id, production_order_id, quantity, quantity_received, quantity_remaining, unit, status, notes, created_at, recipe_id, produced_by, expiry_date, raw_materials_json, production_order_number) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+    for (const l of oldData) {
+      insert.run(l.id, l.lot_number, 'product', l.id, l.product_id, l.production_order_id,
+                 l.quantity, l.quantity, l.quantity, 'ud', l.status, l.notes,
+                 l.produced_at, l.recipe_id, l.produced_by, l.expiry_date,
+                 l.raw_materials_json, l.lot_number)
+    }
+    console.log(`✓ Migrated: restored ${oldData.length} production lots`)
+  } catch (e) { console.warn('migration lots unified schema:', e.message) }
 
 // Migración: packaging.category para distinguir envases de embalajes
 try {
