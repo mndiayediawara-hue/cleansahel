@@ -3,6 +3,7 @@ import express from 'express'
 import cors from 'cors'
 import path from 'path'
 import fs from 'fs'
+import { execSync } from 'child_process'
 import { fileURLToPath } from 'url'
 import apiRoutes from './routes.js'
 import { seed } from './seed.js'
@@ -86,8 +87,25 @@ app.use('/api', apiRoutes)
 const rootAssetsPath = path.join(__dirname, '..', 'assets')
 // dist/ para el build de React
 const distPath = path.join(__dirname, '..', 'dist')
+
+// Si dist/ existe, verificar que no esté obsoleto (assets/ es más nuevo = fuerza rebuild)
 if (fs.existsSync(distPath)) {
-  // Primero assets/ del proyecto (patches), luego dist/ para el build
+  const distMtime = fs.statSync(distPath).mtimeMs
+  const assetsMtime = fs.existsSync(rootAssetsPath)
+    ? Math.max(...fs.readdirSync(rootAssetsPath).map(f => fs.statSync(path.join(rootAssetsPath, f)).mtimeMs))
+    : 0
+  if (assetsMtime > distMtime + 5000) {
+    console.log('⚠ dist/ obsoleto — eliminando para rebuild...')
+    fs.rmSync(distPath, { recursive: true })
+  }
+}
+
+if (!fs.existsSync(distPath)) {
+  console.log('🔨 Construyendo frontend (npm run build)...')
+  execSync('npm run build', { cwd: path.join(__dirname, '..'), stdio: 'inherit' })
+}
+
+if (fs.existsSync(distPath)) {
   if (fs.existsSync(rootAssetsPath)) {
     app.use('/assets', express.static(rootAssetsPath))
   }
