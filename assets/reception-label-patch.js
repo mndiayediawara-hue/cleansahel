@@ -74,6 +74,7 @@
 
     const isRawLot = typeof url === 'string' && url.includes('/raw-material-lots') && method === 'POST' && !url.match(/\/raw-material-lots\/[^/]+/);
     const isPkgLot = typeof url === 'string' && url.includes('/packaging-lots') && method === 'POST' && !url.match(/\/packaging-lots\/[^/]+/);
+    const isNewMaterial = typeof url === 'string' && url.includes('/raw-materials') && method === 'POST' && !url.match(/\/raw-materials\/[^/]+/);
 
     if (isRawLot || isPkgLot) {
       try {
@@ -106,7 +107,78 @@
     return originalFetch.apply(this, args);
   };
 
-  // 4. Modal de éxito con "Generar documento" prominente
+  // Interceptar también creación de nueva materia prima
+  window.fetch = (function(orig) {
+    return async function(...args) {
+      const [url, options] = args;
+      const method = (options?.method || 'GET').toUpperCase();
+      const isNewMat = typeof url === 'string' && url.includes('/raw-materials') && method === 'POST' && !url.match(/\/raw-materials\/[^/]+/);
+      if (isNewMat) {
+        try {
+          const response = await orig.apply(this, args);
+          if (response.ok) {
+            const clone = response.clone();
+            try {
+              const data = await clone.json();
+              if (data?.id) {
+                setTimeout(() => {
+                  showMaterialSuccessModal(data);
+                }, 100);
+              }
+            } catch (e) {}
+          }
+          return response;
+        } catch (e) {
+          return orig.apply(this, args);
+        }
+      }
+      return orig.apply(this, args);
+    };
+  })(window.fetch);
+
+  // 4. Modal de éxito para materia prima nueva
+  function showMaterialSuccessModal(matData) {
+    const existing = document.getElementById('reception-success-modal');
+    if (existing) existing.remove();
+    const labelUrl = `${API_BASE}/api/reception-label/raw/${matData.id}`;
+    const infoUrl = `${API_BASE}/api/reception-info/raw/${matData.id}`;
+    const modal = document.createElement('div');
+    modal.id = 'reception-success-modal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);animation:fadeIn 0.2s ease;';
+    modal.innerHTML = `
+      <style>@keyframes fadeIn{from{opacity:0}to{opacity:1}}@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}.rsm-box{animation:slideUp .3s ease}.rsm-btn{transition:all .15s}.rsm-btn:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(0,0,0,.2)}.rsm-btn:active{transform:translateY(0)}</style>
+      <div class="rsm-box" style="background:white;border-radius:20px;max-width:560px;width:92%;box-shadow:0 25px 50px rgba(0,0,0,.3);overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+        <div style="background:linear-gradient(135deg,#10b981 0%,#059669 100%);padding:28px 24px;color:white;text-align:center;">
+          <div style="width:64px;height:64px;margin:0 auto 12px;background:rgba(255,255,255,.25);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:700;">✓</div>
+          <h2 style="font-size:22px;font-weight:700;margin:0;">¡Materia prima creada!</h2>
+          <p style="font-size:14px;margin:8px 0 0;opacity:.95;">Código <code style="background:rgba(255,255,255,.25);padding:3px 12px;border-radius:6px;font-family:monospace;font-size:15px;font-weight:600;">${matData.code || ''}</code></p>
+        </div>
+        <div style="padding:28px 24px 24px;">
+          <p style="color:#4b5563;font-size:14px;margin:0 0 20px;text-align:center;line-height:1.5;">
+            La materia prima se ha guardado correctamente.<br>
+            <strong>Genera e imprime la etiqueta</strong> para colocarla en el barril o envase.
+          </p>
+          <button class="rsm-btn" onclick="window.open('${labelUrl}?print=1','_blank');document.getElementById('reception-success-modal').remove();" style="width:100%;padding:18px;border:none;border-radius:12px;background:linear-gradient(135deg,#1e3a8a 0%,#2563eb 100%);color:white;font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:12px;box-shadow:0 4px 12px rgba(30,58,138,.3);">
+            <span style="font-size:22px;">🖨️</span>
+            <span>Generar documento (etiqueta 4×6)</span>
+          </button>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+            <button class="rsm-btn" onclick="window.open('${infoUrl}','_blank');document.getElementById('reception-success-modal').remove();" style="padding:12px;border:1px solid #d1d5db;border-radius:10px;background:white;color:#1f2937;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
+              <span>📱</span><span>Ver QR</span>
+            </button>
+            <button class="rsm-btn" onclick="navigator.clipboard.writeText('${infoUrl}').then(()=>{const t=this.querySelector('span:last-child');t.textContent='¡Copiado!';setTimeout(()=>t.textContent='Copiar link',1500);}).catch(()=>alert('${infoUrl}'))" style="padding:12px;border:1px solid #d1d5db;border-radius:10px;background:white;color:#1f2937;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
+              <span>🔗</span><span>Copiar link</span>
+            </button>
+          </div>
+          <button class="rsm-btn" onclick="document.getElementById('reception-success-modal').remove()" style="width:100%;padding:12px;border:none;border-radius:10px;background:#f3f4f6;color:#6b7280;font-size:13px;font-weight:500;cursor:pointer;margin-top:6px;">Continuar</button>
+        </div>
+      </div>
+    `;
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+    document.body.appendChild(modal);
+  }
+
+  // 4b. Modal de éxito con "Generar documento" prominente
   function showReceptionSuccessModal(lotData, type) {
     const existing = document.getElementById('reception-success-modal');
     if (existing) existing.remove();
