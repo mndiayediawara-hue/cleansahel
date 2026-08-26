@@ -4137,33 +4137,53 @@ router.get('/reception-label/:type/:id', async (req, res) => {
   if (!['raw', 'pkg'].includes(type)) {
     return res.status(400).send('<h1>Tipo inválido (raw o pkg)</h1>')
   }
-  
+
   let lot = null
   let material = null
   let supplier = null
-  
+
   if (type === 'raw') {
+    // Primero intentamos como lote de MP
     lot = db.prepare('SELECT * FROM raw_material_lots WHERE id = ?').get(id)
-    if (!lot) return res.status(404).send('<h1>Lote no encontrado</h1>')
-    material = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(lot.raw_material_id)
-    if (lot.supplier_id) supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(lot.supplier_id)
+    if (lot) {
+      material = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(lot.raw_material_id)
+      if (lot.supplier_id) supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(lot.supplier_id)
+    } else {
+      // Si no es un lote, puede ser una materia prima directa (sin lote aún)
+      material = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(id)
+      if (!material) return res.status(404).send('<h1>Materia prima o lote no encontrado</h1>')
+    }
   } else {
     lot = db.prepare('SELECT * FROM packaging_lots WHERE id = ?').get(id)
     if (!lot) return res.status(404).send('<h1>Lote no encontrado</h1>')
     material = db.prepare('SELECT * FROM packaging WHERE id = ?').get(lot.packaging_id)
     if (lot.supplier_id) supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(lot.supplier_id)
   }
-  
+
   if (!material) return res.status(404).send('<h1>Material no encontrado</h1>')
-  
+
   const companyInfo = getConfig('company', { name: 'SAHEL', tagline: 'PRODUITS D\'HYGIÈNE' })
   const baseUrl = `${req.protocol}://${req.get('host')}`
   const qrData = `${baseUrl}/api/reception-info/${type}/${id}`
   const qrUrl = await generateQRDataURL(qrData)
-  
+
   const formatDate = (d) => d ? new Date(d).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-'
   const safe = (s) => String(s || '-').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-  
+
+  // Si no hay lote (materia prima sin recibir), crear un lote虚拟
+  if (!lot) {
+    lot = {
+      code: material.code,
+      quantity: material.stock || 0,
+      remaining: material.stock || 0,
+      unit: material.unit || 'L',
+      status: 'activo',
+      received_at: material.createdAt || new Date().toISOString(),
+      expiry_date: material.expiryDate || null,
+      supplier_name: supplier ? supplier.name : ''
+    }
+  }
+
   // Calcular % consumido
   const used = Number(lot.quantity) - Number(lot.remaining)
   const percentUsed = lot.quantity > 0 ? Math.round((used / lot.quantity) * 100) : 0
@@ -4428,18 +4448,36 @@ router.get('/reception-info/:type/:id', async (req, res) => {
   
   if (type === 'raw') {
     lot = db.prepare('SELECT * FROM raw_material_lots WHERE id = ?').get(id)
-    if (!lot) return res.status(404).send('<h1>Lote no encontrado</h1>')
-    material = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(lot.raw_material_id)
-    if (lot.supplier_id) supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(lot.supplier_id)
+    if (lot) {
+      material = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(lot.raw_material_id)
+      if (lot.supplier_id) supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(lot.supplier_id)
+    } else {
+      material = db.prepare('SELECT * FROM raw_materials WHERE id = ?').get(id)
+      if (!material) return res.status(404).send('<h1>Materia prima o lote no encontrado</h1>')
+    }
   } else {
     lot = db.prepare('SELECT * FROM packaging_lots WHERE id = ?').get(id)
     if (!lot) return res.status(404).send('<h1>Lote no encontrado</h1>')
     material = db.prepare('SELECT * FROM packaging WHERE id = ?').get(lot.packaging_id)
     if (lot.supplier_id) supplier = db.prepare('SELECT * FROM suppliers WHERE id = ?').get(lot.supplier_id)
   }
-  
+
   if (!material) return res.status(404).send('<h1>Material no encontrado</h1>')
-  
+
+  // Si no hay lote (materia prima sin recibir), usar datos del material
+  if (!lot) {
+    lot = {
+      code: material.code,
+      quantity: material.stock || 0,
+      remaining: material.stock || 0,
+      unit: material.unit || 'L',
+      status: 'activo',
+      received_at: material.createdAt || new Date().toISOString(),
+      expiry_date: material.expiryDate || null,
+      supplier_name: supplier ? supplier.name : ''
+    }
+  }
+
   const used = Number(lot.quantity) - Number(lot.remaining)
   const percentUsed = lot.quantity > 0 ? Math.round((used / lot.quantity) * 100) : 0
   const percentLeft = 100 - percentUsed
