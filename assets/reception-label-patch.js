@@ -168,16 +168,16 @@
             rawMaterialId: matData.id,
             rawMaterialName: matData.name,
             unit: matData.unit || 'L',
-            quantityReceived: matData.stock || 0,
-            quantityRemaining: matData.stock || 0,
-            receivedDate: new Date().toISOString().slice(0, 10),
+            quantity: matData.stock || 0,
+            receivedAt: new Date().toISOString().slice(0, 10),
             expiryDate: matData.expiryDate || '',
-            status: 'activo',
-            certificates: [],
-            notes: `Lote creado automáticamente al registrar materia prima ${matData.code}`
+            notes: `Lote creado al registrar materia prima ${matData.code}`
           })
         });
-        if (!lotRes.ok) throw new Error('No se pudo crear el lote');
+        if (!lotRes.ok) {
+          const err = await lotRes.json().catch(() => ({ error: lotRes.statusText }));
+          throw new Error(err.error || 'No se pudo crear el lote');
+        }
         const lot = await lotRes.json();
 
         // 3. Abrir etiqueta
