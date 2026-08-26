@@ -54,6 +54,9 @@ const ROLE_PERMISSIONS: Record<Role, string[]> = {
     'machines.read', 'machines.write',
     'customers.read',
     'suppliers.read',
+    'entregas.view', 'entregas.create', 'entregas.edit',
+    'entregas.register', 'entregas.print', 'entregas.stats',
+    'entregas.history', 'entregas.view_others',
   ],
 
   // CONTABILIDAD: todo lo financiero
@@ -73,6 +76,7 @@ const ROLE_PERMISSIONS: Record<Role, string[]> = {
     'packaging.read',
     'lots.read',
     'rawMaterialLots.read',
+    'entregas.view', 'entregas.stats', 'entregas.history',
   ],
 }
 

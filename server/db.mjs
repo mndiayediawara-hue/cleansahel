@@ -1,3 +1,4 @@
+
 import Database from 'better-sqlite3'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -660,6 +661,7 @@ try {
 console.log("✓ Migrated: stock_adjustments table ready (with lot_id support)")
 } catch (e) { console.warn('migration stock_adjustments:', e.message) }
 
+export { SCHEMA }
 
 export function getConfig(key, fallback = null) {
   const row = db.prepare('SELECT value FROM config WHERE key = ?').get(key)

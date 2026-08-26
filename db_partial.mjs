@@ -1,3 +1,4 @@
+
 import Database from 'better-sqlite3'
 import path from 'path'
 import { fileURLToPath } from 'url'
@@ -657,22 +658,4 @@ try {
   }
 } catch (e) { console.warn('migration stock_adjustments lot_id:', e.message) }
 
-console.log("✓ Migrated: stock_adjustments table ready (with lot_id support)")
-} catch (e) { console.warn('migration stock_adjustments:', e.message) }
-
-
-export function getConfig(key, fallback = null) {
-  const row = db.prepare('SELECT value FROM config WHERE key = ?').get(key)
-  if (!row) return fallback
-  try { return JSON.parse(row.value) } catch { return fallback }
-}
-
-export function setConfig(key, value) {
-  db.prepare('INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)').run(key, JSON.stringify(value))
-}
-
-export function uid(prefix = '') {
-  return `${prefix}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
-}
-
-export default db
+export const x = 1

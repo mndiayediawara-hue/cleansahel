@@ -31,8 +31,14 @@ export default function Users() {
     if (!editing) return
     setSaving(true)
     try {
-      if (editing.id) await api.put(`/users/${editing.id}`, editing)
-      else await api.post('/users', editing)
+      // Incluir permisos granulares de entregas en el body
+      const { _entregasPerms, ...rest } = editing
+      const body = { ...rest }
+      if (_entregasPerms && Object.keys(_entregasPerms).length > 0) {
+        body.entregasCustomPerms = _entregasPerms
+      }
+      if (editing.id) await api.put(`/users/${editing.id}`, body)
+      else await api.post('/users', body)
       await refreshOne('users')
       setEditing(null)
     } catch (e: any) { alert(e.message) }
@@ -68,7 +74,7 @@ export default function Users() {
     { key: 'actions', label: '', align: 'right' as const, render: (r: User) => (
         <div className="flex items-center justify-end gap-1">
           <Can do="users.admin"><button onClick={() => { setPwReset(r); setNewPassword('') }} className="btn-ghost p-1.5" title="Reset contraseña"><Key className="w-3.5 h-3.5" /></button></Can>
-          <Can do="users.admin"><button onClick={() => setEditing(r)} className="btn-ghost p-1.5 text-xs">Editar</button></Can>
+          <Can do="users.admin"><button onClick={() => setEditing({ ...r, _entregasPerms: r.permissions?.entregas || {} })} className="btn-ghost p-1.5 text-xs">Editar</button></Can>
           <Can do="users.admin"><button onClick={() => setConfirm(r)} className="btn-ghost p-1.5 text-red-600 text-xs">Borrar</button></Can>
         </div>
       )
@@ -119,6 +125,38 @@ export default function Users() {
                 </select>
               </div>
               <div className="flex items-center gap-2 pt-5"><input type="checkbox" checked={editing.active !== false} onChange={e => setEditing({ ...editing, active: e.target.checked })} /><label className="text-sm">Usuario activo</label></div>
+            </div>
+
+            {/* Permisos granulares */}
+            <div className="mt-4 pt-4 border-t border-surface-200 dark:border-surface-700">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold">Permisos granulares de Entregas</h3>
+                <span className="text-xs text-surface-500">Activar para personalizar</span>
+              </div>
+              <p className="text-xs text-surface-500 mb-3">Configura qué puede hacer cada usuario en el módulo de Entregas. Si no se activa, se usan los permisos del rol.</p>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                {['view', 'create', 'edit', 'delete', 'register', 'print', 'stats', 'history'].map(action => {
+                  const key = `entregas.${action}`
+                  const current = editing._entregasPerms?.[action] ?? null
+                  return (
+                    <label key={action} className="flex items-center gap-2 p-2 rounded-lg bg-surface-50 dark:bg-surface-800 cursor-pointer hover:bg-surface-100 dark:hover:bg-surface-700">
+                      <input
+                        type="checkbox"
+                        checked={current === true}
+                        onChange={e => {
+                          const perms = editing._entregasPerms || {}
+                          if (e.target.checked) perms[action] = true
+                          else delete perms[action]
+                          setEditing({ ...editing, _entregasPerms: { ...perms } })
+                        }}
+                        className="rounded"
+                      />
+                      <span className="text-xs capitalize">{action === 'view' ? 'Ver' : action === 'create' ? 'Crear' : action === 'edit' ? 'Editar' : action === 'delete' ? 'Eliminar' : action === 'register' ? 'Registrar' : action === 'print' ? 'Imprimir' : action === 'stats' ? 'Estadísticas' : 'Historial'}</span>
+                    </label>
+                  )
+                })}
+              </div>
+              <p className="text-[10px] text-surface-400 mt-2">Los permisos marcados sustituyen a los del rol para el módulo Entregas.</p>
             </div>
           </div>
         </Modal>

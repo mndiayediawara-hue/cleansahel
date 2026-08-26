@@ -470,7 +470,7 @@ router.delete('/customers/:id', auth, requirePermission('customers', 'delete'), 
 
 // ---------- DELIVERY / ENTREGA DE PEDIDOS ----------
 // GET /api/delivery/lookup/:code - Buscar cliente por código y devolver sus pedidos pendientes
-router.get('/delivery/lookup/:code', auth, (req, res) => {
+router.get('/delivery/lookup/:code', auth, requirePermission('entregas', 'view'), (req, res) => {
   const customer = db.prepare('SELECT * FROM customers WHERE code = ?').get(req.params.code)
   if (!customer) return res.status(404).json({ error: 'Cliente no encontrado' })
   // Pedidos NO entregados del cliente
@@ -494,7 +494,7 @@ router.get('/delivery/lookup/:code', auth, (req, res) => {
 })
 
 // POST /api/delivery/:orderId - Marcar pedido como entregado
-router.post('/delivery/:orderId', auth, (req, res) => {
+router.post('/delivery/:orderId', auth, requirePermission('entregas', 'register'), (req, res) => {
   try {
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.orderId)
     if (!order) return res.status(404).json({ error: 'Pedido no encontrado' })
@@ -522,6 +522,105 @@ router.post('/delivery/:orderId', auth, (req, res) => {
     })
   } catch (e) {
     console.error('Error POST /delivery:', e.message)
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// GET /api/delivery-stats — Estadísticas de entregas por usuario
+router.get('/delivery-stats', auth, requirePermission('entregas', 'stats'), (req, res) => {
+  try {
+    const { userId, period } = req.query
+    const now = new Date()
+    let fromDate = null
+
+    // Calcular fecha de inicio según período
+    if (period === 'today') {
+      fromDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    } else if (period === 'week') {
+      const d = new Date(now)
+      d.setDate(d.getDate() - d.getDay())
+      fromDate = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+    } else if (period === 'month') {
+      fromDate = new Date(now.getFullYear(), now.getMonth(), 1)
+    } else if (period === 'year') {
+      fromDate = new Date(now.getFullYear(), 0, 1)
+    }
+    // 'all' o sin período: sin filtro de fecha
+
+    // Base query para pedidos entregados
+    let baseQuery = 'SELECT * FROM orders WHERE delivered_at IS NOT NULL AND delivered_at != ""'
+    if (fromDate) baseQuery += ` AND delivered_at >= '${fromDate.toISOString()}'`
+    if (userId) baseQuery += ` AND delivered_by LIKE '%${String(userId)}%'`
+    const allDelivered = db.prepare(baseQuery).all()
+
+    // Hoy, esta semana, este mes, este año
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const weekStart = (() => { const d = new Date(now); d.setDate(d.getDate() - d.getDay()); return new Date(d.getFullYear(), d.getMonth(), d.getDate()) })()
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const yearStart = new Date(now.getFullYear(), 0, 1)
+
+    const totalAll = allDelivered.length
+    const totalToday = allDelivered.filter(o => new Date(o.delivered_at) >= todayStart).length
+    const totalWeek = allDelivered.filter(o => new Date(o.delivered_at) >= weekStart).length
+    const totalMonth = allDelivered.filter(o => new Date(o.delivered_at) >= monthStart).length
+    const totalYear = allDelivered.filter(o => new Date(o.delivered_at) >= yearStart).length
+
+    // Por usuario (agrupar por delivered_by)
+    const byUserMap = {}
+    for (const o of allDelivered) {
+      const key = o.delivered_by || 'Desconocido'
+      if (!byUserMap[key]) byUserMap[key] = { userName: key, total: 0, today: 0, thisWeek: 0, thisMonth: 0, thisYear: 0 }
+      byUserMap[key].total++
+      const d = new Date(o.delivered_at)
+      if (d >= todayStart) byUserMap[key].today++
+      if (d >= weekStart) byUserMap[key].thisWeek++
+      if (d >= monthStart) byUserMap[key].thisMonth++
+      if (d >= yearStart) byUserMap[key].thisYear++
+    }
+    const byUser = Object.values(byUserMap).sort((a, b) => b.total - a.total)
+
+    // Por día (últimos 30 días)
+    const thirtyDays = []
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(now)
+      d.setDate(d.getDate() - i)
+      const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate())
+      const dayEnd = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)
+      const count = allDelivered.filter(o => {
+        const dt = new Date(o.delivered_at)
+        return dt >= dayStart && dt < dayEnd
+      }).length
+      thirtyDays.push({ date: dayStart.toISOString().slice(0, 10), count })
+    }
+
+    // Historial reciente
+    const recent = allDelivered
+      .sort((a, b) => new Date(b.delivered_at) - new Date(a.delivered_at))
+      .slice(0, 20)
+      .map(o => ({
+        id: o.id,
+        number: o.number,
+        customerId: o.customer_id,
+        customerName: o.customer_name || '—',
+        total: o.total,
+        deliveredAt: o.delivered_at,
+        deliveredBy: o.delivered_by
+      }))
+
+    res.json({
+      summary: {
+        total: totalAll,
+        today: totalToday,
+        thisWeek: totalWeek,
+        thisMonth: totalMonth,
+        thisYear: totalYear,
+      },
+      byUser,
+      byDay: thirtyDays,
+      recent,
+    })
+  } catch (e) {
+    console.error('Error GET /delivery-stats:', e.message)
     res.status(500).json({ error: e.message })
   }
 })
@@ -2663,7 +2762,7 @@ router.post('/users', auth, requirePermission('users', 'create'), (req, res) => 
 })
 
 router.put('/users/:id', auth, requirePermission('users', 'edit'), (req, res) => {
-  const { fullName, email, role, username } = req.body || {}
+  const { fullName, email, role, username, entregasCustomPerms } = req.body || {}
   const u = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
   if (!u) return res.status(404).json({ error: 'Usuario no encontrado' })
   if (u.id === req.user.id && role && role !== 'admin') {
@@ -2671,6 +2770,14 @@ router.put('/users/:id', auth, requirePermission('users', 'edit'), (req, res) =>
   }
   db.prepare('UPDATE users SET full_name = ?, email = ?, role = ?, username = COALESCE(?, username) WHERE id = ?')
     .run(fullName || u.full_name, email !== undefined ? email : u.email, role || u.role, username || null, req.params.id)
+
+  // Guardar permisos personalizados de entregas si se envían
+  if (entregasCustomPerms && typeof entregasCustomPerms === 'object') {
+    const existingPerms = u.permissions ? (typeof u.permissions === 'string' ? JSON.parse(u.permissions) : u.permissions) : {}
+    existingPerms.entregas = entregasCustomPerms
+    db.prepare('UPDATE users SET permissions = ? WHERE id = ?').run(JSON.stringify(existingPerms), req.params.id)
+  }
+
   addHistory(req, { action: 'modificar', module: 'Usuarios', entityId: u.id, description: `Usuario modificado: ${u.username}` })
   const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id)
   res.json(mapUser(updated))
@@ -2749,6 +2856,7 @@ const PERMISSION_MODULES = [
   { key: 'inventory',     label: 'Inventario',     icon: 'archive' },
   { key: 'reports',       label: 'Informes',       icon: 'bar-chart' },
   { key: 'recalls',       label: 'Retiradas',      icon: 'alert' },
+  { key: 'entregas',      label: 'Entregas',       icon: 'truck' },
   { key: 'users',         label: 'Usuarios',       icon: 'user-cog' },
   { key: 'settings',      label: 'Configuración',  icon: 'settings' },
 ]
@@ -2758,6 +2866,10 @@ const PERMISSION_ACTIONS = [
   { key: 'create', label: 'Crear' },
   { key: 'edit',   label: 'Editar' },
   { key: 'delete', label: 'Eliminar' },
+  { key: 'register', label: 'Registrar' },
+  { key: 'print',    label: 'Imprimir' },
+  { key: 'stats',    label: 'Estadísticas' },
+  { key: 'history',  label: 'Historial' },
 ]
 
 const DEFAULT_PERMS_BY_ROLE = {
@@ -2775,10 +2887,14 @@ const DEFAULT_PERMS_BY_ROLE = {
     return p
   },
   contabilidad: () => {
-    const allowed = ['home', 'customers', 'sales', 'suppliers', 'purchases', 'expenses', 'inventory', 'reports']
+    const allowed = ['home', 'customers', 'sales', 'suppliers', 'purchases', 'expenses', 'inventory', 'reports', 'entregas']
     const p = {}
     for (const m of PERMISSION_MODULES) {
       if (allowed.includes(m.key)) p[m.key] = { view: true, create: true, edit: true, delete: false }
+    }
+    // Permisos granulares de entregas para produccion
+    if (p.entregas) {
+      p.entregas = { view: true, create: true, edit: true, delete: false, register: true, print: true, stats: true, history: true, view_others: true }
     }
     return p
   },
