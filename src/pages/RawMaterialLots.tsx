@@ -311,14 +311,17 @@ function PrintLotLabelModal({ lot, onClose, rawMaterials, suppliers, users }: an
   const recv = users.find((u: any) => u.id === lot.receivedBy)
   const [qrUrl, setQrUrl] = useState('')
 
+  const lotCode = lot.internalLotNumber || lot.code || '—'
+  const lotProv = lot.supplierLotNumber || '—'
+
   // El QR codifica un JSON con la info del lote que el operario puede escanear
   const qrPayload = JSON.stringify({
     type: 'rml',
     id: lot.id,
-    int: lot.internalLotNumber,
-    prov: lot.supplierLotNumber,
+    int: lotCode,
+    prov: lotProv,
     mat: mat?.name,
-    qty: lot.quantityRemaining,
+    qty: lot.remaining ?? lot.quantity ?? 0,
     unit: lot.unit,
     exp: lot.expiryDate,
   })
@@ -330,7 +333,7 @@ function PrintLotLabelModal({ lot, onClose, rawMaterials, suppliers, users }: an
   }, [qrPayload])
 
   // Patrón de código de barras simulado a partir del lote interno
-  const barcode = (lot.internalLotNumber || '').split('').map((c: string, i: number) => (c.charCodeAt(0) % 4 === 0 ? 2 : 1) + (i % 2)).join(' ')
+  const barcode = (lotCode || '').split('').map((c: string, i: number) => (c.charCodeAt(0) % 4 === 0 ? 2 : 1) + (i % 2)).join(' ')
 
   return (
     <Modal open onClose={onClose} title="Imprimir etiqueta de lote de MP" size="md"
@@ -357,11 +360,11 @@ function PrintLotLabelModal({ lot, onClose, rawMaterials, suppliers, users }: an
 
             <div className="border-t border-gray-300 py-2 my-2">
               <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-                <div><span className="text-gray-500">Lote interno:</span> <span className="font-mono font-bold">{lot.internalLotNumber}</span></div>
-                <div><span className="text-gray-500">Lote prov.:</span> <span className="font-mono">{lot.supplierLotNumber || '-'}</span></div>
-                <div><span className="text-gray-500">Recibido:</span> {formatDate(lot.receivedDate)}</div>
+                <div><span className="text-gray-500">Lote interno:</span> <span className="font-mono font-bold">{lotCode}</span></div>
+                <div><span className="text-gray-500">Lote prov.:</span> <span className="font-mono">{lotProv}</span></div>
+                <div><span className="text-gray-500">Recibido:</span> {formatDate(lot.receivedAt || lot.receivedDate)}</div>
                 <div><span className="text-gray-500">Caducidad:</span> <span className="font-semibold">{formatDate(lot.expiryDate)}</span></div>
-                <div><span className="text-gray-500">Cantidad:</span> <span className="font-semibold">{formatNumber(lot.quantityRemaining)} {lot.unit}</span></div>
+                <div><span className="text-gray-500">Cantidad:</span> <span className="font-semibold">{formatNumber(lot.remaining ?? lot.quantity ?? 0)} {lot.unit}</span></div>
                 <div><span className="text-gray-500">Proveedor:</span> {sup?.name || '-'}</div>
               </div>
             </div>
@@ -369,7 +372,7 @@ function PrintLotLabelModal({ lot, onClose, rawMaterials, suppliers, users }: an
             <div className="flex items-center justify-between gap-3 pt-1">
               <div className="flex-1">
                 <div className="flex items-end h-9 gap-px" style={{ background: 'repeating-linear-gradient(90deg, #000 ' + barcode + ', transparent ' + barcode + ')' }} />
-                <p className="text-[9px] font-mono text-center mt-1 text-gray-600">{lot.internalLotNumber}</p>
+                <p className="text-[9px] font-mono text-center mt-1 text-gray-600">{lotCode}</p>
               </div>
               <div className="shrink-0">
                 {qrUrl ? (
@@ -382,8 +385,8 @@ function PrintLotLabelModal({ lot, onClose, rawMaterials, suppliers, users }: an
             </div>
 
             <div className="pt-1 border-t border-gray-300 flex items-center justify-between text-[9px] text-gray-500">
-              <span>Rec.: {recv?.fullName || '-'}</span>
-              <span>Estado: <span className="font-semibold uppercase">{lot.status}</span></span>
+              <span>Rec.: {lot.supplierName || recv?.fullName || '-'}</span>
+              <span>Estado: <span className="font-semibold uppercase">{lot.status === 'active' ? 'ACTIVO' : (lot.status === 'blocked' ? 'BLOQUEADO' : lot.status?.toUpperCase() || '-')}</span></span>
             </div>
           </div>
         </div>
@@ -399,15 +402,16 @@ function LotDetailModal({ lot, onClose, rawMaterials, suppliers, users }: any) {
   const mat = rawMaterials.find((m: any) => m.id === lot.rawMaterialId)
   const sup = suppliers.find((s: any) => s.id === lot.supplierId)
   const recv = users.find((u: any) => u.id === lot.receivedBy)
+  const lotCode = lot.internalLotNumber || lot.code || '—'
   return (
-    <Modal open onClose={onClose} title={`Lote ${lot.internalLotNumber}`} size="lg"
+    <Modal open onClose={onClose} title={`Lote ${lotCode}`} size="lg"
       footer={<button onClick={onClose} className="btn-secondary">Cerrar</button>}
     >
       <div className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <div className="p-3 rounded-lg bg-surface-50 dark:bg-surface-800/50">
             <p className="text-xs text-surface-500">Lote proveedor</p>
-            <p className="font-mono font-semibold">{lot.supplierLotNumber}</p>
+            <p className="font-mono font-semibold">{lot.supplierLotNumber || '-'}</p>
           </div>
           <div className="p-3 rounded-lg bg-surface-50 dark:bg-surface-800/50">
             <p className="text-xs text-surface-500">Material</p>
@@ -415,15 +419,15 @@ function LotDetailModal({ lot, onClose, rawMaterials, suppliers, users }: any) {
           </div>
           <div className="p-3 rounded-lg bg-surface-50 dark:bg-surface-800/50">
             <p className="text-xs text-surface-500">Proveedor</p>
-            <p className="font-semibold">{sup?.name}</p>
+            <p className="font-semibold">{sup?.name || '-'}</p>
           </div>
           <div className="p-3 rounded-lg bg-surface-50 dark:bg-surface-800/50">
             <p className="text-xs text-surface-500">Cantidad</p>
-            <p className="font-semibold">{formatNumber(lot.quantityRemaining)} / {formatNumber(lot.quantityReceived)} {lot.unit}</p>
+            <p className="font-semibold">{formatNumber(lot.remaining ?? lot.quantity ?? 0)} / {formatNumber(lot.quantity ?? 0)} {lot.unit}</p>
           </div>
           <div className="p-3 rounded-lg bg-surface-50 dark:bg-surface-800/50">
             <p className="text-xs text-surface-500">Recepción</p>
-            <p className="font-semibold">{formatDate(lot.receivedDate)}</p>
+            <p className="font-semibold">{formatDate(lot.receivedAt || lot.receivedDate)}</p>
           </div>
           <div className="p-3 rounded-lg bg-surface-50 dark:bg-surface-800/50">
             <p className="text-xs text-surface-500">Caducidad</p>

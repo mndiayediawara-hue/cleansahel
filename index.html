@@ -83,12 +83,9 @@
   window.fetch = async function(...args) {
     const [url, options] = args;
     const method = (options?.method || 'GET').toUpperCase();
-
-    const isRawLot = typeof url === 'string' && url.includes('/raw-material-lots') && method === 'POST' && !url.match(/\/raw-material-lots\/[^/]+/);
     const isPkgLot = typeof url === 'string' && url.includes('/packaging-lots') && method === 'POST' && !url.match(/\/packaging-lots\/[^/]+/);
-    const isNewMaterial = typeof url === 'string' && url.includes('/raw-materials') && method === 'POST' && !url.match(/\/raw-materials\/[^/]+/);
 
-    if (isRawLot || isPkgLot) {
+    if (isPkgLot) {
       try {
         const response = await originalFetch.apply(this, args);
         if (response.ok) {
@@ -96,17 +93,10 @@
           try {
             const data = await clone.json();
             if (data?.id) {
-              // Determinar tipo
-              let type = 'raw';
-              if (isPkgLot) {
-                // Determinar si es envase o embalaje por prefijo del código
-                const code = data.code || '';
-                if (code.startsWith('EMB-')) type = 'embalaje';
-                else type = 'envase';
-              }
-              setTimeout(() => {
-                showReceptionSuccessModal(data, type);
-              }, 100);
+              let type = 'envase';
+              const code = data.code || '';
+              if (code.startsWith('EMB-')) type = 'embalaje';
+              setTimeout(() => { showReceptionSuccessModal(data, type); }, 100);
             }
           } catch (e) {}
         }
@@ -115,7 +105,6 @@
         return originalFetch.apply(this, args);
       }
     }
-
     return originalFetch.apply(this, args);
   };
 
