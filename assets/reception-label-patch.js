@@ -140,11 +140,60 @@
   function showMaterialSuccessModal(matData) {
     const existing = document.getElementById('reception-success-modal');
     if (existing) existing.remove();
-    const labelUrl = `${API_BASE}/api/reception-label/raw/${matData.id}`;
     const infoUrl = `${API_BASE}/api/reception-info/raw/${matData.id}`;
     const modal = document.createElement('div');
     modal.id = 'reception-success-modal';
     modal.style.cssText = 'position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);animation:fadeIn 0.2s ease;';
+
+    // Botón "Generar documento" - crea lote y abre etiqueta
+    const handleGenerar = async function(btn) {
+      btn.disabled = true;
+      btn.innerHTML = '<span style="font-size:18px;">⏳</span><span>Creando lote...</span>';
+      try {
+        // 1. Obtener siguiente código de lote
+        const codeRes = await fetch(`${API_BASE}/api/lots/next-code/raw`, {
+          headers: { 'Authorization': `Bearer ${getToken()}` }
+        });
+        if (!codeRes.ok) throw new Error('No se pudo obtener el código de lote');
+        const codeData = await codeRes.json();
+        const lotCode = codeData.code;
+
+        // 2. Crear el lote con los datos de la materia prima
+        const lotRes = await fetch(`${API_BASE}/api/raw-material-lots`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${getToken()}` },
+          body: JSON.stringify({
+            internalLotNumber: lotCode,
+            supplierLotNumber: '',
+            rawMaterialId: matData.id,
+            rawMaterialName: matData.name,
+            unit: matData.unit || 'L',
+            quantityReceived: matData.stock || 0,
+            quantityRemaining: matData.stock || 0,
+            receivedDate: new Date().toISOString().slice(0, 10),
+            expiryDate: matData.expiryDate || '',
+            status: 'activo',
+            certificates: [],
+            notes: `Lote creado automáticamente al registrar materia prima ${matData.code}`
+          })
+        });
+        if (!lotRes.ok) throw new Error('No se pudo crear el lote');
+        const lot = await lotRes.json();
+
+        // 3. Abrir etiqueta
+        document.getElementById('reception-success-modal').remove();
+        window.open(`${API_BASE}/api/reception-label/raw/${lot.id}?print=1`, '_blank');
+      } catch(e) {
+        alert('Error al crear lote: ' + e.message);
+        btn.disabled = false;
+        btn.innerHTML = '<span style="font-size:22px;">🖨️</span><span>Generar documento (etiqueta 4×6)</span>';
+      }
+    };
+
+    const btnHtml = `<button class="rsm-btn" id="gen-doc-btn" onclick="window.__genDoc && window.__genDoc(this)" style="width:100%;padding:18px;border:none;border-radius:12px;background:linear-gradient(135deg,#1e3a8a 0%,#2563eb 100%);color:white;font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:12px;box-shadow:0 4px 12px rgba(30,58,138,.3);">
+      <span style="font-size:22px;">🖨️</span><span>Generar documento (etiqueta 4×6)</span>
+    </button>`;
+
     modal.innerHTML = `
       <style>@keyframes fadeIn{from{opacity:0}to{opacity:1}}@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}.rsm-box{animation:slideUp .3s ease}.rsm-btn{transition:all .15s}.rsm-btn:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(0,0,0,.2)}.rsm-btn:active{transform:translateY(0)}</style>
       <div class="rsm-box" style="background:white;border-radius:20px;max-width:560px;width:92%;box-shadow:0 25px 50px rgba(0,0,0,.3);overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
@@ -158,10 +207,7 @@
             La materia prima se ha guardado correctamente.<br>
             <strong>Genera e imprime la etiqueta</strong> para colocarla en el barril o envase.
           </p>
-          <button class="rsm-btn" onclick="window.open('${labelUrl}?print=1','_blank');document.getElementById('reception-success-modal').remove();" style="width:100%;padding:18px;border:none;border-radius:12px;background:linear-gradient(135deg,#1e3a8a 0%,#2563eb 100%);color:white;font-size:16px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:12px;box-shadow:0 4px 12px rgba(30,58,138,.3);">
-            <span style="font-size:22px;">🖨️</span>
-            <span>Generar documento (etiqueta 4×6)</span>
-          </button>
+          ${btnHtml}
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
             <button class="rsm-btn" onclick="window.open('${infoUrl}','_blank');document.getElementById('reception-success-modal').remove();" style="padding:12px;border:1px solid #d1d5db;border-radius:10px;background:white;color:#1f2937;font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;">
               <span>📱</span><span>Ver QR</span>
@@ -174,6 +220,15 @@
         </div>
       </div>
     `;
+
+    // Conectar el botón con la función async
+    setTimeout(() => {
+      const btn = document.getElementById('gen-doc-btn');
+      if (btn) {
+        window.__genDoc = handleGenerar;
+      }
+    }, 50);
+
     modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
     document.body.appendChild(modal);
   }
