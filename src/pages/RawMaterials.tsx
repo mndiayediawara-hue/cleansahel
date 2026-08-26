@@ -1,5 +1,5 @@
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useData } from '@/contexts/DataContext'
 import { useAuth } from '@/contexts/AuthContext'
 import { api } from '@/lib/api'
@@ -7,7 +7,8 @@ import { PageHeader, DataTable, EmptyState } from '@/components/ui/Common'
 import { Modal, ConfirmDialog } from '@/components/ui/Modal'
 import { StatCard } from '@/components/ui/StatCard'
 import { formatCurrency, formatNumber, formatDate, exportCSV } from '@/lib/utils'
-import { Beaker, AlertTriangle, DollarSign, Plus, Download, Search, Truck, Filter } from 'lucide-react'
+import { Beaker, AlertTriangle, DollarSign, Plus, Download, Search, Truck, Filter, Printer } from 'lucide-react'
+import QRCode from 'qrcode'
 import type { RawMaterial } from '@/types'
 
 const CATEGORIES = [
@@ -31,6 +32,7 @@ export default function RawMaterials() {
   const { rawMaterials, suppliers, refreshOne } = useData()
   const { can } = useAuth()
   const [editing, setEditing] = useState<any | null>(null)
+  const [labelData, setLabelData] = useState<any | null>(null)
   const [entryFor, setEntryFor] = useState<RawMaterial | null>(null)
   const [confirm, setConfirm] = useState<RawMaterial | null>(null)
   const [saving, setSaving] = useState(false)
@@ -48,7 +50,6 @@ export default function RawMaterials() {
     if (!editing) return
     setSaving(true)
     try {
-      // Si el usuario escribió un nombre de proveedor que no existe, lo creamos primero
       let supplierId = editing.supplierId || ''
       if (editing.supplierName && !supplierId) {
         try {
@@ -58,10 +59,16 @@ export default function RawMaterials() {
         } catch {}
       }
       const payload = { ...editing, supplierId }
-      if (editing.id) await api.put(`/raw-materials/${editing.id}`, payload)
-      else await api.post('/raw-materials', payload)
-      await refreshOne('rawMaterials')
-      setEditing(null)
+      if (editing.id) {
+        await api.put(`/raw-materials/${editing.id}`, payload)
+        await refreshOne('rawMaterials')
+        setEditing(null)
+      } else {
+        const created = await api.post('/raw-materials', payload) as any
+        await refreshOne('rawMaterials')
+        setEditing(null)
+        setLabelData({ ...editing, id: created.id, supplierId })
+      }
     } catch (e: any) { alert(e.message) }
     finally { setSaving(false) }
   }
@@ -149,7 +156,7 @@ export default function RawMaterials() {
       {editing && (
         <Modal open={!!editing} onClose={() => setEditing(null)} title={editing.id ? 'Editar materia prima' : 'Nueva materia prima'} size="lg"
           footer={<>
-            <button onClick={() => setEditing(null)} className="btn-secondary">Cancelar</button>
+            <button onClick={() => setEditing(null)} className="btn-secondary">Cerrar</button>
             <button onClick={save} disabled={saving} className="btn-primary">{saving ? 'Guardando...' : 'Guardar'}</button>
           </>}
         >
@@ -196,6 +203,8 @@ export default function RawMaterials() {
       )}
 
       {entryFor && <EntryModal material={entryFor} onClose={() => setEntryFor(null)} onSaved={() => { setEntryFor(null); refreshOne('rawMaterials') }} />}
+
+      {labelData && <PrintMaterialLabelModal material={labelData} suppliers={suppliers} onClose={() => setLabelData(null)} />}
 
       <ConfirmDialog
         open={!!confirm}
@@ -248,6 +257,72 @@ function EntryModal({ material, onClose, onSaved }: { material: RawMaterial; onC
         <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 text-sm text-emerald-800 dark:text-emerald-300">
           <p>Stock resultante: <strong>{formatNumber(material.stock + quantity)} {material.unit}</strong> · Valor: <strong>{formatCurrency((material.stock + quantity) * price)}</strong></p>
         </div>
+      </div>
+    </Modal>
+  )
+}
+
+function PrintMaterialLabelModal({ material, suppliers, onClose }: { material: any; suppliers: any[]; onClose: () => void }) {
+  const [qrUrl, setQrUrl] = useState('')
+  const sup = suppliers.find((s: any) => s.id === material.supplierId)
+  const catLabel = CATEGORIES.find(c => c.value === material.category)?.label || material.category
+
+  useEffect(() => {
+    const qrPayload = JSON.stringify({ type: 'rm', id: material.id, code: material.code, name: material.name, cat: catLabel })
+    QRCode.toDataURL(qrPayload, { width: 120, margin: 1, errorCorrectionLevel: 'M' })
+      .then(setQrUrl)
+      .catch(() => setQrUrl(''))
+  }, [material.id])
+
+  const barcode = (material.code || '').split('').map((c: string, i: number) => (c.charCodeAt(0) % 4 === 0 ? 2 : 1) + (i % 2)).join(' ')
+
+  return (
+    <Modal open onClose={onClose} title="Etiqueta de materia prima" size="md"
+      footer={<>
+        <button onClick={onClose} className="btn-secondary no-print">Cerrar</button>
+        <button onClick={() => window.print()} className="btn-primary no-print"><Printer className="w-4 h-4" /> Imprimir</button>
+      </>}
+    >
+      <div className="space-y-3 no-print">
+        <p className="text-xs text-surface-500">Etiqueta con QR y código de barras para pegar en el barril o envase.</p>
+      </div>
+      <div className="space-y-3 printable">
+        <div className="border-2 border-dashed border-surface-300 dark:border-surface-700 rounded-xl p-5 bg-white text-black print:border-solid print:border-black" id="material-label-printable">
+          <div className="text-center mb-3 pb-2 border-b border-gray-300">
+            <p className="text-[9px] uppercase font-bold tracking-widest text-gray-500">CleanSahel · Materia Prima</p>
+          </div>
+          <div className="space-y-2 text-sm">
+            <div>
+              <p className="text-[9px] uppercase text-gray-500">Nombre</p>
+              <p className="text-base font-bold leading-tight">{material.name || '-'}</p>
+              <p className="text-[10px] text-gray-600 font-mono">{material.code || ''}</p>
+            </div>
+            <div className="border-t border-gray-300 py-2 my-2">
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+                <div><span className="text-gray-500">Categoría:</span> {catLabel}</div>
+                <div><span className="text-gray-500">Unidad:</span> {material.unit}</div>
+                <div><span className="text-gray-500">Stock mín:</span> {formatNumber(material.minStock || 0)}</div>
+                <div><span className="text-gray-500">Stock máx:</span> {formatNumber(material.maxStock || 0)}</div>
+                <div><span className="text-gray-500">Ubicación:</span> {material.location || '-'}</div>
+                <div><span className="text-gray-500">Proveedor:</span> {sup?.name || material.supplierName || '-'}</div>
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <div className="flex-1">
+                <div className="flex items-end h-9 gap-px" style={{ background: 'repeating-linear-gradient(90deg, #000 ' + barcode + ', transparent ' + barcode + ')' }} />
+                <p className="text-[9px] font-mono text-center mt-1 text-gray-600">{material.code}</p>
+              </div>
+              <div className="shrink-0">
+                {qrUrl ? (
+                  <img src={qrUrl} alt="QR" className="w-[90px] h-[90px]" />
+                ) : (
+                  <div className="w-[90px] h-[90px] bg-surface-100 border border-gray-300 rounded grid place-items-center text-[8px] text-gray-400 text-center">Generando QR...</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+        <p className="text-[10px] text-surface-500 text-center no-print">Imprime en papel adhesivo y pégalo en el envase. Escanea el QR para ver la info del producto.</p>
       </div>
     </Modal>
   )
