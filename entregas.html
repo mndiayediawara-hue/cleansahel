@@ -500,7 +500,7 @@ const API = (function() {
   if (saved) return saved
   const host = window.location.hostname
   if (host === 'localhost' || host === '127.0.0.1') return 'http://localhost:3001/api'
-  return 'https://cleansahel.up.railway.app/api'
+  return 'https://cleansahel-production.up.railway.app/api'
 })()
 const TOKEN = sessionStorage.getItem('token') || localStorage.getItem('token') || ''
 const USER = JSON.parse(sessionStorage.getItem('user') || '{}')
