@@ -43,6 +43,7 @@ export default function Dashboard() {
   const { t, formatMoney } = useI18n()
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     load()
@@ -52,14 +53,25 @@ export default function Dashboard() {
 
   async function load(silent = false) {
     try {
-      if (!silent) setLoading(true)
+      if (!silent) { setLoading(true); setError(null) }
       const d = await api.get<DashboardData>('/dashboard')
       setData(d)
+    } catch (e: any) {
+      setError(e?.message || 'Error al cargar el dashboard')
     } finally { setLoading(false) }
   }
 
   if (loading && !data) {
     return <div className="space-y-6">{[1,2,3].map(i => <div key={i} className="card p-6 animate-pulse h-32" />)}</div>
+  }
+  if (error && !data) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-center">
+        <p className="text-red-500 font-semibold mb-2">Error al cargar el dashboard</p>
+        <p className="text-surface-500 text-sm mb-4">{error}</p>
+        <button onClick={() => load()} className="btn btn-primary">Reintentar</button>
+      </div>
+    )
   }
   if (!data) return null
 
