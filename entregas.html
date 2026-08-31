@@ -274,6 +274,13 @@
       <button class="btn btn-primary" id="login-btn" onclick="doLogin()" style="width:100%; padding:14px; font-size:16px; border:none; border-radius:12px; cursor:pointer;">
         Entrar
       </button>
+      <div style="margin-top:14px; text-align:center;">
+        <span style="color:var(--text-3); font-size:12px;">¿Sin cuenta?</span>
+        <button onclick="enterDemoMode()" style="background:none; border:none; cursor:pointer; color:var(--primary); font-size:13px; font-weight:700; padding:0 0 0 4px;">Ver demo</button>
+        <div id="demo-banner" style="display:none; margin-top:8px; padding:8px 10px; background:var(--amber-bg); border-radius:8px; font-size:12px; color:var(--amber); font-weight:600;">
+          ⚠️ Modo demo — datos de prueba
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -515,6 +522,43 @@ function saveServerUrl() {
   location.reload()
 }
 
+// ── Demo mode ─────────────────────────────────────────────────
+var DEMO_MODE = new URLSearchParams(window.location.search).has('demo')
+
+var DEMO_DATA = {
+  user: { id: 'u-admin', username: 'admin', fullName: 'Administrador', role: 'admin', email: 'admin@cleansahel.com' },
+  customers: [
+    { id: 'c1', name: 'Mamadou Diallo', code: 'C001', address: 'Rue 12, Bamako', phone: '+223 76 12 34 56', pendingCount: 3, deliveredCount: 12, pendingAmount: 45000 },
+    { id: 'c2', name: 'Aïssata Koné', code: 'C002', address: 'Avenue de la Paix, Bamako', phone: '+223 76 98 76 54', pendingCount: 1, deliveredCount: 8, pendingAmount: 18000 },
+    { id: 'c3', name: 'Ousmane Touré', code: 'C003', address: 'Quartier Hamdallaye, Bamako', phone: '+223 76 11 22 33', pendingCount: 5, deliveredCount: 20, pendingAmount: 95000 },
+    { id: 'c4', name: 'Fatou Sangaré', code: 'C004', address: 'Rue Makererenn, Bamako', phone: '+223 76 44 55 66', pendingCount: 2, deliveredCount: 6, pendingAmount: 32000 }
+  ],
+  orders: [
+    { id: 'o1', customer_id: 'c1', order_number: 'ORD-001', items: 3, amount: 15000, status: 'pending', created_at: new Date(Date.now()-86400000*2).toISOString() },
+    { id: 'o2', customer_id: 'c1', order_number: 'ORD-002', items: 2, amount: 18000, status: 'pending', created_at: new Date(Date.now()-86400000).toISOString() },
+    { id: 'o3', customer_id: 'c1', order_number: 'ORD-003', items: 4, amount: 12000, status: 'pending', created_at: new Date().toISOString() },
+    { id: 'o4', customer_id: 'c2', order_number: 'ORD-004', items: 1, amount: 18000, status: 'pending', created_at: new Date(Date.now()-86400000).toISOString() },
+    { id: 'o5', customer_id: 'c3', order_number: 'ORD-005', items: 6, amount: 25000, status: 'pending', created_at: new Date(Date.now()-86400000*3).toISOString() },
+    { id: 'o6', customer_id: 'c3', order_number: 'ORD-006', items: 3, amount: 35000, status: 'pending', created_at: new Date(Date.now()-86400000*2).toISOString() },
+    { id: 'o7', customer_id: 'c3', order_number: 'ORD-007', items: 2, amount: 20000, status: 'pending', created_at: new Date().toISOString() },
+    { id: 'o8', customer_id: 'c4', order_number: 'ORD-008', items: 4, amount: 12000, status: 'pending', created_at: new Date(Date.now()-86400000).toISOString() }
+  ],
+  history: [
+    { id: 'h1', customer_name: 'Mamadou Diallo', order_number: 'ORD-0001', amount: 15000, status: 'delivered', delivered_by: 'Moussa Diallo', delivered_at: new Date(Date.now()-86400000*1).toISOString(), notes: '' },
+    { id: 'h2', customer_name: 'Aïssata Koné', order_number: 'ORD-0002', amount: 22000, status: 'delivered', delivered_by: 'Moussa Diallo', delivered_at: new Date(Date.now()-86400000*2).toISOString(), notes: 'Entregado en mano' },
+    { id: 'h3', customer_name: 'Ousmane Touré', order_number: 'ORD-0003', amount: 18000, status: 'delivered', delivered_by: 'Fanta Samaké', delivered_at: new Date(Date.now()-86400000*3).toISOString(), notes: '' },
+    { id: 'h4', customer_name: 'Fatou Sangaré', order_number: 'ORD-0004', amount: 9000, status: 'delivered', delivered_by: 'Moussa Diallo', delivered_at: new Date(Date.now()-86400000*4).toISOString(), notes: '' },
+    { id: 'h5', customer_name: 'Mamadou Diallo', order_number: 'ORD-0005', amount: 25000, status: 'delivered', delivered_by: 'Moussa Diallo', delivered_at: new Date(Date.now()-86400000*5).toISOString(), notes: 'Cliente satisfecho' }
+  ],
+  users: [
+    { id: 'u-admin', username: 'admin', fullName: 'Administrador', role: 'admin', email: 'admin@cleansahel.com', active: true },
+    { id: 'u-prod', username: 'produccion', fullName: 'Operario Producción', role: 'produccion', email: 'produccion@cleansahel.com', active: true },
+    { id: 'u-cont', username: 'contabilidad', fullName: 'Operario Contabilidad', role: 'contabilidad', email: 'contabilidad@cleansahel.com', active: true },
+    { id: 'u-rep1', username: 'moussa', fullName: 'Moussa Diallo', role: 'repartidor', email: 'moussa@cleansahel.com', active: true },
+    { id: 'u-rep2', username: 'fanta', fullName: 'Fanta Samaké', role: 'repartidor', email: 'fanta@cleansahel.com', active: true }
+  ]
+}
+
 // ── Login overlay ──────────────────────────────────────────────
 function showLogin() {
   document.getElementById('login-screen').style.display = 'flex'
@@ -527,6 +571,7 @@ function showApp() {
   if (isAdmin()) {
     document.querySelectorAll('.nav-btn#nav-users-btn').forEach(function(b) { b.style.display = 'flex' })
   }
+  document.getElementById('header-username').textContent = (window.USER && (window.USER.fullName || window.USER.username)) || ''
 }
 function doLogin() {
   var u = document.getElementById('login-username').value.trim()
@@ -568,7 +613,80 @@ function doLogout() {
   sessionStorage.removeItem('user')
   window.USER = {}
   window.TOKEN = ''
+  DEMO_MODE = false
   location.reload()
+}
+
+function enterDemoMode() {
+  DEMO_MODE = true
+  window.USER = DEMO_DATA.user
+  window.TOKEN = 'demo-token'
+  sessionStorage.setItem('token', 'demo-token')
+  sessionStorage.setItem('user', JSON.stringify(DEMO_DATA.user))
+  document.getElementById('demo-banner').style.display = 'block'
+  showApp()
+  showTab('scanner')
+  document.getElementById('header-username').textContent = DEMO_DATA.user.fullName
+  // Hide QR scanner in demo (no camera)
+  var reader = document.getElementById('qr-reader')
+  if (reader) reader.style.display = 'none'
+  var hint = document.querySelector('.scanner-hint')
+  if (hint) hint.textContent = 'Introduce el código del cliente manualmente'
+}
+
+// ── Demo mode: override apiFetch ───────────────────────────────
+var _origApiFetch = null
+function apiFetch(path, opts) {
+  if (DEMO_MODE) return demoFetch(path, opts)
+  return fetch(API + path, Object.assign({
+    headers: Object.assign({
+      'Content-Type': 'application/json',
+      'Authorization': TOKEN ? 'Bearer ' + TOKEN : ''
+    }, (opts && opts.headers) || {})
+  }, opts)).then(function(r) {
+    if (!r.ok) return r.json().catch(function() { return {} }).then(function(d) {
+      throw Object.assign(new Error(d.error || 'Error ' + r.status), { status: r.status })
+    })
+    return r.json()
+  }).catch(function(e) {
+    if (e.status) throw e
+    throw Object.assign(new Error('No se puede conectar al servidor.'), { network: true })
+  })
+}
+
+function demoFetch(path, opts) {
+  return new Promise(function(resolve, reject) {
+    setTimeout(function() {
+      var method = (opts && opts.method) || 'GET'
+      var body = opts && opts.body || {}
+      if (method === 'POST' && typeof body === 'object') {
+        // handled below
+      }
+      // Route matching
+      if (path.match(/^\/delivery\/lookup\//)) {
+        var code = path.replace('/delivery/lookup/', '')
+        var customer = DEMO_DATA.customers.find(function(c) { return c.code === code || c.name.toLowerCase().includes(code.toLowerCase()) }) || DEMO_DATA.customers[0]
+        resolve({ customer: customer, pendingOrders: DEMO_DATA.orders.filter(function(o) { return o.customer_id === customer.id && o.status === 'pending' }), stats: { pendingCount: customer.pendingCount, deliveredCount: customer.deliveredCount, pendingAmount: customer.pendingAmount } })
+      } else if (path === '/delivery-history') {
+        resolve(DEMO_DATA.history)
+      } else if (path === '/deliveries/repartidores') {
+        resolve([
+          { username: 'moussa', fullName: 'Moussa Diallo', total: 12 },
+          { username: 'fanta', fullName: 'Fanta Samaké', total: 8 }
+        ])
+      } else if (path === '/users') {
+        resolve(DEMO_DATA.users)
+      } else if (path.match(/^\/users\/.+/) && method === 'PUT') {
+        resolve({ ok: true })
+      } else if (path.match(/^\/users\/.+/) && method === 'DELETE') {
+        resolve({ ok: true })
+      } else if (method === 'POST' && path === '/users') {
+        resolve({ id: 'u-new', username: body.username || 'newuser', fullName: body.fullName || 'Nuevo Usuario', role: body.role || 'repartidor', email: body.email || '', active: true })
+      } else {
+        resolve({})
+      }
+    }, 300)
+  })
 }
 
 // ══════════════════════════════════════════════════════════════
