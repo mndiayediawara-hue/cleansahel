@@ -6,7 +6,7 @@ const LOGO_ALT = 'SAHEL'
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, Beaker, Package, Boxes, ChefHat, Factory, Users, ShoppingCart, ShoppingBag, Receipt,
-  TrendingUp, FileBarChart, UserCog, History, Settings, Bell, Layers, Search, ScanLine, Hash, AlertTriangle, Truck
+  TrendingUp, FileBarChart, UserCog, History, Settings, Bell, Layers, Search, ScanLine, Hash, AlertTriangle, Truck, BarChart3
 } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
 import { cn } from '@/lib/utils'
@@ -70,7 +70,8 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
     {
       title: 'ENTREGAS',
       items: [
-        { to: '/delivery-stats', label: 'Estadísticas', icon: Truck, permission: 'entregas.stats' },
+        { to: '/delivery-stats', label: 'Estadísticas', icon: BarChart3, permission: 'entregas.stats' },
+        { to: '/delivery-history', label: 'Historial', icon: History, permission: 'entregas.history' },
       ],
     },
     {

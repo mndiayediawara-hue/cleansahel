@@ -526,6 +526,98 @@ router.post('/delivery/:orderId', auth, requirePermission('entregas', 'register'
   }
 })
 
+// Helper: estadísticas diarias por repartidor (últimos 14 días)
+function buildUserDailyStats(allDelivered, now) {
+  const result = {}
+  for (const o of allDelivered) {
+    const key = o.delivered_by || 'Desconocido'
+    if (!result[key]) result[key] = {}
+    const day = new Date(o.delivered_at).toISOString().slice(0, 10)
+    result[key][day] = (result[key][day] || 0) + 1
+  }
+  // Rellenar los últimos 14 días aunque sean 0
+  const days = []
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(now)
+    d.setDate(d.getDate() - i)
+    days.push(d.toISOString().slice(0, 10))
+  }
+  for (const user of Object.keys(result)) {
+    for (const day of days) {
+      if (!result[user][day]) result[user][day] = 0
+    }
+  }
+  return { days, users: result }
+}
+
+// GET /api/delivery-history — Historial completo de entregas con filtros
+router.get('/delivery-history', auth, requirePermission('entregas', 'history'), (req, res) => {
+  try {
+    const { deliveredBy, customer, from, to, page = '1', limit = '50' } = req.query
+    const pageNum = parseInt(page, 10)
+    const limitNum = Math.min(parseInt(limit, 10), 200)
+    const offset = (pageNum - 1) * limitNum
+
+    let where = "WHERE delivered_at IS NOT NULL AND delivered_at != ''"
+    const params = []
+
+    if (deliveredBy) {
+      where += ` AND delivered_by LIKE ?`
+      params.push(`%${deliveredBy}%`)
+    }
+    if (customer) {
+      where += ` AND customer_name LIKE ?`
+      params.push(`%${customer}%`)
+    }
+    if (from) {
+      where += ` AND delivered_at >= ?`
+      params.push(from)
+    }
+    if (to) {
+      where += ` AND delivered_at <= ?`
+      params.push(to + 'T23:59:59')
+    }
+
+    // Total count
+    const countRow = db.prepare(`SELECT COUNT(*) as total FROM orders ${where}`).get(...params)
+    const total = countRow?.total || 0
+
+    // Data with pagination
+    const rows = db.prepare(`
+      SELECT id, number, customer_id, customer_name, total, delivered_at, delivered_by, items_json
+      FROM orders ${where}
+      ORDER BY delivered_at DESC
+      LIMIT ? OFFSET ?
+    `).all(...params, limitNum, offset)
+
+    const items = rows.map(o => {
+      let itemCount = 0
+      try { itemCount = JSON.parse(o.items_json || '[]').reduce((s, i) => s + (i.quantity || 0), 0) } catch {}
+      return {
+        id: o.id,
+        orderNumber: o.number,
+        customerId: o.customer_id,
+        customerName: o.customer_name || '—',
+        total: o.total,
+        itemCount,
+        deliveredAt: o.delivered_at,
+        deliveredBy: o.delivered_by,
+      }
+    })
+
+    res.json({
+      items,
+      total,
+      page: pageNum,
+      limit: limitNum,
+      pages: Math.ceil(total / limitNum),
+    })
+  } catch (e) {
+    console.error('Error GET /delivery-history:', e.message)
+    res.status(500).json({ error: e.message })
+  }
+})
+
 // GET /api/delivery-stats — Estadísticas de entregas por usuario
 router.get('/delivery-stats', auth, requirePermission('entregas', 'stats'), (req, res) => {
   try {
@@ -618,6 +710,8 @@ router.get('/delivery-stats', auth, requirePermission('entregas', 'stats'), (req
       byUser,
       byDay: thirtyDays,
       recent,
+      // Estadísticas detalladas por repartidor: cada día de la última semana
+      userDailyStats: buildUserDailyStats(allDelivered, now),
     })
   } catch (e) {
     console.error('Error GET /delivery-stats:', e.message)

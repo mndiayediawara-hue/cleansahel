@@ -27,6 +27,7 @@ import Traceability from './pages/Traceability'
 import SearchPage from './pages/Search'
 import Scanner from './pages/Scanner'
 import DeliveryStats from './pages/DeliveryStats'
+import DeliveryHistory from './pages/DeliveryHistory'
 
 function ProtectedRoute({ children, allow }: { children: React.ReactNode; allow?: string[] }) {
   const { user, loading } = useAuth()
@@ -65,6 +66,7 @@ export default function App() {
       <Route path="/search" element={<ProtectedRoute><SearchPage /></ProtectedRoute>} />
       <Route path="/scanner" element={<ProtectedRoute><Scanner /></ProtectedRoute>} />
       <Route path="/delivery-stats" element={<ProtectedRoute><DeliveryStats /></ProtectedRoute>} />
+      <Route path="/delivery-history" element={<ProtectedRoute><DeliveryHistory /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )
