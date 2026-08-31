@@ -253,7 +253,8 @@
 
 <!-- ═══════════════════════════════════ LOGIN SCREEN ═══════════════════════════════════ -->
 <div id="login-screen" style="display:none; min-height:100vh; background:var(--bg); flex-direction:column; align-items:center; justify-content:center; padding:24px;">
-  <div style="text-align:center; margin-bottom:32px;">
+  <div style="text-align:center; margin-bottom:32px; position:relative;">
+    <button onclick="openServerSettings()" style="position:absolute; top:0; right:0; background:none; border:none; cursor:pointer; font-size:22px; padding:4px;" title="Configurar servidor">⚙️</button>
     <div style="font-size:56px; margin-bottom:8px;">🚚</div>
     <div style="font-size:24px; font-weight:800; color:var(--text);">CleanSahel</div>
     <div style="font-size:13px; color:var(--text-2); margin-top:4px;">App de entregas</div>
@@ -486,14 +487,33 @@
 // ══════════════════════════════════════════════════════════════
 // Railway backend — swap URL here when backend URL changes
 const API = (function() {
+  const params = new URLSearchParams(window.location.search)
+  if (params.has('api')) return params.get('api').replace(/\/$/, '') + '/api'
+  const saved = localStorage.getItem('cleansahel_api')
+  if (saved) return saved
   const host = window.location.hostname
-  if (host.includes('railway') || host.includes('onrender')) return window.location.origin + '/api'
   if (host === 'localhost' || host === '127.0.0.1') return 'http://localhost:3001/api'
-  // Default: point to Railway production backend
   return 'https://cleansahel.up.railway.app/api'
 })()
 const TOKEN = sessionStorage.getItem('token') || localStorage.getItem('token') || ''
 const USER = JSON.parse(sessionStorage.getItem('user') || '{}')
+
+// ── Server settings ────────────────────────────────────────────
+function openServerSettings() {
+  var s = document.getElementById('server-settings')
+  if (!s) return
+  document.getElementById('server-url-input').value = API
+  s.classList.add('active')
+}
+function closeServerSettings() {
+  document.getElementById('server-settings').classList.remove('active')
+}
+function saveServerUrl() {
+  var url = document.getElementById('server-url-input').value.trim().replace(/\/$/, '')
+  if (!url) return
+  localStorage.setItem('cleansahel_api', url)
+  location.reload()
+}
 
 // ── Login overlay ──────────────────────────────────────────────
 function showLogin() {
@@ -1146,6 +1166,26 @@ document.addEventListener('DOMContentLoaded', function() {
     <div class="modal-actions">
       <button class="btn btn-secondary" onclick="closeDeleteModal()">Cancelar</button>
       <button class="btn" style="flex:1; padding:14px; border:none; border-radius:12px; font-size:15px; font-weight:700; background:var(--red); color:white; cursor:pointer;" onclick="confirmDeleteUser()">🗑️ Eliminar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ SERVER SETTINGS MODAL ═══════════════════════════════════ -->
+<div class="modal-overlay" id="server-settings">
+  <div class="modal-sheet" style="max-width:400px; margin:0 auto;">
+    <div class="modal-title">⚙️ Servidor</div>
+    <div class="modal-subtitle">Dirección del servidor API</div>
+    <div class="form-group" style="margin-top:16px;">
+      <label class="form-label">URL del servidor</label>
+      <input type="url" class="form-input" id="server-url-input" placeholder="https://tu-servidor.com/api" style="font-size:13px;">
+    </div>
+    <div style="font-size:12px; color:var(--text-2); margin-bottom:14px; padding:8px; background:var(--surface-2); border-radius:8px;">
+      Dejar en blanco para usar el servidor por defecto (Railway).<br>
+      Ejemplo local: <strong>http://localhost:3001</strong>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeServerSettings()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveServerUrl()">Guardar y recargar</button>
     </div>
   </div>
 </div>
