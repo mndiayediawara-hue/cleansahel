@@ -3032,8 +3032,8 @@ router.get('/dashboard', auth, (_req, res) => {
     .map(o => ({ id: o.id, number: o.number, customer: o.customer_name, total: o.total, status: o.status, createdAt: o.created_at }))
   const recentPurchases = db.prepare(`SELECT p.*, s.name as supplier_name FROM purchases p LEFT JOIN suppliers s ON s.id = p.supplier_id ORDER BY p.date DESC LIMIT 5`).all()
     .map(p => ({ id: p.id, number: p.number, supplier: p.supplier_name, total: p.total, date: p.date }))
-  const recentLots = db.prepare(`SELECT l.*, p.name as product_name FROM lots l LEFT JOIN products p ON p.id = l.product_id ORDER BY l.received_at DESC LIMIT 5`).all()
-    .map(l => ({ id: l.id, lotNumber: l.code || l.lot_number, product: l.product_name, quantity: l.quantity || l.quantity_received, status: l.status, producedAt: l.received_at || l.produced_at }))
+  const recentLots = db.prepare(`SELECT l.*, p.name as product_name FROM lots l LEFT JOIN products p ON p.id = l.product_id ORDER BY l.produced_at DESC LIMIT 5`).all()
+    .map(l => ({ id: l.id, lotNumber: l.code || l.lot_number, product: l.product_name, quantity: l.quantity || l.quantity_received, status: l.status, producedAt: l.produced_at }))
   const unreadNotifs = db.prepare("SELECT COUNT(*) c FROM notifications WHERE read = 0").get().c
 
   res.json({
