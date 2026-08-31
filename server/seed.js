@@ -42,17 +42,21 @@ export function seed({ force = false } = {}) {
   const produccionPerms = {"home":{"view":true,"create":false,"edit":false,"delete":false},"raw_materials":{"view":true,"create":true,"edit":true,"delete":false},"recipes":{"view":true,"create":true,"edit":true,"delete":false},"production":{"view":true,"create":true,"edit":true,"delete":false},"lots":{"view":true,"create":true,"edit":true,"delete":false},"packaging":{"view":true,"create":true,"edit":true,"delete":false},"recalls":{"view":true,"create":true,"edit":true,"delete":false}}
   const contabilidadPerms = {"home":{"view":true,"create":false,"edit":false,"delete":false},"customers":{"view":true,"create":true,"edit":true,"delete":false},"sales":{"view":true,"create":true,"edit":true,"delete":false},"purchases":{"view":true,"create":true,"edit":true,"delete":false},"expenses":{"view":true,"create":true,"edit":true,"delete":false},"reports":{"view":true,"create":false,"edit":false,"delete":false},"inventory":{"view":true,"create":false,"edit":false,"delete":false},"suppliers":{"view":true,"create":true,"edit":true,"delete":false}}
 
+  const repartidorPerms = {"home":{"view":true,"create":false,"edit":false,"delete":false},"entregas":{"view":true,"create":true,"edit":false,"delete":false,"history":true,"stats":true},"orders":{"view":true,"create":true,"edit":true,"delete":false},"customers":{"view":true,"create":false,"edit":false,"delete":false},"sales":{"view":false,"create":false,"edit":false,"delete":false}}
+
   const users = [
     { id: 'u-admin', username: 'admin', password: hashPassword('ADMIN_PASSWORD', '41668585Z'), fullName: 'Administrador', email: 'admin@cleansahel.com', role: 'admin', permissions: allPerms },
     { id: 'u-prod', username: 'produccion', password: hashPassword('PRODUCCION_PASSWORD', 'produccion2024'), fullName: 'Operario Producción', email: 'produccion@cleansahel.com', role: 'produccion', permissions: produccionPerms },
     { id: 'u-cont', username: 'contabilidad', password: hashPassword('CONTABILIDAD_PASSWORD', 'contabilidad2024'), fullName: 'Operario Contabilidad', email: 'contabilidad@cleansahel.com', role: 'contabilidad', permissions: contabilidadPerms },
+    { id: 'u-rep1', username: 'moussa', password: hashPassword('REP1_PASSWORD', 'moussa123'), fullName: 'Moussa Diallo', email: 'moussa@cleansahel.com', role: 'repartidor', permissions: repartidorPerms },
+    { id: 'u-rep2', username: 'fanta', password: hashPassword('REP2_PASSWORD', 'fanta123'), fullName: 'Fanta Samaké', email: 'fanta@cleansahel.com', role: 'repartidor', permissions: repartidorPerms },
   ]
   
   const insUser = db.prepare(`INSERT OR REPLACE INTO users (id, username, password_hash, full_name, email, role, active, created_at, last_login, permissions, failed_attempts) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 0)`)
   for (const u of users) {
     insUser.run(u.id, u.username, u.password, u.fullName, u.email, u.role, monthsAgo(12), null, JSON.stringify(u.permissions || null))
   }
-  console.log(`✓ 3 usuarios esenciales (admin/produccion/contabilidad) asegurados`)
+  console.log(`✓ ${users.length} usuarios esenciales (admin/produccion/contabilidad/repartidores) asegurados`)
 
   // ========== MATERIAS PRIMAS (idempotente) ==========
   const raws = [
@@ -184,15 +188,50 @@ export function seed({ force = false } = {}) {
     console.log('✓ Proveedor de ejemplo creado')
   }
   
-  // ========== CLIENTE DE EJEMPLO (idempotente) ==========
-  const existingCustomers = db.prepare('SELECT COUNT(*) as c FROM customers').get().c
-  if (existingCustomers === 0) {
-    const customerId = uid('c-')
-    db.prepare(`INSERT INTO customers (id, code, name, company, cif, address, city, country, phone, email, contact, notes, total_purchases, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,0,?)`)
-      .run(customerId, 'CL-00001', 'Supermarché Djoliba', 'Djoliba SARL', 'ML11223344', 'Av. de la Liberté 45', 'Bamako', 'Mali', '+223 70 11 22 33', 'compras@djoliba.ml', 'Moussa Traoré', 'Cliente VIP', new Date().toISOString())
-    console.log('✓ Cliente de ejemplo creado (CL-00001)')
+  // ========== CLIENTES DE PRUEBA PARA ENTREGAS (idempotente) ==========
+  const testCustomers = [
+    { code: 'CL-00001', name: 'Supermarché Djoliba', address: 'Av. de la Liberté 45', phone: '+223 70 11 22 33', city: 'Bamako' },
+    { code: 'CL-00002', name: 'Hotel Liberté', address: 'Rue de la Liberté 12', phone: '+223 70 44 55 66', city: 'Bamako' },
+    { code: 'CL-00003', name: 'Pharmacie Centrale', address: 'Bd de l\'Indépendance 8', phone: '+223 70 77 88 99', city: 'Bamako' },
+    { code: 'CL-00004', name: 'Restaurant Le Sahel', address: 'Av. de l\'ONU 22', phone: '+223 70 33 44 55', city: 'Bamako' },
+  ]
+  for (const c of testCustomers) {
+    const existing = db.prepare('SELECT id FROM customers WHERE code = ?').get(c.code)
+    if (!existing) {
+      db.prepare(`INSERT INTO customers (id, code, name, address, phone, city, country, total_purchases, created_at) VALUES (?,?,?,?,?,?,'Mali',0,?)`)
+        .run(uid('c-'), c.code, c.name, c.address, c.phone, c.city, monthsAgo(1))
+    }
   }
-  
+  console.log(`✓ ${testCustomers.length} clientes de prueba asegurados`)
+
+  // ========== PEDIDOS ENTREGADOS PARA HISTORIAL (idempotente) ==========
+  const prods = db.prepare('SELECT id, name, price FROM products').all()
+  const customers = db.prepare('SELECT id, name, code FROM customers').all()
+  const reps = db.prepare("SELECT id, username, full_name FROM users WHERE role = 'repartidor'").all()
+  if (prods.length && customers.length && reps.length) {
+    // Crear 15 pedidos entregados en las últimas 2 semanas
+    const existingDelivered = db.prepare("SELECT COUNT(*) as c FROM orders WHERE status = 'delivered'").get().c
+    if (existingDelivered === 0) {
+      const rep = reps[0]
+      for (let i = 1; i <= 15; i++) {
+        const customer = customers[i % customers.length]
+        const daysAgo = i
+        const qty = Math.floor(Math.random() * 5) + 1
+        const items = prods.slice(0, Math.min(3, prods.length)).map(p => ({
+          productId: p.id, productName: p.name, quantity: qty, unitPrice: p.price
+        }))
+        const subtotal = items.reduce((s, item) => s + item.unitPrice * item.quantity, 0)
+        const tax = subtotal * 0.18
+        const total = subtotal + tax
+        const d = new Date(); d.setDate(d.getDate() - daysAgo)
+        const deliveryInfo = JSON.stringify({ userId: rep.id, userName: rep.username, userFullName: rep.full_name, items, totalItems: qty * items.length })
+        db.prepare(`INSERT OR IGNORE INTO orders (id, number, customer_id, items_json, subtotal, tax, discount, total, status, created_at, delivered_at, delivered_by, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+          .run(uid('ord-'), 'D' + String(i).padStart(4, '0'), customer.id, JSON.stringify(items), subtotal, tax, 0, total, 'delivered', d.toISOString(), d.toISOString(), rep.username, deliveryInfo)
+      }
+      console.log(`✓ 15 pedidos entregados de ejemplo creados (historial)`)
+    }
+  }
+
   console.log('✅ Seed completo - BD lista para usar')
   return { seeded: true, users: 3 }
 }

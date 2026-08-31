@@ -112,8 +112,8 @@ router.get('/users', auth, requirePermission('users', 'view'), (_req, res) => {
 router.post('/users', auth, requirePermission('users', 'create'), (req, res) => {
   const { username, password, fullName, email, role, permissions } = req.body
   if (!username || !password || !fullName) return res.status(400).json({ error: 'Datos incompletos' })
-  // Only allow 3 roles
-  const validRoles = ['admin', 'produccion', 'contabilidad']
+  // Only allow valid roles
+  const validRoles = ['admin', 'produccion', 'contabilidad', 'repartidor']
   const finalRole = validRoles.includes(role) ? role : 'produccion'
   try {
     const id = uid('u-')
@@ -469,31 +469,63 @@ router.delete('/customers/:id', auth, requirePermission('customers', 'delete'), 
 })
 
 // ---------- DELIVERY / ENTREGA DE PEDIDOS ----------
-// GET /api/delivery/lookup/:code - Buscar cliente por código y devolver sus pedidos pendientes
+// GET /api/delivery/lookup/:code - Buscar cliente por código y devolver sus pedidos pendientes con productos
 router.get('/delivery/lookup/:code', auth, requirePermission('entregas', 'view'), (req, res) => {
   const customer = db.prepare('SELECT * FROM customers WHERE code = ?').get(req.params.code)
   if (!customer) return res.status(404).json({ error: 'Cliente no encontrado' })
-  // Pedidos NO entregados del cliente
+  // Pedidos del cliente con productos detallados
   const allOrders = db.prepare(`SELECT * FROM orders WHERE customer_id = ? ORDER BY created_at DESC`).all(customer.id)
   const ordersList = allOrders.map(o => {
     let items = []
     try { items = JSON.parse(o.items_json || '[]') } catch {}
+    // Obtener nombres de productos
+    const itemsWithNames = items.map(item => {
+      const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.productId || item.product_id)
+      return {
+        ...item,
+        productName: product ? (product.name || product.nombre || product.code || '—') : (item.productName || '—'),
+        productCode: product ? (product.code || '—') : (item.productCode || '—'),
+        unitPrice: item.unitPrice || item.precio_unitario || 0,
+      }
+    })
+    let totalItems = 0
+    try { totalItems = items.reduce((s, i) => s + (parseInt(i.quantity) || 0), 0) } catch {}
     return {
-      ...o,
-      items,
+      id: o.id,
+      number: o.number,
+      customer_id: o.customer_id,
+      customer_name: o.customer_name,
+      items: itemsWithNames,
       items_json: undefined,
-      delivered: !!o.delivered_at
+      subtotal: o.subtotal,
+      tax: o.tax,
+      discount: o.discount,
+      total: o.total,
+      status: o.status,
+      delivered: !!o.delivered_at,
+      delivered_at: o.delivered_at,
+      delivered_by: o.delivered_by,
+      created_at: o.created_at,
+      delivery_date: o.delivery_date,
+      totalItems,
     }
   })
+  const pending = ordersList.filter(o => !o.delivered_at)
   res.json({
     customer: mapCust(customer),
     orders: ordersList,
-    pendingOrders: ordersList.filter(o => !o.delivered_at),
-    deliveredOrders: ordersList.filter(o => o.delivered_at)
+    pendingOrders: pending,
+    deliveredOrders: ordersList.filter(o => o.delivered_at),
+    stats: {
+      pendingCount: pending.length,
+      deliveredCount: ordersList.filter(o => o.delivered_at).length,
+      totalAmount: ordersList.reduce((s, o) => s + (parseFloat(o.total) || 0), 0),
+      pendingAmount: pending.reduce((s, o) => s + (parseFloat(o.total) || 0), 0),
+    }
   })
 })
 
-// POST /api/delivery/:orderId - Marcar pedido como entregado
+// POST /api/delivery/:orderId - Marcar pedido como entregado con detalles completos
 router.post('/delivery/:orderId', auth, requirePermission('entregas', 'register'), (req, res) => {
   try {
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.orderId)
@@ -508,17 +540,42 @@ router.post('/delivery/:orderId', auth, requirePermission('entregas', 'register'
     const now = new Date().toISOString()
     const userId = req.user?.id || null
     const userName = req.user?.username || req.user?.fullName || 'Sistema'
+    const userFullName = req.user?.fullName || userName
+    const { notes, deliveryNotes } = req.body || {}
+
+    // Parsear items para el registro
+    let items = []
+    try { items = JSON.parse(order.items_json || '[]') } catch {}
+    let totalItems = 0
+    try { totalItems = items.reduce((s, i) => s + (parseInt(i.quantity) || 0), 0) } catch {}
+
     db.prepare('UPDATE orders SET delivered_at = ?, delivered_by = ?, status = ? WHERE id = ?')
       .run(now, userName, 'entregado', req.params.orderId)
     addHistory(req, {
       action: 'entregar', module: 'Pedidos', entityId: req.params.orderId,
-      description: `Pedido ${order.number} marcado como entregado por ${userName}`
+      description: `Pedido ${order.number} entregado a ${order.customer_name || 'cliente'} por ${userName}`
     })
+
+    // Guardar registro en tabla delivery_records si existe, si no en notes del pedido
+    try {
+      db.prepare('UPDATE orders SET notes = ? WHERE id = ?').run(
+        JSON.stringify({ deliveryNotes, items, totalItems, userId, userName, userFullName }),
+        req.params.orderId
+      )
+    } catch {}
+
     res.json({
       ok: true,
       orderId: req.params.orderId,
+      orderNumber: order.number,
+      customerName: order.customer_name,
+      total: order.total,
+      items,
+      totalItems,
       deliveredAt: now,
-      deliveredBy: userName
+      deliveredBy: userName,
+      deliveredByFullName: userFullName,
+      userId,
     })
   } catch (e) {
     console.error('Error POST /delivery:', e.message)
@@ -526,14 +583,141 @@ router.post('/delivery/:orderId', auth, requirePermission('entregas', 'register'
   }
 })
 
-// GET /api/delivery-stats — Estadísticas de entregas por usuario
+// Helper: estadísticas diarias por repartidor (últimos 14 días)
+function buildUserDailyStats(allDelivered, now) {
+  const result = {}
+  for (const o of allDelivered) {
+    const key = o.delivered_by || 'Desconocido'
+    if (!result[key]) result[key] = {}
+    const day = new Date(o.delivered_at).toISOString().slice(0, 10)
+    result[key][day] = (result[key][day] || 0) + 1
+  }
+  // Rellenar los últimos 14 días aunque sean 0
+  const days = []
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(now)
+    d.setDate(d.getDate() - i)
+    days.push(d.toISOString().slice(0, 10))
+  }
+  for (const user of Object.keys(result)) {
+    for (const day of days) {
+      if (!result[user][day]) result[user][day] = 0
+    }
+  }
+  return { days, users: result }
+}
+
+// GET /api/delivery-history — Historial completo de entregas con filtros y productos
+router.get('/delivery-history', auth, requirePermission('entregas', 'history'), (req, res) => {
+  try {
+    const { deliveredBy, customer, from, to, orderId, page = '1', limit = '50' } = req.query
+    const pageNum = parseInt(page, 10)
+    const limitNum = Math.min(parseInt(limit, 10), 200)
+    const offset = (pageNum - 1) * limitNum
+
+    let where = "WHERE delivered_at IS NOT NULL AND delivered_at != ''"
+    const params = []
+
+    if (deliveredBy) {
+      where += ` AND delivered_by LIKE ?`
+      params.push(`%${deliveredBy}%`)
+    }
+    if (customer) {
+      where += ` AND c.name LIKE ?`
+      params.push(`%${customer}%`)
+    }
+    if (from) {
+      where += ` AND delivered_at >= ?`
+      params.push(from.includes('T') ? from : from + 'T00:00:00')
+    }
+    if (to) {
+      where += ` AND delivered_at <= ?`
+      params.push(to.includes('T') ? to : to + 'T23:59:59')
+    }
+    if (orderId) {
+      where += ` AND id = ?`
+      params.push(orderId)
+    }
+
+    // Total count
+    const countRow = db.prepare(`SELECT COUNT(*) as total FROM orders o LEFT JOIN customers c ON c.id = o.customer_id ${where}`).get(...params)
+    const total = countRow?.total || 0
+
+    // Data with pagination
+    const rows = db.prepare(`
+      SELECT o.id, o.number, o.customer_id, COALESCE(c.name, '') as customer_name, o.subtotal, o.tax, o.discount, o.total, o.delivered_at, o.delivered_by, o.items_json, o.status, o.created_at
+      FROM orders o
+      LEFT JOIN customers c ON c.id = o.customer_id
+      ${where}
+      ORDER BY o.delivered_at DESC
+      LIMIT ? OFFSET ?
+    `).all(...params, limitNum, offset)
+
+    const items = rows.map(o => {
+      let parsedItems = []
+      let itemCount = 0
+      try {
+        parsedItems = JSON.parse(o.items_json || '[]')
+        itemCount = parsedItems.reduce((s, i) => s + (parseInt(i.quantity) || 0), 0)
+      } catch {}
+
+      // Añadir nombres de productos
+      const itemsWithNames = parsedItems.map(item => {
+        let productName = item.productName || '—'
+        if (item.productId || item.product_id) {
+          try {
+            const product = db.prepare('SELECT * FROM products WHERE id = ?').get(item.productId || item.product_id)
+            if (product) productName = product.name || product.nombre || product.code || productName
+          } catch {}
+        }
+        return {
+          ...item,
+          productName,
+          quantity: parseInt(item.quantity) || 0,
+          unitPrice: parseFloat(item.unitPrice || item.precio_unitario || 0),
+          subtotal: parseFloat(item.subtotal || item.quantity * (item.unitPrice || item.precio_unitario || 0)),
+        }
+      })
+
+      return {
+        id: o.id,
+        orderNumber: o.number,
+        customerId: o.customer_id,
+        customerName: o.customer_name || '—',
+        subtotal: o.subtotal,
+        tax: o.tax,
+        discount: o.discount,
+        total: o.total,
+        itemCount,
+        items: itemsWithNames,
+        deliveredAt: o.delivered_at,
+        deliveredBy: o.delivered_by,
+        status: o.status,
+        createdAt: o.created_at,
+      }
+    })
+
+    res.json({
+      deliveries: items,
+      total,
+      page: pageNum,
+      limit: limitNum,
+      pages: Math.ceil(total / limitNum),
+    })
+  } catch (e) {
+    console.error('Error GET /delivery-history:', e.message)
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// GET /api/delivery-stats — Estadísticas completas de entregas por usuario y período
 router.get('/delivery-stats', auth, requirePermission('entregas', 'stats'), (req, res) => {
   try {
-    const { userId, period } = req.query
+    const { userId, period, from, to } = req.query
     const now = new Date()
-    let fromDate = null
+    let fromDate = null, toDate = null
 
-    // Calcular fecha de inicio según período
+    // Período predefinido
     if (period === 'today') {
       fromDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     } else if (period === 'week') {
@@ -544,56 +728,96 @@ router.get('/delivery-stats', auth, requirePermission('entregas', 'stats'), (req
       fromDate = new Date(now.getFullYear(), now.getMonth(), 1)
     } else if (period === 'year') {
       fromDate = new Date(now.getFullYear(), 0, 1)
+    } else if (from) {
+      fromDate = new Date(from.includes('T') ? from : from + 'T00:00:00')
     }
-    // 'all' o sin período: sin filtro de fecha
+    if (to) toDate = new Date(to.includes('T') ? to : to + 'T23:59:59')
 
     // Base query para pedidos entregados
-    let baseQuery = 'SELECT * FROM orders WHERE delivered_at IS NOT NULL AND delivered_at != ""'
+    let baseQuery = "SELECT * FROM orders WHERE delivered_at IS NOT NULL AND delivered_at != ''"
     if (fromDate) baseQuery += ` AND delivered_at >= '${fromDate.toISOString()}'`
+    if (toDate) baseQuery += ` AND delivered_at <= '${toDate.toISOString()}'`
     if (userId) baseQuery += ` AND delivered_by LIKE '%${String(userId)}%'`
     const allDelivered = db.prepare(baseQuery).all()
 
-    // Hoy, esta semana, este mes, este año
+    // También conseguir TODOS los entregados (sin filtro de fecha) para totales globales
+    const allTime = db.prepare("SELECT * FROM orders WHERE delivered_at IS NOT NULL AND delivered_at != ''").all()
+
+    // Rangos de tiempo
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     const weekStart = (() => { const d = new Date(now); d.setDate(d.getDate() - d.getDay()); return new Date(d.getFullYear(), d.getMonth(), d.getDate()) })()
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
     const yearStart = new Date(now.getFullYear(), 0, 1)
 
+    // Resumen filtrado
     const totalAll = allDelivered.length
     const totalToday = allDelivered.filter(o => new Date(o.delivered_at) >= todayStart).length
     const totalWeek = allDelivered.filter(o => new Date(o.delivered_at) >= weekStart).length
     const totalMonth = allDelivered.filter(o => new Date(o.delivered_at) >= monthStart).length
     const totalYear = allDelivered.filter(o => new Date(o.delivered_at) >= yearStart).length
 
+    // Clientes únicos visitados HOY
+    const clientsVisitedToday = [...new Set(
+      allDelivered.filter(o => new Date(o.delivered_at) >= todayStart).map(o => o.customer_id)
+    )].length
+
+    // Repartidores activos HOY
+    const activeRepartidoresToday = [...new Set(
+      allDelivered.filter(o => new Date(o.delivered_at) >= todayStart).map(o => o.delivered_by)
+    )].length
+
+    // Repartidores activos en el PERÍODO
+    const activeRepartidoresPeriod = [...new Set(allDelivered.map(o => o.delivered_by))].length
+
+    // Total de pedidos entregados en el período
+    const totalPedidos = allDelivered.length
+
+    // Importe total
+    const totalAmount = allDelivered.reduce((s, o) => s + (parseFloat(o.total) || 0), 0)
+
     // Por usuario (agrupar por delivered_by)
     const byUserMap = {}
     for (const o of allDelivered) {
       const key = o.delivered_by || 'Desconocido'
-      if (!byUserMap[key]) byUserMap[key] = { userName: key, total: 0, today: 0, thisWeek: 0, thisMonth: 0, thisYear: 0 }
+      if (!byUserMap[key]) byUserMap[key] = {
+        userName: key,
+        total: 0, today: 0, thisWeek: 0, thisMonth: 0, thisYear: 0,
+        clientsVisited: new Set(), ordersDelivered: 0
+      }
       byUserMap[key].total++
+      byUserMap[key].clientsVisited.add(o.customer_id)
+      byUserMap[key].ordersDelivered += 1
       const d = new Date(o.delivered_at)
       if (d >= todayStart) byUserMap[key].today++
       if (d >= weekStart) byUserMap[key].thisWeek++
       if (d >= monthStart) byUserMap[key].thisMonth++
       if (d >= yearStart) byUserMap[key].thisYear++
     }
-    const byUser = Object.values(byUserMap).sort((a, b) => b.total - a.total)
+    const byUser = Object.values(byUserMap)
+      .map(u => ({ ...u, clientsVisited: u.clientsVisited.size, clientsVisitedToday: 0 }))
+      .sort((a, b) => b.total - a.total)
 
-    // Por día (últimos 30 días)
+    // Por día (últimos 30 días) - basado en el período filtrado o global
+    const displayDelivered = (fromDate || toDate) ? allDelivered : allTime
     const thirtyDays = []
     for (let i = 29; i >= 0; i--) {
       const d = new Date(now)
       d.setDate(d.getDate() - i)
       const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate())
       const dayEnd = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1)
-      const count = allDelivered.filter(o => {
+      const dayDeliveries = displayDelivered.filter(o => {
         const dt = new Date(o.delivered_at)
         return dt >= dayStart && dt < dayEnd
-      }).length
-      thirtyDays.push({ date: dayStart.toISOString().slice(0, 10), count })
+      })
+      const dayClients = [...new Set(dayDeliveries.map(o => o.customer_id))].length
+      thirtyDays.push({
+        date: dayStart.toISOString().slice(0, 10),
+        count: dayDeliveries.length,
+        clients: dayClients,
+      })
     }
 
-    // Historial reciente
+    // Historial reciente (últimas 20)
     const recent = allDelivered
       .sort((a, b) => new Date(b.delivered_at) - new Date(a.delivered_at))
       .slice(0, 20)
@@ -604,23 +828,223 @@ router.get('/delivery-stats', auth, requirePermission('entregas', 'stats'), (req
         customerName: o.customer_name || '—',
         total: o.total,
         deliveredAt: o.delivered_at,
-        deliveredBy: o.delivered_by
+        deliveredBy: o.delivered_by,
       }))
 
     res.json({
+      period: period || (from ? 'custom' : 'all'),
       summary: {
         total: totalAll,
+        totalAllTime: allTime.length,
         today: totalToday,
         thisWeek: totalWeek,
         thisMonth: totalMonth,
         thisYear: totalYear,
+        clientsVisitedToday,
+        activeRepartidoresToday,
+        activeRepartidoresPeriod,
+        totalPedidos,
+        totalAmount: Math.round(totalAmount * 100) / 100,
       },
       byUser,
       byDay: thirtyDays,
       recent,
+      userDailyStats: buildUserDailyStats(displayDelivered, now),
     })
   } catch (e) {
     console.error('Error GET /delivery-stats:', e.message)
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// GET /api/deliveries/repartidores — Lista de repartidores con estadísticas
+router.get('/deliveries/repartidores', auth, requirePermission('entregas', 'stats'), (req, res) => {
+  try {
+    console.log('DEBUG /deliveries/repartidores: user=', req.user?.username, 'role=', req.user?.role)
+    const now = new Date()
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const weekStart = (() => { const d = new Date(now); d.setDate(d.getDate() - d.getDay()); return new Date(d.getFullYear(), d.getMonth(), d.getDate()) })()
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const yearStart = new Date(now.getFullYear(), 0, 1)
+
+    const allDelivered = db.prepare("SELECT * FROM orders WHERE delivered_at IS NOT NULL AND delivered_at != ''").all()
+    console.log('DEBUG allDelivered:', allDelivered.length)
+
+    // Agrupar por repartidor
+    const repartidorMap = {}
+    for (const o of allDelivered) {
+      const key = o.delivered_by || 'Desconocido'
+      if (!repartidorMap[key]) {
+        repartidorMap[key] = {
+          userName: key,
+          deliveries: [],
+          clients: new Set(),
+          todayClients: new Set(),
+        }
+      }
+      repartidorMap[key].deliveries.push(o)
+      repartidorMap[key].clients.add(o.customer_id)
+      if (new Date(o.delivered_at) >= todayStart) {
+        repartidorMap[key].todayClients.add(o.customer_id)
+      }
+    }
+
+    const result = Object.values(repartidorMap).map(r => {
+      const todayDeliveries = r.deliveries.filter(o => new Date(o.delivered_at) >= todayStart)
+      const weekDeliveries = r.deliveries.filter(o => new Date(o.delivered_at) >= weekStart)
+      const monthDeliveries = r.deliveries.filter(o => new Date(o.delivered_at) >= monthStart)
+      const yearDeliveries = r.deliveries.filter(o => new Date(o.delivered_at) >= yearStart)
+      return {
+        userName: r.userName,
+        deliveriesToday: todayDeliveries.length,
+        deliveriesWeek: weekDeliveries.length,
+        deliveriesMonth: monthDeliveries.length,
+        deliveriesYear: yearDeliveries.length,
+        deliveriesTotal: r.deliveries.length,
+        clientsVisitedToday: r.todayClients.size,
+        clientsVisitedTotal: r.clients.size,
+        lastDelivery: r.deliveries[0] ? r.deliveries[0].delivered_at : null,
+        todayAmount: todayDeliveries.reduce((s, o) => s + (parseFloat(o.total) || 0), 0),
+        weekAmount: weekDeliveries.reduce((s, o) => s + (parseFloat(o.total) || 0), 0),
+        monthAmount: monthDeliveries.reduce((s, o) => s + (parseFloat(o.total) || 0), 0),
+        yearAmount: yearDeliveries.reduce((s, o) => s + (parseFloat(o.total) || 0), 0),
+        totalAmount: r.deliveries.reduce((s, o) => s + (parseFloat(o.total) || 0), 0),
+      }
+    }).sort((a, b) => b.deliveriesToday - a.deliveriesToday)
+
+    res.json({ repartidores: result })
+  } catch (e) {
+    console.error('Error GET /deliveries/repartidores:', e.message)
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// GET /api/deliveries/by-repartidor/:userName — Historial detallado de un repartidor
+router.get('/deliveries/by-repartidor/:userName', auth, requirePermission('entregas', 'stats'), (req, res) => {
+  try {
+    const { from, to, page = '1', limit = '50' } = req.query
+    const pageNum = parseInt(page, 10)
+    const limitNum = Math.min(parseInt(limit, 10), 200)
+    const offset = (pageNum - 1) * limitNum
+
+    let where = "WHERE delivered_at IS NOT NULL AND delivered_at != '' AND delivered_by = ?"
+    const params = [req.params.userName]
+    if (from) where += ` AND delivered_at >= '${from.includes('T') ? from : from + 'T00:00:00'}'`
+    if (to) where += ` AND delivered_at <= '${to.includes('T') ? to : to + 'T23:59:59'}'`
+
+    const countRow = db.prepare(`SELECT COUNT(*) as total FROM orders ${where}`).get(...params)
+    const total = countRow?.total || 0
+
+    const rows = db.prepare(`
+      SELECT id, number, customer_id, customer_name, subtotal, tax, discount, total, delivered_at, delivered_by, items_json, status, created_at
+      FROM orders ${where} ORDER BY delivered_at DESC LIMIT ? OFFSET ?
+    `).all(...params, limitNum, offset)
+
+    // Resumen del período
+    const allRows = db.prepare(`SELECT * FROM orders ${where}`).all(...params)
+    const todayStart = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())
+    const weekStart = (() => { const d = new Date(); d.setDate(d.getDate() - d.getDay()); return new Date(d.getFullYear(), d.getMonth(), d.getDate()) })()
+    const monthStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
+    const yearStart = new Date(new Date().getFullYear(), 0, 1)
+
+    const parseItems = o => {
+      let items = []
+      try { items = JSON.parse(o.items_json || '[]') } catch {}
+      return items.map(item => {
+        let productName = item.productName || '—'
+        if (item.productId) {
+          try { const p = db.prepare('SELECT * FROM products WHERE id = ?').get(item.productId); if (p) productName = p.name || p.nombre || p.code || productName } catch {}
+        }
+        return { ...item, productName, quantity: parseInt(item.quantity) || 0 }
+      })
+    }
+
+    const deliveries = rows.map(o => ({
+      id: o.id, orderNumber: o.number, customerId: o.customer_id, customerName: o.customer_name || '—',
+      subtotal: o.subtotal, tax: o.tax, discount: o.discount, total: o.total,
+      items: parseItems(o), deliveredAt: o.delivered_at, status: o.status,
+    }))
+
+    const uniqueClients = [...new Set(allRows.map(o => o.customer_id))].length
+    res.json({
+      userName: req.params.userName,
+      summary: {
+        total: allRows.length,
+        today: allRows.filter(o => new Date(o.delivered_at) >= todayStart).length,
+        week: allRows.filter(o => new Date(o.delivered_at) >= weekStart).length,
+        month: allRows.filter(o => new Date(o.delivered_at) >= monthStart).length,
+        year: allRows.filter(o => new Date(o.delivered_at) >= yearStart).length,
+        clientsVisited: uniqueClients,
+        totalAmount: allRows.reduce((s, o) => s + (parseFloat(o.total) || 0), 0),
+      },
+      deliveries,
+      total,
+      page: pageNum,
+      limit: limitNum,
+      pages: Math.ceil(total / limitNum),
+    })
+  } catch (e) {
+    console.error('Error GET /deliveries/by-repartidor:', e.message)
+    res.status(500).json({ error: e.message })
+  }
+})
+
+// GET /api/deliveries/by-customer/:customerId — Historial de entregas de un cliente
+router.get('/deliveries/by-customer/:customerId', auth, requirePermission('entregas', 'view'), (req, res) => {
+  try {
+    const { from, to, page = '1', limit = '50' } = req.query
+    const pageNum = parseInt(page, 10)
+    const limitNum = Math.min(parseInt(limit, 10), 200)
+    const offset = (pageNum - 1) * limitNum
+
+    const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(req.params.customerId)
+    if (!customer) return res.status(404).json({ error: 'Cliente no encontrado' })
+
+    let where = "WHERE customer_id = ? AND delivered_at IS NOT NULL AND delivered_at != ''"
+    const params = [req.params.customerId]
+    if (from) where += ` AND delivered_at >= '${from.includes('T') ? from : from + 'T00:00:00'}'`
+    if (to) where += ` AND delivered_at <= '${to.includes('T') ? to : to + 'T23:59:59'}'`
+
+    const countRow = db.prepare(`SELECT COUNT(*) as total FROM orders ${where}`).get(...params)
+    const total = countRow?.total || 0
+
+    const rows = db.prepare(`
+      SELECT id, number, subtotal, tax, discount, total, delivered_at, delivered_by, items_json, status, created_at
+      FROM orders ${where} ORDER BY delivered_at DESC LIMIT ? OFFSET ?
+    `).all(...params, limitNum, offset)
+
+    const parseItems = o => {
+      let items = []
+      try { items = JSON.parse(o.items_json || '[]') } catch {}
+      return items.map(item => {
+        let productName = item.productName || '—'
+        if (item.productId) {
+          try { const p = db.prepare('SELECT * FROM products WHERE id = ?').get(item.productId); if (p) productName = p.name || p.nombre || p.code || productName } catch {}
+        }
+        return { ...item, productName, quantity: parseInt(item.quantity) || 0 }
+      })
+    }
+
+    const deliveries = rows.map(o => ({
+      id: o.id, orderNumber: o.number,
+      subtotal: o.subtotal, tax: o.tax, discount: o.discount, total: o.total,
+      items: parseItems(o), deliveredAt: o.delivered_at, deliveredBy: o.delivered_by, status: o.status,
+    }))
+
+    res.json({
+      customer: mapCust(customer),
+      summary: {
+        totalDeliveries: total,
+        totalSpent: db.prepare(`SELECT SUM(total) as s FROM orders WHERE customer_id = ? AND delivered_at IS NOT NULL AND delivered_at != ''`).get(req.params.customerId)?.s || 0,
+      },
+      deliveries,
+      total,
+      page: pageNum,
+      limit: limitNum,
+      pages: Math.ceil(total / limitNum),
+    })
+  } catch (e) {
+    console.error('Error GET /deliveries/by-customer:', e.message)
     res.status(500).json({ error: e.message })
   }
 })
@@ -1183,7 +1607,7 @@ router.get('/invoice-view/:orderId', (req, res) => {
   const token = req.query.token
   if (token) {
     try {
-      const jwt = require('jsonwebtoken')
+      // jwt already imported
       req.user = jwt.verify(token, process.env.JWT_SECRET || 'cleanerp-dev-secret-change-in-production-9f8e7d6c5b4a3210')
     } catch (e) {}
   }
@@ -1668,7 +2092,7 @@ router.get('/order-sheet-view/:orderId', (req, res) => {
   const token = req.query.token
   if (token) {
     try {
-      const jwt = require('jsonwebtoken')
+      // jwt already imported
       req.user = jwt.verify(token, process.env.JWT_SECRET || 'cleanerp-dev-secret-change-in-production-9f8e7d6c5b4a3210')
     } catch (e) {}
   }
@@ -1991,7 +2415,7 @@ router.get('/order-sheet-view/:orderId', (req, res) => {
   const token = req.query.token
   if (token) {
     try {
-      const jwt = require('jsonwebtoken')
+      // jwt already imported
       req.user = jwt.verify(token, process.env.JWT_SECRET || 'cleanerp-dev-secret-change-in-production-9f8e7d6c5b4a3210')
     } catch (e) {}
   }
@@ -2979,7 +3403,7 @@ router.post('/auth/emergency-unlock', (req, res) => {
     
     // Si se quiere cambiar la contraseña
     if (newPassword && username) {
-      const bcrypt = require('bcryptjs')
+      // bcrypt already imported
       const u = db.prepare('SELECT * FROM users WHERE username = ?').get(username)
       if (!u) return res.status(404).json({ error: 'Usuario no encontrado' })
       const hash = bcrypt.hashSync(newPassword, 10)
@@ -3400,7 +3824,7 @@ router.get('/print-rml/:rmlId', (req, res) => {
   const token = req.query.token
   if (token) {
     try {
-      const jwt = require('jsonwebtoken')
+      // jwt already imported
       req.user = jwt.verify(token, process.env.JWT_SECRET || 'cleanerp-dev-secret-change-in-production-9f8e7d6c5b4a3210')
     } catch (e) {
       // Token inválido, continuar sin auth
@@ -3715,7 +4139,7 @@ router.get('/customer-card-view/:code', (req, res) => {
   const token = req.query.token
   if (token) {
     try {
-      const jwt = require('jsonwebtoken')
+      // jwt already imported
       req.user = jwt.verify(token, process.env.JWT_SECRET || 'cleanerp-dev-secret-change-in-production-9f8e7d6c5b4a3210')
     } catch (e) {}
   }

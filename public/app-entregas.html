@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>🚚 CleanSahel — Entregas</title>
+  <title>CleanSahel — Entregas</title>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <style>
@@ -64,7 +64,7 @@
     /* ── Delivery list ── */
     .delivery-list { padding: 0 12px 80px; }
     .delivery-item { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
-                     margin-bottom: 8px; overflow: hidden; position: relative; }
+                     margin-bottom: 8px; overflow: hidden; }
     .delivery-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; cursor: pointer; }
     .delivery-main { display: flex; flex-direction: column; gap: 2px; }
     .delivery-order { font-size: 14px; font-weight: 700; }
@@ -151,20 +151,6 @@
     .success-detail strong { color: var(--text); }
     .success-actions { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 300px; }
 
-    /* ── User selector ── */
-    .user-selector-wrap { padding: 0 12px 8px; }
-    .user-selector { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; font-weight: 500; background: var(--surface); color: var(--text); cursor: pointer; }
-    .user-selector:focus { outline: none; border-color: var(--primary); }
-
-    /* ── Stats row ── */
-    .stats-row { display: flex; gap: 8px; padding: 0 12px 10px; }
-    .stat-mini { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 6px; text-align: center; }
-    .stat-mini-val { font-size: 18px; font-weight: 800; line-height: 1; margin-bottom: 3px; }
-    .stat-mini-val.green { color: var(--green); }
-    .stat-mini-val.blue { color: var(--primary); }
-    .stat-mini-val.purple { color: var(--purple); }
-    .stat-mini-lbl { font-size: 10px; color: var(--text-3); font-weight: 500; text-transform: uppercase; letter-spacing: 0.03em; }
-
     /* ── Bottom nav ── */
     .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: var(--surface); border-top: 1px solid var(--border);
                   display: flex; z-index: 100; padding-bottom: env(safe-area-inset-bottom, 0); }
@@ -183,31 +169,122 @@
     .empty-state { text-align: center; padding: 40px 20px; color: var(--text-3); font-size: 14px; }
     .empty-state-icon { font-size: 40px; margin-bottom: 10px; }
 
-    /* ── User selector ── */
-    .user-selector-wrap { padding: 0 12px 10px; }
-    .user-selector { width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 13px;
-                     background: var(--surface); color: var(--text); font-family: inherit; }
-    .user-selector:focus { outline: none; border-color: var(--primary); }
+    /* ── Repartidor card ── */
+    .repartidor-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin: 0 12px 8px; cursor: pointer; transition: border-color 0.15s; }
+    .repartidor-card:hover { border-color: var(--primary); }
+    .repartidor-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .repartidor-name { font-size: 15px; font-weight: 700; }
+    .repartidor-today { font-size: 20px; font-weight: 800; color: var(--green); }
+    .repartidor-stats { display: flex; gap: 12px; }
+    .repartidor-stat { display: flex; flex-direction: column; }
+    .repartidor-stat-val { font-size: 14px; font-weight: 600; }
+    .repartidor-stat-lbl { font-size: 11px; color: var(--text-3); }
 
     /* ── Date range ── */
     .date-range { display: flex; gap: 8px; padding: 0 12px 10px; align-items: center; }
     .date-range input[type="date"] { flex: 1; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: var(--surface); }
     .date-range-label { font-size: 12px; color: var(--text-3); }
 
-    /* ── Stats row for history ── */
-    .stats-row { display: flex; gap: 8px; padding: 0 12px 8px; overflow-x: auto; scrollbar-width: none; }
-    .stats-row::-webkit-scrollbar { display: none; }
-    .stat-mini { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; flex: 1; min-width: 80px; text-align: center; }
-    .stat-mini-val { font-size: 18px; font-weight: 800; color: var(--text); }
-    .stat-mini-val.green { color: var(--green); }
-    .stat-mini-lbl { font-size: 10px; color: var(--text-3); font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
+    /* ── Admin filters ── */
+    .admin-filters { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin: 0 12px 10px; padding: 12px; display: none; }
+    .admin-filters.show { display: block; }
+    .admin-filters-title { font-size: 12px; font-weight: 700; color: var(--text-2); margin-bottom: 8px; }
+    .filter-row-admin { display: flex; flex-direction: column; gap: 8px; }
+    .filter-row-admin input, .filter-row-admin select { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: var(--surface-2); }
+    .filter-row-admin button { padding: 8px; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
   </style>
 </head>
 <body>
 
-<!-- ═══════════════════════════════════ SCANNER TAB (PRIMARY) ═══════════════════════════════════ -->
-<div id="scanner-screen" class="screen active">
+<!-- ═══════════════════════════════════ HOME / DASHBOARD ═══════════════════════════════════ -->
+<div id="home-screen" class="screen active">
   <div class="header">
+    <div>
+      <div class="header-title">🚚 CleanSahel — Entregas</div>
+      <div class="header-user" id="home-user">—</div>
+    </div>
+    <button class="header-back" onclick="showScreen('scanner')" title="Escanear">📷</button>
+  </div>
+
+  <!-- Period filters -->
+  <div class="filter-row">
+    <button class="pill active" data-period="today" onclick="setPeriod('today', this)">Hoy</button>
+    <button class="pill" data-period="week" onclick="setPeriod('week', this)">Semana</button>
+    <button class="pill" data-period="month" onclick="setPeriod('month', this)">Mes</button>
+    <button class="pill" data-period="year" onclick="setPeriod('year', this)">Año</button>
+    <button class="pill" data-period="all" onclick="setPeriod('all', this)">Todo</button>
+    <button class="pill" data-period="custom" onclick="setPeriod('custom', this)">📅 Rango</button>
+  </div>
+
+  <!-- Custom date range -->
+  <div class="date-range" id="custom-range" style="display:none">
+    <span class="date-range-label">Desde</span>
+    <input type="date" id="filter-from" onchange="loadDashboard()">
+    <span class="date-range-label">Hasta</span>
+    <input type="date" id="filter-to" onchange="loadDashboard()">
+  </div>
+
+  <!-- Stats cards -->
+  <div class="stats-grid" id="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Entregas</div>
+      <div class="stat-value" id="stat-total">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Pedidos</div>
+      <div class="stat-value green" id="stat-pedidos">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Clientes visitados</div>
+      <div class="stat-value purple" id="stat-clients">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Repartidores activos</div>
+      <div class="stat-value amber" id="stat-repartidores">—</div>
+    </div>
+  </div>
+
+  <div class="section-title">Entregas recientes</div>
+
+  <!-- Filters toggle -->
+  <div style="padding: 0 12px 6px">
+    <button class="pill" onclick="toggleAdminFilters()" style="font-size:12px">⚙️ Filtros avanzados</button>
+  </div>
+
+  <!-- Admin filters -->
+  <div class="admin-filters" id="admin-filters">
+    <div class="admin-filters-title">Filtrar entregas</div>
+    <div class="filter-row-admin">
+      <select id="filter-repartidor" onchange="loadDashboard()"><option value="">Todos los repartidores</option></select>
+      <select id="filter-customer" onchange="loadDashboard()"><option value="">Todos los clientes</option></select>
+      <button onclick="clearFilters()">Limpiar filtros</button>
+    </div>
+  </div>
+
+  <div class="delivery-list" id="delivery-list-home">
+    <div class="loading"><div class="spinner"></div>Cargando...</div>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="nav-btn active" onclick="showScreen('home')">
+      <span class="nav-icon">📊</span> Dashboard
+    </button>
+    <button class="nav-btn" onclick="showScreen('scanner')">
+      <span class="nav-icon">📷</span> Escanear
+    </button>
+    <button class="nav-btn" onclick="showScreen('history')">
+      <span class="nav-icon">📋</span> Historial
+    </button>
+    <button class="nav-btn" onclick="showScreen('repartidores')">
+      <span class="nav-icon">👤</span> Repartidores
+    </button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ SCANNER ═══════════════════════════════════ -->
+<div id="scanner-screen" class="screen">
+  <div class="header">
+    <button class="header-back" onclick="showScreen('home')">←</button>
     <div>
       <div class="header-title">📷 Escanear cliente</div>
       <div class="header-user">QR / código de cliente</div>
@@ -235,11 +312,17 @@
   </div>
 
   <div class="bottom-nav">
-    <button class="nav-btn active" onclick="showTab('scanner')">
+    <button class="nav-btn" onclick="showScreen('home')">
+      <span class="nav-icon">📊</span> Dashboard
+    </button>
+    <button class="nav-btn active" onclick="showScreen('scanner')">
       <span class="nav-icon">📷</span> Escanear
     </button>
-    <button class="nav-btn" onclick="showTab('history')">
+    <button class="nav-btn" onclick="showScreen('history')">
       <span class="nav-icon">📋</span> Historial
+    </button>
+    <button class="nav-btn" onclick="showScreen('repartidores')">
+      <span class="nav-icon">👤</span> Repartidores
     </button>
   </div>
 </div>
@@ -281,77 +364,88 @@
   <div class="success-title">¡Entrega registrada!</div>
   <div class="success-detail" id="success-detail"></div>
   <div class="success-actions">
-    <button class="btn btn-primary" onclick="showTab('scanner'); clearScanner()">📷 Escaneear otro</button>
-    <button class="btn btn-secondary" onclick="showTab('history')">📋 Ver historial</button>
+    <button class="btn btn-primary" onclick="showScreen('scanner'); clearScanner()">📷 Escaneear otro</button>
+    <button class="btn btn-secondary" onclick="showScreen('home')">📊 Ver dashboard</button>
   </div>
 </div>
 
-<!-- ═══════════════════════════════════ HISTORY TAB ═══════════════════════════════════ -->
+<!-- ═══════════════════════════════════ HISTORY ═══════════════════════════════════ -->
 <div id="history-screen" class="screen">
   <div class="header">
+    <button class="header-back" onclick="showScreen('home')">←</button>
     <div>
       <div class="header-title">📋 Historial de entregas</div>
     </div>
   </div>
 
-  <!-- Period filter pills: HOY | SEMANA | MES | TODO | FECHA -->
   <div class="filter-row">
-    <button class="pill active" data-hperiod="today" onclick="setHistoryPeriod('today', this)">HOY</button>
-    <button class="pill" data-hperiod="week" onclick="setHistoryPeriod('week', this)">SEMANA</button>
-    <button class="pill" data-hperiod="month" onclick="setHistoryPeriod('month', this)">MES</button>
-    <button class="pill" data-hperiod="all" onclick="setHistoryPeriod('all', this)">TODO</button>
-    <button class="pill" data-hperiod="date" onclick="setHistoryPeriod('date', this)">FECHA</button>
+    <button class="pill active" data-hperiod="today" onclick="setHistoryPeriod('today', this)">Hoy</button>
+    <button class="pill" data-hperiod="week" onclick="setHistoryPeriod('week', this)">Semana</button>
+    <button class="pill" data-hperiod="month" onclick="setHistoryPeriod('month', this)">Mes</button>
+    <button class="pill" data-hperiod="all" onclick="setHistoryPeriod('all', this)">Todo</button>
   </div>
 
-  <!-- Date range (shown only when FECHA is selected) -->
-  <div class="date-range" id="hist-date-range" style="display:none">
+  <div class="date-range">
     <span class="date-range-label">Desde</span>
     <input type="date" id="hist-from">
     <span class="date-range-label">Hasta</span>
     <input type="date" id="hist-to">
+    <button class="pill active" onclick="loadHistory()" style="padding:7px 12px;font-size:12px">Filtrar</button>
   </div>
-
-  <!-- User selector dropdown -->
-  <div class="user-selector-wrap">
-    <select class="user-selector" id="hist-user" onchange="loadHistory()">
-      <option value="">Todos los repartidores</option>
-    </select>
-  </div>
-
-  <!-- Stats row (shown when user selected) -->
-  <div id="hist-user-stats" style="display:none">
-    <div class="stats-row">
-      <div class="stat-mini">
-        <div class="stat-mini-val green" id="hist-stat-today">—</div>
-        <div class="stat-mini-lbl">Hoy</div>
-      </div>
-      <div class="stat-mini">
-        <div class="stat-mini-val" id="hist-stat-week">—</div>
-        <div class="stat-mini-lbl">Semana</div>
-      </div>
-      <div class="stat-mini">
-        <div class="stat-mini-val blue" id="hist-stat-month">—</div>
-        <div class="stat-mini-lbl">Mes</div>
-      </div>
-      <div class="stat-mini">
-        <div class="stat-mini-val purple" id="hist-stat-total">—</div>
-        <div class="stat-mini-lbl">Total</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="section-title" id="hist-section-title">Entregas</div>
 
   <div class="delivery-list" id="history-list">
     <div class="loading"><div class="spinner"></div>Cargando...</div>
   </div>
 
   <div class="bottom-nav">
-    <button class="nav-btn" onclick="showTab('scanner')">
+    <button class="nav-btn" onclick="showScreen('home')">
+      <span class="nav-icon">📊</span> Dashboard
+    </button>
+    <button class="nav-btn" onclick="showScreen('scanner')">
       <span class="nav-icon">📷</span> Escanear
     </button>
-    <button class="nav-btn active" onclick="showTab('history')">
+    <button class="nav-btn active" onclick="showScreen('history')">
       <span class="nav-icon">📋</span> Historial
+    </button>
+    <button class="nav-btn" onclick="showScreen('repartidores')">
+      <span class="nav-icon">👤</span> Repartidores
+    </button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ REPARTIDORES ═══════════════════════════════════ -->
+<div id="repartidores-screen" class="screen">
+  <div class="header">
+    <button class="header-back" onclick="showScreen('home')">←</button>
+    <div>
+      <div class="header-title">👤 Repartidores</div>
+    </div>
+  </div>
+
+  <div class="section-title">Actividad de hoy</div>
+  <div id="repartidores-list">
+    <div class="loading"><div class="spinner"></div>Cargando...</div>
+  </div>
+
+  <!-- Selected repartidor detail -->
+  <div id="repartidor-detail" style="display:none">
+    <div class="section-title" id="repartidor-detail-title">—</div>
+    <div class="stats-grid" id="repartidor-stats"></div>
+    <div class="delivery-list" id="repartidor-deliveries"></div>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="nav-btn" onclick="showScreen('home')">
+      <span class="nav-icon">📊</span> Dashboard
+    </button>
+    <button class="nav-btn" onclick="showScreen('scanner')">
+      <span class="nav-icon">📷</span> Escanear
+    </button>
+    <button class="nav-btn" onclick="showScreen('history')">
+      <span class="nav-icon">📋</span> Historial
+    </button>
+    <button class="nav-btn active" onclick="showScreen('repartidores')">
+      <span class="nav-icon">👤</span> Repartidores
     </button>
   </div>
 </div>
@@ -396,12 +490,97 @@ function fmtCurrency(n) {
   return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'XOF' }).format(n || 0)
 }
 
-function showTab(name) {
+function showScreen(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
   document.getElementById(name + '-screen').classList.add('active')
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'))
   document.querySelectorAll(`.nav-btn[onclick*="${name}"]`).forEach(b => b.classList.add('active'))
-  if (name === 'history') loadHistory()
+}
+
+// ══════════════════════════════════════════════════════════════
+// DASHBOARD
+// ══════════════════════════════════════════════════════════════
+let currentPeriod = 'today'
+
+function setPeriod(period, el) {
+  currentPeriod = period
+  document.querySelectorAll('.filter-row .pill').forEach(p => p.classList.remove('active'))
+  el.classList.add('active')
+  const customRange = document.getElementById('custom-range')
+  customRange.style.display = period === 'custom' ? 'flex' : 'none'
+  loadDashboard()
+}
+
+async function loadDashboard() {
+  const params = new URLSearchParams()
+  params.set('period', currentPeriod === 'custom' ? 'all' : currentPeriod)
+  if (currentPeriod === 'custom') {
+    const from = document.getElementById('filter-from').value
+    const to = document.getElementById('filter-to').value
+    if (from) params.set('from', from)
+    if (to) params.set('to', to)
+  }
+  const repartidor = document.getElementById('filter-repartidor')?.value
+  const customer = document.getElementById('filter-customer')?.value
+
+  const data = await apiFetch('/delivery-stats?' + params.toString())
+  if (data.error) { document.getElementById('delivery-list-home').innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>${data.error}</div></div>`; return }
+
+  const sum = data.summary || {}
+  document.getElementById('stat-total').textContent = sum.total ?? 0
+  document.getElementById('stat-pedidos').textContent = sum.total ?? 0
+  document.getElementById('stat-clients').textContent = sum.clientsVisitedToday ?? 0
+  document.getElementById('stat-repartidores').textContent = sum.activeRepartidoresPeriod ?? sum.activeRepartidoresToday ?? 0
+
+  // Load filter options
+  if (data.byUser?.length) {
+    const sel = document.getElementById('filter-repartidor')
+    if (sel && sel.options.length <= 1) {
+      data.byUser.forEach(u => {
+        const opt = document.createElement('option')
+        opt.value = u.userName
+        opt.textContent = u.userName
+        sel.appendChild(opt)
+      })
+    }
+  }
+
+  // Render recent deliveries
+  const list = document.getElementById('delivery-list-home')
+  const deliveries = data.recent || []
+  if (!deliveries.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><div>Sin entregas en este período</div></div>`
+    return
+  }
+  list.innerHTML = deliveries.map(d => `
+    <div class="delivery-item">
+      <div class="delivery-header" onclick="this.parentElement.classList.toggle('expanded')">
+        <div class="delivery-main">
+          <div class="delivery-order">${d.orderNumber || d.number || '—'}</div>
+          <div class="delivery-meta">${fmtDate(d.deliveredAt)} · ${fmtTime(d.deliveredAt)} · ${d.customerName || '—'} · ${d.deliveredBy || '—'}</div>
+        </div>
+        <div class="delivery-right">
+          <div class="delivery-amount">${fmtCurrency(d.total)}</div>
+          <div class="delivery-time">${fmtTime(d.deliveredAt)}</div>
+          <span class="delivery-status status-entregado">✓ Entregado</span>
+        </div>
+      </div>
+      <div class="expand-icon" style="position:absolute;right:14px;top:14px">▾</div>
+    </div>
+  `).join('')
+
+  // Update user name
+  document.getElementById('home-user').textContent = USER.fullName || USER.username || '—'
+}
+
+function toggleAdminFilters() {
+  document.getElementById('admin-filters').classList.toggle('show')
+}
+
+function clearFilters() {
+  document.getElementById('filter-repartidor').value = ''
+  document.getElementById('filter-customer').value = ''
+  loadDashboard()
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -563,7 +742,7 @@ async function confirmDelivery() {
   }
 
   closeConfirmModal()
-  showTab('success')
+  showScreen('success')
 
   document.getElementById('success-detail').innerHTML = `
     <div>📦 <strong>Pedido ${data.orderNumber || selectedOrderId}</strong></div>
@@ -573,6 +752,9 @@ async function confirmDelivery() {
     <div style="margin-top:6px">👤 Entregado por: <strong>${data.deliveredBy || '—'}</strong></div>
     <div style="margin-top:6px">📦 ${data.totalItems || 0} unidades entregadas</div>
   `
+
+  // Refresh dashboard
+  loadDashboard()
 }
 
 function clearScanner() {
@@ -584,70 +766,34 @@ function clearScanner() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// HISTORY TAB
+// HISTORY
 // ══════════════════════════════════════════════════════════════
 let historyPeriod = 'today'
-let historyLoaded = false
 
 function setHistoryPeriod(period, el) {
   historyPeriod = period
   document.querySelectorAll('[data-hperiod]').forEach(p => p.classList.remove('active'))
   el.classList.add('active')
-
-  const dateRange = document.getElementById('hist-date-range')
-  dateRange.style.display = period === 'date' ? 'flex' : 'none'
-
   loadHistory()
 }
 
 async function loadHistory() {
-  const selectedUser = document.getElementById('hist-user').value
   const params = new URLSearchParams({ limit: '50' })
-  const fromInput = document.getElementById('hist-from').value
-  const toInput = document.getElementById('hist-to').value
-
-  // Build period dates
-  if (historyPeriod === 'today') {
-    params.set('from', new Date().toISOString().slice(0, 10))
-    params.set('to', new Date().toISOString().slice(0, 10))
-  } else if (historyPeriod === 'week') {
+  const from = document.getElementById('hist-from').value
+  const to = document.getElementById('hist-to').value
+  if (historyPeriod === 'today') params.set('from', new Date().toISOString().slice(0, 10))
+  else if (historyPeriod === 'week') {
     const d = new Date(); d.setDate(d.getDate() - 7)
     params.set('from', d.toISOString().slice(0, 10))
   } else if (historyPeriod === 'month') {
     const d = new Date(); d.setDate(1)
     params.set('from', d.toISOString().slice(0, 10))
-  } else if (historyPeriod === 'date') {
-    if (fromInput) params.set('from', fromInput)
-    if (toInput) params.set('to', toInput)
   }
-  // 'all' → no from/to filter
+  if (from) params.set('from', from)
+  if (to) params.set('to', to)
 
+  const data = await apiFetch('/delivery-history?' + params.toString())
   const list = document.getElementById('history-list')
-  list.innerHTML = '<div class="loading"><div class="spinner"></div>Cargando...</div>'
-
-  let data
-  if (selectedUser) {
-    // Use per-repartidor endpoint with period param
-    const periodParam = historyPeriod === 'all' ? 'all' : historyPeriod
-    data = await apiFetch('/deliveries/by-repartidor/' + encodeURIComponent(selectedUser) + '?period=' + periodParam + '&' + params.toString())
-
-    // Show user stats
-    const statsDiv = document.getElementById('hist-user-stats')
-    statsDiv.style.display = 'block'
-    const sum = data.summary || {}
-    document.getElementById('hist-stat-today').textContent = sum.today ?? 0
-    document.getElementById('hist-stat-week').textContent = sum.week ?? 0
-    document.getElementById('hist-stat-month').textContent = sum.month ?? 0
-    document.getElementById('hist-stat-total').textContent = sum.total ?? 0
-
-    document.getElementById('hist-section-title').textContent = 'Entregas de ' + selectedUser
-  } else {
-    // Use global delivery-history endpoint
-    data = await apiFetch('/delivery-history?' + params.toString())
-    document.getElementById('hist-user-stats').style.display = 'none'
-    document.getElementById('hist-section-title').textContent = 'Todas las entregas'
-  }
-
   const deliveries = data.deliveries || data.items || []
   if (!deliveries.length) {
     list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><div>Sin entregas en este período</div></div>`
@@ -658,13 +804,12 @@ async function loadHistory() {
       <div class="delivery-header" onclick="this.parentElement.classList.toggle('expanded')">
         <div class="delivery-main">
           <div class="delivery-order">${d.orderNumber || '—'}</div>
-          <div class="delivery-meta">${fmtDate(d.deliveredAt)} · ${fmtTime(d.deliveredAt)} · ${d.customerName || '—'}${d.deliveredBy ? ' · ' + d.deliveredBy : ''}</div>
+          <div class="delivery-meta">${fmtDate(d.deliveredAt)} · ${fmtTime(d.deliveredAt)} · ${d.customerName || '—'} · ${d.deliveredBy || '—'}</div>
         </div>
         <div class="delivery-right">
           <div class="delivery-amount">${fmtCurrency(d.total)}</div>
-          <span class="delivery-status status-entregado">✓ Entregado</span>
+          <span class="delivery-status status-entregado">✓</span>
         </div>
-        <div class="expand-icon">▾</div>
       </div>
       <div class="delivery-items">
         ${(d.items || []).map(item => `
@@ -679,44 +824,76 @@ async function loadHistory() {
   `).join('')
 }
 
-async function loadHistoryUsers() {
+// ══════════════════════════════════════════════════════════════
+// REPARTIDORES
+// ══════════════════════════════════════════════════════════════
+async function loadRepartidores() {
   const data = await apiFetch('/deliveries/repartidores')
-  const sel = document.getElementById('hist-user')
+  const list = document.getElementById('repartidores-list')
   const reps = data.repartidores || []
-  // Keep first "Todos" option, add users
-  if (reps.length) {
-    reps.forEach(r => {
-      const opt = document.createElement('option')
-      opt.value = r.userName
-      opt.textContent = r.userName + ' (' + r.deliveriesToday + ' hoy)'
-      sel.appendChild(opt)
-    })
+  if (!reps.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">👤</div><div>Sin datos de repartidores</div></div>`
+    return
   }
+  list.innerHTML = reps.map(r => `
+    <div class="repartidor-card" onclick="showRepartidor('${r.userName.replace(/'/g, "\\'")}')">
+      <div class="repartidor-header">
+        <div class="repartidor-name">👤 ${r.userName}</div>
+        <div class="repartidor-today">${r.deliveriesToday}</div>
+      </div>
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">entregas hoy · ${r.clientsVisitedToday} clientes visitados</div>
+      <div class="repartidor-stats">
+        <div class="repartidor-stat"><div class="repartidor-stat-val">${r.deliveriesWeek}</div><div class="repartidor-stat-lbl">Semana</div></div>
+        <div class="repartidor-stat"><div class="repartidor-stat-val">${r.deliveriesMonth}</div><div class="repartidor-stat-lbl">Mes</div></div>
+        <div class="repartidor-stat"><div class="repartidor-stat-val">${r.deliveriesYear}</div><div class="repartidor-stat-lbl">Año</div></div>
+        <div class="repartidor-stat"><div class="repartidor-stat-val">${r.deliveriesTotal}</div><div class="repartidor-stat-lbl">Total</div></div>
+      </div>
+    </div>
+  `).join('')
 }
 
-// ══════════════════════════════════════════════════════════════
-// TAB NAVIGATION
-// ══════════════════════════════════════════════════════════════
-function showTab(name) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
-  document.getElementById(name + '-screen').classList.add('active')
-  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'))
-  document.querySelectorAll(`.nav-btn[onclick*="${name}"]`).forEach(b => b.classList.add('active'))
-  if (name === 'history' && !historyLoaded) {
-    historyLoaded = true
-    loadHistoryUsers()
-    loadHistory()
-  }
+async function showRepartidor(userName) {
+  document.getElementById('repartidor-detail').style.display = 'block'
+  document.getElementById('repartidor-detail-title').textContent = '👤 ' + userName + ' — Estadísticas'
+
+  const data = await apiFetch('/deliveries/by-repartidor/' + encodeURIComponent(userName) + '?limit=20')
+  const sum = data.summary || {}
+  const deliveries = data.deliveries || []
+
+  document.getElementById('repartidor-stats').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Hoy</div><div class="stat-value green">${sum.today || 0}</div></div>
+    <div class="stat-card"><div class="stat-label">Semana</div><div class="stat-value">${sum.week || 0}</div></div>
+    <div class="stat-card"><div class="stat-label">Mes</div><div class="stat-value blue">${sum.month || 0}</div></div>
+    <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value purple">${sum.total || 0}</div></div>
+  `
+
+  document.getElementById('repartidor-deliveries').innerHTML = deliveries.length
+    ? deliveries.map(d => `
+      <div class="delivery-item">
+        <div class="delivery-header" onclick="this.parentElement.classList.toggle('expanded')">
+          <div class="delivery-main">
+            <div class="delivery-order">${d.orderNumber || '—'}</div>
+            <div class="delivery-meta">${fmtDate(d.deliveredAt)} · ${fmtTime(d.deliveredAt)} · ${d.customerName || '—'}</div>
+          </div>
+          <div class="delivery-right">
+            <div class="delivery-amount">${fmtCurrency(d.total)}</div>
+          </div>
+        </div>
+        <div class="delivery-items">
+          ${(d.items || []).map(item => `<div class="item-row"><span class="item-name">${item.productName || '—'}</span><span class="item-qty">×${item.quantity || 0}</span></div>`).join('')}
+        </div>
+      </div>
+    `).join('')
+    : '<div class="empty-state"><div class="empty-state-icon">📭</div><div>Sin entregas registradas</div></div>'
 }
 
 // ══════════════════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
-  // Start on scanner tab
-  showTab('scanner')
+  loadDashboard()
+  loadRepartidores()
   initScanner()
-  loadHistoryUsers()
 })
 </script>
 </body>
