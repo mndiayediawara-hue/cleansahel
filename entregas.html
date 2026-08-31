@@ -248,6 +248,7 @@
     .admin-banner { background: linear-gradient(135deg, var(--purple), #6d28d9); color: white; padding: 10px 12px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
 
   </style>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js" defer></script>
 </head>
 <body>
 
@@ -302,7 +303,7 @@
   </div>
 
   <div class="scanner-wrap">
-    <div id="qr-reader"></div>
+    <div id="qr-reader"><div class="loading"><div class="spinner"></div>Iniciando cámara...</div></div>
     <p class="scanner-hint">Apunta la cámara al código QR del cliente o introduce el código manualmente</p>
     <div class="scanner-manual">
       <input type="text" id="manual-code" placeholder="Código del cliente...">
@@ -599,7 +600,6 @@ function doLogin() {
       window.TOKEN = data.token
       showApp()
       showTab('scanner')
-      initScanner()
       loadHistoryUsers()
     }
   }).catch(function(e) {
@@ -732,7 +732,15 @@ function showTab(name) {
   document.getElementById(name + '-screen').classList.add('active')
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'))
   document.querySelectorAll(`.nav-btn[onclick*="${name}"]`).forEach(b => b.classList.add('active'))
-  if (name === 'history') loadHistory()
+  if (name === 'history' && !historyLoaded) {
+    historyLoaded = true
+    loadHistoryUsers()
+    loadHistory()
+  }
+  if (name === 'scanner' && !window._scannerInited) {
+    window._scannerInited = true
+    setTimeout(function() { initScanner() }, 100)
+  }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -743,14 +751,34 @@ let selectedOrderId = null
 
 async function initScanner() {
   if (scanner) return
+  // Try to load Html5Qrcode if not available
+  if (typeof Html5Qrcode === 'undefined') {
+    try {
+      await new Promise(function(resolve, reject) {
+        var s = document.createElement('script')
+        s.src = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js'
+        s.onload = resolve
+        s.onerror = reject
+        document.head.appendChild(s)
+        setTimeout(reject, 8000)
+      })
+    } catch(e) {
+      document.getElementById('qr-reader').innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-2);font-size:13px">No se pudo cargar el escáner QR.<br>Usa la entrada manual abajo.</div>'
+      return
+    }
+  }
   try {
     scanner = new Html5Qrcode('qr-reader')
-    await scanner.start(
-      { facingMode: 'environment' },
-      { fps: 10, qrbox: 250 },
-      code => { playBeep(); scanner.pause(true); lookupCustomer(code) },
-      () => {}
-    )
+    // Start with timeout
+    await Promise.race([
+      scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: 250 },
+        function(code) { playBeep(); scanner.pause(true); lookupCustomer(code) },
+        function() {}
+      ),
+      new Promise(function(_, reject) { setTimeout(reject, 10000) })
+    ])
   } catch (e) {
     document.getElementById('qr-reader').innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-2);font-size:13px">No se pudo iniciar la cámara.<br>Usa la entrada manual abajo.</div>'
   }
