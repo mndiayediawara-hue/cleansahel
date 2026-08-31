@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>🚚 CleanSahel — Entregas</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    :root {
+      --bg: #f8fafc; --surface: #ffffff; --surface-2: #f1f5f9;
+      --border: #e2e8f0; --text: #0f172a; --text-2: #475569; --text-3: #94a3b8;
+      --primary: #2563eb; --primary-dark: #1d4ed8; --green: #16a34a; --green-bg: #f0fdf4;
+      --red: #dc2626; --red-bg: #fef2f2; --amber: #d97706; --amber-bg: #fffbeb;
+      --purple: #7c3aed;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text);
+           min-height: 100vh; -webkit-tap-highlight-color: transparent; }
+    .screen { display: none; min-height: 100vh; }
+    .screen.active { display: flex; flex-direction: column; }
+    .screen.active { display: block; }
+
+    /* ── Header ── */
+    .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 16px;
+              display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 100; }
+    .header-back { width: 36px; height: 36px; border-radius: 8px; border: none; background: var(--surface-2);
+                   display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px; }
+    .header-title { font-size: 16px; font-weight: 700; flex: 1; }
+    .header-user { font-size: 12px; color: var(--text-2); }
+
+    /* ── Tab bar ── */
+    .tab-bar { background: var(--surface); border-bottom: 1px solid var(--border);
+               display: flex; overflow-x: auto; scrollbar-width: none; gap: 0; }
+    .tab-bar::-webkit-scrollbar { display: none; }
+    .tab-btn { flex: 1; min-width: 80px; padding: 12px 8px; border: none; background: none; cursor: pointer;
+               font-size: 13px; font-weight: 500; color: var(--text-3); border-bottom: 2px solid transparent;
+               transition: all 0.2s; white-space: nowrap; }
+    .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+
+    /* ── Filter pills ── */
+    .filter-row { display: flex; gap: 6px; padding: 10px 12px; overflow-x: auto; scrollbar-width: none; }
+    .filter-row::-webkit-scrollbar { display: none; }
+    .pill { padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface);
+            font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: all 0.15s; color: var(--text-2); }
+    .pill.active { background: var(--primary); color: white; border-color: var(--primary); }
+    .pill:hover:not(.active) { border-color: var(--primary); color: var(--primary); }
+
+    /* ── Stats cards ── */
+    .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 10px 12px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+    .stat-label { font-size: 11px; color: var(--text-3); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+    .stat-value { font-size: 24px; font-weight: 800; color: var(--text); line-height: 1; }
+    .stat-value.green { color: var(--green); }
+    .stat-value.blue { color: var(--primary); }
+    .stat-value.purple { color: var(--purple); }
+    .stat-value.amber { color: var(--amber); }
+    .stat-sub { font-size: 11px; color: var(--text-3); margin-top: 3px; }
+
+    /* ── Section title ── */
+    .section-title { font-size: 13px; font-weight: 700; color: var(--text-2); text-transform: uppercase;
+                     letter-spacing: 0.05em; padding: 12px 12px 6px; }
+
+    /* ── Delivery list ── */
+    .delivery-list { padding: 0 12px 80px; }
+    .delivery-item { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+                     margin-bottom: 8px; overflow: hidden; position: relative; }
+    .delivery-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; cursor: pointer; }
+    .delivery-main { display: flex; flex-direction: column; gap: 2px; }
+    .delivery-order { font-size: 14px; font-weight: 700; }
+    .delivery-meta { font-size: 12px; color: var(--text-2); }
+    .delivery-right { text-align: right; }
+    .delivery-amount { font-size: 15px; font-weight: 700; color: var(--text); }
+    .delivery-time { font-size: 11px; color: var(--text-3); }
+    .delivery-status { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600;
+                       margin-top: 4px; }
+    .status-entregado { background: var(--green-bg); color: var(--green); }
+    .status-pendiente { background: var(--amber-bg); color: var(--amber); }
+
+    .delivery-items { display: none; padding: 8px 14px 12px; border-top: 1px solid var(--border);
+                      background: var(--surface-2); }
+    .delivery-item.expanded .delivery-items { display: block; }
+    .delivery-item.expanded .expand-icon { transform: rotate(180deg); }
+    .expand-icon { font-size: 16px; color: var(--text-3); transition: transform 0.2s; }
+    .item-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+    .item-name { color: var(--text-2); }
+    .item-qty { font-weight: 600; color: var(--text); }
+
+    /* ── Scanner ── */
+    .scanner-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 16px; gap: 12px; }
+    #qr-reader { width: 100%; max-width: 320px; border-radius: 16px; overflow: hidden; border: 2px solid var(--border); }
+    #qr-reader video { border-radius: 14px; }
+    .scanner-hint { font-size: 13px; color: var(--text-2); text-align: center; max-width: 260px; }
+    .scanner-manual { display: flex; gap: 8px; width: 100%; max-width: 320px; }
+    .scanner-manual input { flex: 1; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; background: var(--surface); }
+    .scanner-manual button { padding: 10px 16px; background: var(--primary); color: white; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
+
+    /* ── Customer result ── */
+    .customer-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin: 12px; }
+    .customer-name { font-size: 18px; font-weight: 800; margin-bottom: 2px; }
+    .customer-code { font-size: 13px; color: var(--text-2); margin-bottom: 4px; }
+    .customer-stats { display: flex; gap: 16px; margin-top: 10px; }
+    .cust-stat { display: flex; flex-direction: column; }
+    .cust-stat-val { font-size: 18px; font-weight: 700; }
+    .cust-stat-val.pending { color: var(--amber); }
+    .cust-stat-val.done { color: var(--green); }
+    .cust-stat-lbl { font-size: 11px; color: var(--text-3); }
+
+    /* ── Pending orders ── */
+    .pending-order { background: var(--surface); border: 2px solid var(--border); border-radius: 12px;
+                     margin: 8px 12px; overflow: hidden; transition: border-color 0.2s; cursor: pointer; }
+    .pending-order:hover { border-color: var(--primary); }
+    .pending-order.selected { border-color: var(--primary); background: #eff6ff; }
+    .pending-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; }
+    .pending-order-num { font-size: 15px; font-weight: 700; }
+    .pending-order-total { font-size: 15px; font-weight: 800; color: var(--primary); }
+    .pending-items { padding: 8px 14px; background: var(--surface-2); }
+    .pending-item { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; }
+    .pending-item-name { color: var(--text-2); }
+    .pending-item-qty { font-weight: 600; color: var(--text); }
+    .pending-footer { padding: 10px 14px; display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
+
+    /* ── Confirm modal ── */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200;
+                     display: none; align-items: flex-end; justify-content: center; }
+    .modal-overlay.active { display: flex; }
+    .modal-sheet { background: var(--surface); border-radius: 20px 20px 0 0; width: 100%; max-width: 500px;
+                   max-height: 90vh; overflow-y: auto; padding: 20px; animation: slideUp 0.3s ease; }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .modal-title { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+    .modal-subtitle { font-size: 13px; color: var(--text-2); margin-bottom: 16px; }
+    .modal-section { margin-bottom: 14px; }
+    .modal-section-title { font-size: 11px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    .modal-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 14px; }
+    .modal-row.total { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 6px; font-weight: 700; font-size: 16px; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
+    .btn { flex: 1; padding: 14px; border: none; border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer; transition: all 0.15s; }
+    .btn-primary { background: var(--green); color: white; }
+    .btn-primary:hover { background: #15803d; }
+    .btn-primary:disabled { background: var(--text-3); cursor: not-allowed; }
+    .btn-secondary { background: var(--surface-2); color: var(--text); }
+    .btn-secondary:hover { background: var(--border); }
+
+    /* ── Success ── */
+    .success-screen { display: none; }
+    .success-screen.active { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+    .success-icon { font-size: 64px; margin-bottom: 16px; animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+    @keyframes popIn { from { transform: scale(0); } to { transform: scale(1); } }
+    .success-title { font-size: 22px; font-weight: 800; margin-bottom: 8px; color: var(--green); }
+    .success-detail { font-size: 14px; color: var(--text-2); text-align: center; margin-bottom: 20px; }
+    .success-detail strong { color: var(--text); }
+    .success-actions { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 300px; }
+
+    /* ── User selector ── */
+    .user-selector-wrap { padding: 0 12px 8px; }
+    .user-selector { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; font-weight: 500; background: var(--surface); color: var(--text); cursor: pointer; }
+    .user-selector:focus { outline: none; border-color: var(--primary); }
+
+    /* ── Stats row ── */
+    .stats-row { display: flex; gap: 8px; padding: 0 12px 10px; }
+    .stat-mini { flex: 1; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 6px; text-align: center; }
+    .stat-mini-val { font-size: 18px; font-weight: 800; line-height: 1; margin-bottom: 3px; }
+    .stat-mini-val.green { color: var(--green); }
+    .stat-mini-val.blue { color: var(--primary); }
+    .stat-mini-val.purple { color: var(--purple); }
+    .stat-mini-lbl { font-size: 10px; color: var(--text-3); font-weight: 500; text-transform: uppercase; letter-spacing: 0.03em; }
+
+    /* ── Bottom nav ── */
+    .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: var(--surface); border-top: 1px solid var(--border);
+                  display: flex; z-index: 100; padding-bottom: env(safe-area-inset-bottom, 0); }
+    .nav-btn { flex: 1; padding: 10px 4px; border: none; background: none; cursor: pointer; display: flex;
+               flex-direction: column; align-items: center; gap: 3px; color: var(--text-3); font-size: 11px; font-weight: 500;
+               transition: color 0.15s; }
+    .nav-btn.active { color: var(--primary); }
+    .nav-icon { font-size: 20px; }
+
+    /* ── Loading ── */
+    .loading { display: flex; align-items: center; justify-content: center; padding: 40px; color: var(--text-3); font-size: 14px; gap: 8px; }
+    .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Empty ── */
+    .empty-state { text-align: center; padding: 40px 20px; color: var(--text-3); font-size: 14px; }
+    .empty-state-icon { font-size: 40px; margin-bottom: 10px; }
+
+    /* ── User selector ── */
+    .user-selector-wrap { padding: 0 12px 10px; }
+    .user-selector { width: 100%; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 13px;
+                     background: var(--surface); color: var(--text); font-family: inherit; }
+    .user-selector:focus { outline: none; border-color: var(--primary); }
+
+    /* ── Date range ── */
+    .date-range { display: flex; gap: 8px; padding: 0 12px 10px; align-items: center; }
+    .date-range input[type="date"] { flex: 1; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: var(--surface); }
+    .date-range-label { font-size: 12px; color: var(--text-3); }
+
+    /* ── Stats row for history ── */
+    .stats-row { display: flex; gap: 8px; padding: 0 12px 8px; overflow-x: auto; scrollbar-width: none; }
+    .stats-row::-webkit-scrollbar { display: none; }
+    .stat-mini { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; flex: 1; min-width: 80px; text-align: center; }
+    .stat-mini-val { font-size: 18px; font-weight: 800; color: var(--text); }
+    .stat-mini-val.green { color: var(--green); }
+    .stat-mini-lbl { font-size: 10px; color: var(--text-3); font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════ SCANNER TAB (PRIMARY) ═══════════════════════════════════ -->
+<div id="scanner-screen" class="screen active">
+  <div class="header">
+    <div>
+      <div class="header-title">📷 Escanear cliente</div>
+      <div class="header-user">QR / código de cliente</div>
+    </div>
+  </div>
+
+  <div class="scanner-wrap">
+    <div id="qr-reader"></div>
+    <p class="scanner-hint">Apunta la cámara al código QR del cliente o introduce el código manualmente</p>
+    <div class="scanner-manual">
+      <input type="text" id="manual-code" placeholder="Código del cliente...">
+      <button onclick="lookupManual()">Buscar</button>
+    </div>
+  </div>
+
+  <!-- Customer result (hidden initially) -->
+  <div id="customer-result" style="display:none">
+    <div class="customer-card" id="customer-info"></div>
+    <div class="section-title" id="pending-title" style="display:none">Pedidos pendientes</div>
+    <div id="pending-orders"></div>
+    <div class="empty-state" id="no-pending" style="display:none">
+      <div class="empty-state-icon">🎉</div>
+      <div>No hay pedidos pendientes para este cliente</div>
+    </div>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="nav-btn active" onclick="showTab('scanner')">
+      <span class="nav-icon">📷</span> Escanear
+    </button>
+    <button class="nav-btn" onclick="showTab('history')">
+      <span class="nav-icon">📋</span> Historial
+    </button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ CONFIRM MODAL ═══════════════════════════════════ -->
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal-sheet">
+    <div class="modal-title" id="confirm-order-num">—</div>
+    <div class="modal-subtitle" id="confirm-customer">—</div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">Productos a entregar</div>
+      <div id="confirm-items"></div>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">Resumen</div>
+      <div class="modal-row"><span>Subtotal</span><span id="confirm-subtotal">—</span></div>
+      <div class="modal-row"><span>IVA</span><span id="confirm-tax">—</span></div>
+      <div class="modal-row"><span>Descuento</span><span id="confirm-discount">—</span></div>
+      <div class="modal-row total"><span>Total</span><span id="confirm-total">—</span></div>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">Repartidor</div>
+      <div id="confirm-delivered-by" style="font-size:14px;font-weight:600;color:var(--text)">—</div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeConfirmModal()">Cancelar</button>
+      <button class="btn btn-primary" id="confirm-btn" onclick="confirmDelivery()">✓ Confirmar entrega</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ SUCCESS ═══════════════════════════════════ -->
+<div id="success-screen" class="success-screen">
+  <div class="success-icon">✅</div>
+  <div class="success-title">¡Entrega registrada!</div>
+  <div class="success-detail" id="success-detail"></div>
+  <div class="success-actions">
+    <button class="btn btn-primary" onclick="showTab('scanner'); clearScanner()">📷 Escaneear otro</button>
+    <button class="btn btn-secondary" onclick="showTab('history')">📋 Ver historial</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ HISTORY TAB ═══════════════════════════════════ -->
+<div id="history-screen" class="screen">
+  <div class="header">
+    <div>
+      <div class="header-title">📋 Historial de entregas</div>
+    </div>
+  </div>
+
+  <!-- Period filter pills: HOY | SEMANA | MES | TODO | FECHA -->
+  <div class="filter-row">
+    <button class="pill active" data-hperiod="today" onclick="setHistoryPeriod('today', this)">HOY</button>
+    <button class="pill" data-hperiod="week" onclick="setHistoryPeriod('week', this)">SEMANA</button>
+    <button class="pill" data-hperiod="month" onclick="setHistoryPeriod('month', this)">MES</button>
+    <button class="pill" data-hperiod="all" onclick="setHistoryPeriod('all', this)">TODO</button>
+    <button class="pill" data-hperiod="date" onclick="setHistoryPeriod('date', this)">FECHA</button>
+  </div>
+
+  <!-- Date range (shown only when FECHA is selected) -->
+  <div class="date-range" id="hist-date-range" style="display:none">
+    <span class="date-range-label">Desde</span>
+    <input type="date" id="hist-from">
+    <span class="date-range-label">Hasta</span>
+    <input type="date" id="hist-to">
+  </div>
+
+  <!-- User selector dropdown -->
+  <div class="user-selector-wrap">
+    <select class="user-selector" id="hist-user" onchange="loadHistory()">
+      <option value="">Todos los repartidores</option>
+    </select>
+  </div>
+
+  <!-- Stats row (shown when user selected) -->
+  <div id="hist-user-stats" style="display:none">
+    <div class="stats-row">
+      <div class="stat-mini">
+        <div class="stat-mini-val green" id="hist-stat-today">—</div>
+        <div class="stat-mini-lbl">Hoy</div>
+      </div>
+      <div class="stat-mini">
+        <div class="stat-mini-val" id="hist-stat-week">—</div>
+        <div class="stat-mini-lbl">Semana</div>
+      </div>
+      <div class="stat-mini">
+        <div class="stat-mini-val blue" id="hist-stat-month">—</div>
+        <div class="stat-mini-lbl">Mes</div>
+      </div>
+      <div class="stat-mini">
+        <div class="stat-mini-val purple" id="hist-stat-total">—</div>
+        <div class="stat-mini-lbl">Total</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section-title" id="hist-section-title">Entregas</div>
+
+  <div class="delivery-list" id="history-list">
+    <div class="loading"><div class="spinner"></div>Cargando...</div>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="nav-btn" onclick="showTab('scanner')">
+      <span class="nav-icon">📷</span> Escanear
+    </button>
+    <button class="nav-btn active" onclick="showTab('history')">
+      <span class="nav-icon">📋</span> Historial
+    </button>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// CONFIG
+// ══════════════════════════════════════════════════════════════
+const API = window.location.hostname.includes('railway')
+  ? window.location.origin + '/api'
+  : window.location.origin + '/api'
+const TOKEN = sessionStorage.getItem('token') || localStorage.getItem('token') || ''
+const USER = JSON.parse(sessionStorage.getItem('user') || '{}')
+
+// ══════════════════════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════════════════════
+function apiFetch(path, opts = {}) {
+  return fetch(API + path, {
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(TOKEN ? { 'Authorization': `Bearer ${TOKEN}` } : {}),
+      ...(opts.headers || {})
+    }
+  }).then(r => r.json())
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function fmtTime(iso) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+}
+
+function fmtCurrency(n) {
+  return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'XOF' }).format(n || 0)
+}
+
+function showTab(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
+  document.getElementById(name + '-screen').classList.add('active')
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'))
+  document.querySelectorAll(`.nav-btn[onclick*="${name}"]`).forEach(b => b.classList.add('active'))
+  if (name === 'history') loadHistory()
+}
+
+// ══════════════════════════════════════════════════════════════
+// SCANNER
+// ══════════════════════════════════════════════════════════════
+let scanner = null
+let selectedOrderId = null
+
+async function initScanner() {
+  if (scanner) return
+  try {
+    scanner = new Html5Qrcode('qr-reader')
+    await scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: 250 },
+      code => { playBeep(); scanner.pause(true); lookupCustomer(code) },
+      () => {}
+    )
+  } catch (e) {
+    document.getElementById('qr-reader').innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-2);font-size:13px">No se pudo iniciar la cámara.<br>Usa la entrada manual abajo.</div>'
+  }
+}
+
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain); gain.connect(ctx.destination)
+    osc.frequency.value = 1200
+    gain.gain.setValueAtTime(0.3, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15)
+    osc.start(); osc.stop(ctx.currentTime + 0.15)
+  } catch {}
+}
+
+async function lookupManual() {
+  const code = document.getElementById('manual-code').value.trim()
+  if (!code) return
+  await lookupCustomer(code)
+}
+
+async function lookupCustomer(code) {
+  document.getElementById('customer-result').style.display = 'none'
+  const result = document.getElementById('customer-result')
+  result.style.display = 'block'
+  result.innerHTML = '<div class="loading"><div class="spinner"></div>Buscando cliente...</div>'
+
+  const data = await apiFetch('/delivery/lookup/' + encodeURIComponent(code))
+  if (data.error) {
+    result.innerHTML = `<div class="empty-state"><div class="empty-state-icon">❌</div><div>${data.error}</div><div style="margin-top:8px"><button class="pill" onclick="clearScanner()">Reintentar</button></div></div>`
+    return
+  }
+
+  const c = data.customer || {}
+  const pending = data.pendingOrders || []
+  const stats = data.stats || {}
+
+  result.innerHTML = `
+    <div class="customer-card">
+      <div class="customer-name">${c.name || '—'}</div>
+      <div class="customer-code">📋 Código: ${c.code || code}</div>
+      ${c.address ? `<div style="font-size:12px;color:var(--text-2);margin-top:4px">${c.address}</div>` : ''}
+      ${c.phone ? `<div style="font-size:12px;color:var(--text-2)">📞 ${c.phone}</div>` : ''}
+      <div class="customer-stats">
+        <div class="cust-stat"><div class="cust-stat-val pending">${stats.pendingCount || 0}</div><div class="cust-stat-lbl">Pendientes</div></div>
+        <div class="cust-stat"><div class="cust-stat-val done">${stats.deliveredCount || 0}</div><div class="cust-stat-lbl">Entregados</div></div>
+        <div class="cust-stat"><div class="cust-stat-val">${fmtCurrency(stats.pendingAmount || 0)}</div><div class="cust-stat-lbl">Importe pendiente</div></div>
+      </div>
+    </div>
+  `
+
+  const pendingTitle = document.getElementById('pending-title')
+  const pendingOrdersDiv = document.getElementById('pending-orders')
+  const noPending = document.getElementById('no-pending')
+
+  if (!pending.length) {
+    pendingTitle.style.display = 'none'
+    pendingOrdersDiv.innerHTML = ''
+    noPending.style.display = 'block'
+    return
+  }
+
+  pendingTitle.style.display = 'block'
+  noPending.style.display = 'none'
+  pendingOrdersDiv.innerHTML = pending.map(o => `
+    <div class="pending-order" id="order-${o.id}" onclick="selectOrder('${o.id}', '${o.number || o.id}', ${o.total || 0}, ${JSON.stringify(o.items || []).replace(/"/g, '&quot;')}, '${(o.customer_name || c.name || '').replace(/'/g, "\\'")}', ${o.subtotal || 0}, ${o.tax || 0}, ${o.discount || 0})">
+      <div class="pending-header">
+        <div>
+          <div class="pending-order-num">📦 ${o.number || o.id}</div>
+          <div style="font-size:12px;color:var(--text-2);margin-top:2px">${o.items?.length || 0} productos · ${o.totalItems || 0} unidades</div>
+        </div>
+        <div class="pending-order-total">${fmtCurrency(o.total)}</div>
+      </div>
+      <div class="pending-items">
+        ${(o.items || []).slice(0, 3).map(item => `
+          <div class="pending-item">
+            <span class="pending-item-name">${item.productName || item.name || '—'}</span>
+            <span class="pending-item-qty">×${item.quantity || 0}</span>
+          </div>
+        `).join('')}
+        ${(o.items || []).length > 3 ? `<div style="font-size:12px;color:var(--text-3);padding-top:4px">+${(o.items || []).length - 3} más</div>` : ''}
+      </div>
+      <div class="pending-footer">
+        <span style="font-size:12px;color:var(--text-3)">Toca para confirmar entrega</span>
+        <span style="font-size:18px">→</span>
+      </div>
+    </div>
+  `).join('')
+}
+
+function selectOrder(id, number, total, items, customerName, subtotal, tax, discount) {
+  document.querySelectorAll('.pending-order').forEach(el => el.classList.remove('selected'))
+  document.getElementById('order-' + id)?.classList.add('selected')
+  selectedOrderId = id
+
+  document.getElementById('confirm-order-num').textContent = '📦 Pedido ' + number
+  document.getElementById('confirm-customer').textContent = customerName
+
+  const itemsDiv = document.getElementById('confirm-items')
+  itemsDiv.innerHTML = (items || []).map(item => `
+    <div class="modal-row">
+      <span>${item.productName || item.name || '—'} ×${item.quantity || 0}</span>
+      <span>${fmtCurrency((item.unitPrice || 0) * (item.quantity || 0))}</span>
+    </div>
+  `).join('')
+
+  document.getElementById('confirm-subtotal').textContent = fmtCurrency(subtotal)
+  document.getElementById('confirm-tax').textContent = fmtCurrency(tax)
+  document.getElementById('confirm-discount').textContent = fmtCurrency(discount)
+  document.getElementById('confirm-total').textContent = fmtCurrency(total)
+  document.getElementById('confirm-delivered-by').textContent = USER.fullName || USER.username || '—'
+
+  document.getElementById('confirm-modal').classList.add('active')
+}
+
+function closeConfirmModal() {
+  document.getElementById('confirm-modal').classList.remove('active')
+  selectedOrderId = null
+}
+
+async function confirmDelivery() {
+  if (!selectedOrderId) return
+  const btn = document.getElementById('confirm-btn')
+  btn.disabled = true
+  btn.textContent = 'Registrando...'
+
+  const data = await apiFetch('/delivery/' + selectedOrderId, {
+    method: 'POST',
+    body: JSON.stringify({})
+  })
+
+  btn.disabled = false
+  btn.textContent = '✓ Confirmar entrega'
+
+  if (data.error) {
+    alert('Error: ' + data.error)
+    return
+  }
+
+  closeConfirmModal()
+  showTab('success')
+
+  document.getElementById('success-detail').innerHTML = `
+    <div>📦 <strong>Pedido ${data.orderNumber || selectedOrderId}</strong></div>
+    <div>👤 ${data.customerName || '—'}</div>
+    <div>📅 ${fmtDate(data.deliveredAt)} · ${fmtTime(data.deliveredAt)}</div>
+    <div>💰 ${fmtCurrency(data.total)}</div>
+    <div style="margin-top:6px">👤 Entregado por: <strong>${data.deliveredBy || '—'}</strong></div>
+    <div style="margin-top:6px">📦 ${data.totalItems || 0} unidades entregadas</div>
+  `
+}
+
+function clearScanner() {
+  selectedOrderId = null
+  document.getElementById('customer-result').style.display = 'none'
+  document.getElementById('pending-orders').innerHTML = ''
+  document.getElementById('manual-code').value = ''
+  document.querySelectorAll('.pending-order').forEach(el => el.classList.remove('selected'))
+}
+
+// ══════════════════════════════════════════════════════════════
+// HISTORY TAB
+// ══════════════════════════════════════════════════════════════
+let historyPeriod = 'today'
+let historyLoaded = false
+
+function setHistoryPeriod(period, el) {
+  historyPeriod = period
+  document.querySelectorAll('[data-hperiod]').forEach(p => p.classList.remove('active'))
+  el.classList.add('active')
+
+  const dateRange = document.getElementById('hist-date-range')
+  dateRange.style.display = period === 'date' ? 'flex' : 'none'
+
+  loadHistory()
+}
+
+async function loadHistory() {
+  const selectedUser = document.getElementById('hist-user').value
+  const params = new URLSearchParams({ limit: '50' })
+  const fromInput = document.getElementById('hist-from').value
+  const toInput = document.getElementById('hist-to').value
+
+  // Build period dates
+  if (historyPeriod === 'today') {
+    params.set('from', new Date().toISOString().slice(0, 10))
+    params.set('to', new Date().toISOString().slice(0, 10))
+  } else if (historyPeriod === 'week') {
+    const d = new Date(); d.setDate(d.getDate() - 7)
+    params.set('from', d.toISOString().slice(0, 10))
+  } else if (historyPeriod === 'month') {
+    const d = new Date(); d.setDate(1)
+    params.set('from', d.toISOString().slice(0, 10))
+  } else if (historyPeriod === 'date') {
+    if (fromInput) params.set('from', fromInput)
+    if (toInput) params.set('to', toInput)
+  }
+  // 'all' → no from/to filter
+
+  const list = document.getElementById('history-list')
+  list.innerHTML = '<div class="loading"><div class="spinner"></div>Cargando...</div>'
+
+  let data
+  if (selectedUser) {
+    // Use per-repartidor endpoint with period param
+    const periodParam = historyPeriod === 'all' ? 'all' : historyPeriod
+    data = await apiFetch('/deliveries/by-repartidor/' + encodeURIComponent(selectedUser) + '?period=' + periodParam + '&' + params.toString())
+
+    // Show user stats
+    const statsDiv = document.getElementById('hist-user-stats')
+    statsDiv.style.display = 'block'
+    const sum = data.summary || {}
+    document.getElementById('hist-stat-today').textContent = sum.today ?? 0
+    document.getElementById('hist-stat-week').textContent = sum.week ?? 0
+    document.getElementById('hist-stat-month').textContent = sum.month ?? 0
+    document.getElementById('hist-stat-total').textContent = sum.total ?? 0
+
+    document.getElementById('hist-section-title').textContent = 'Entregas de ' + selectedUser
+  } else {
+    // Use global delivery-history endpoint
+    data = await apiFetch('/delivery-history?' + params.toString())
+    document.getElementById('hist-user-stats').style.display = 'none'
+    document.getElementById('hist-section-title').textContent = 'Todas las entregas'
+  }
+
+  const deliveries = data.deliveries || data.items || []
+  if (!deliveries.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><div>Sin entregas en este período</div></div>`
+    return
+  }
+  list.innerHTML = deliveries.map(d => `
+    <div class="delivery-item">
+      <div class="delivery-header" onclick="this.parentElement.classList.toggle('expanded')">
+        <div class="delivery-main">
+          <div class="delivery-order">${d.orderNumber || '—'}</div>
+          <div class="delivery-meta">${fmtDate(d.deliveredAt)} · ${fmtTime(d.deliveredAt)} · ${d.customerName || '—'}${d.deliveredBy ? ' · ' + d.deliveredBy : ''}</div>
+        </div>
+        <div class="delivery-right">
+          <div class="delivery-amount">${fmtCurrency(d.total)}</div>
+          <span class="delivery-status status-entregado">✓ Entregado</span>
+        </div>
+        <div class="expand-icon">▾</div>
+      </div>
+      <div class="delivery-items">
+        ${(d.items || []).map(item => `
+          <div class="item-row">
+            <span class="item-name">${item.productName || item.name || '—'}</span>
+            <span class="item-qty">×${item.quantity || 0}</span>
+          </div>
+        `).join('')}
+        ${!(d.items || []).length ? '<div style="font-size:12px;color:var(--text-3)">Sin detalle de productos</div>' : ''}
+      </div>
+    </div>
+  `).join('')
+}
+
+async function loadHistoryUsers() {
+  const data = await apiFetch('/deliveries/repartidores')
+  const sel = document.getElementById('hist-user')
+  const reps = data.repartidores || []
+  // Keep first "Todos" option, add users
+  if (reps.length) {
+    reps.forEach(r => {
+      const opt = document.createElement('option')
+      opt.value = r.userName
+      opt.textContent = r.userName + ' (' + r.deliveriesToday + ' hoy)'
+      sel.appendChild(opt)
+    })
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// TAB NAVIGATION
+// ══════════════════════════════════════════════════════════════
+function showTab(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
+  document.getElementById(name + '-screen').classList.add('active')
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'))
+  document.querySelectorAll(`.nav-btn[onclick*="${name}"]`).forEach(b => b.classList.add('active'))
+  if (name === 'history' && !historyLoaded) {
+    historyLoaded = true
+    loadHistoryUsers()
+    loadHistory()
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  // Start on scanner tab
+  showTab('scanner')
+  initScanner()
+  loadHistoryUsers()
+})
+</script>
+</body>
+</html>
