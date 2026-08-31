@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>CleanSahel — Entregas</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <style>
+    :root {
+      --bg: #f8fafc; --surface: #ffffff; --surface-2: #f1f5f9;
+      --border: #e2e8f0; --text: #0f172a; --text-2: #475569; --text-3: #94a3b8;
+      --primary: #2563eb; --primary-dark: #1d4ed8; --green: #16a34a; --green-bg: #f0fdf4;
+      --red: #dc2626; --red-bg: #fef2f2; --amber: #d97706; --amber-bg: #fffbeb;
+      --purple: #7c3aed;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text);
+           min-height: 100vh; -webkit-tap-highlight-color: transparent; }
+    .screen { display: none; min-height: 100vh; }
+    .screen.active { display: flex; flex-direction: column; }
+    .screen.active { display: block; }
+
+    /* ── Header ── */
+    .header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 16px;
+              display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 100; }
+    .header-back { width: 36px; height: 36px; border-radius: 8px; border: none; background: var(--surface-2);
+                   display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px; }
+    .header-title { font-size: 16px; font-weight: 700; flex: 1; }
+    .header-user { font-size: 12px; color: var(--text-2); }
+
+    /* ── Tab bar ── */
+    .tab-bar { background: var(--surface); border-bottom: 1px solid var(--border);
+               display: flex; overflow-x: auto; scrollbar-width: none; gap: 0; }
+    .tab-bar::-webkit-scrollbar { display: none; }
+    .tab-btn { flex: 1; min-width: 80px; padding: 12px 8px; border: none; background: none; cursor: pointer;
+               font-size: 13px; font-weight: 500; color: var(--text-3); border-bottom: 2px solid transparent;
+               transition: all 0.2s; white-space: nowrap; }
+    .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+
+    /* ── Filter pills ── */
+    .filter-row { display: flex; gap: 6px; padding: 10px 12px; overflow-x: auto; scrollbar-width: none; }
+    .filter-row::-webkit-scrollbar { display: none; }
+    .pill { padding: 5px 12px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface);
+            font-size: 12px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: all 0.15s; color: var(--text-2); }
+    .pill.active { background: var(--primary); color: white; border-color: var(--primary); }
+    .pill:hover:not(.active) { border-color: var(--primary); color: var(--primary); }
+
+    /* ── Stats cards ── */
+    .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 10px 12px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+    .stat-label { font-size: 11px; color: var(--text-3); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+    .stat-value { font-size: 24px; font-weight: 800; color: var(--text); line-height: 1; }
+    .stat-value.green { color: var(--green); }
+    .stat-value.blue { color: var(--primary); }
+    .stat-value.purple { color: var(--purple); }
+    .stat-value.amber { color: var(--amber); }
+    .stat-sub { font-size: 11px; color: var(--text-3); margin-top: 3px; }
+
+    /* ── Section title ── */
+    .section-title { font-size: 13px; font-weight: 700; color: var(--text-2); text-transform: uppercase;
+                     letter-spacing: 0.05em; padding: 12px 12px 6px; }
+
+    /* ── Delivery list ── */
+    .delivery-list { padding: 0 12px 80px; }
+    .delivery-item { background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+                     margin-bottom: 8px; overflow: hidden; }
+    .delivery-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; cursor: pointer; }
+    .delivery-main { display: flex; flex-direction: column; gap: 2px; }
+    .delivery-order { font-size: 14px; font-weight: 700; }
+    .delivery-meta { font-size: 12px; color: var(--text-2); }
+    .delivery-right { text-align: right; }
+    .delivery-amount { font-size: 15px; font-weight: 700; color: var(--text); }
+    .delivery-time { font-size: 11px; color: var(--text-3); }
+    .delivery-status { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600;
+                       margin-top: 4px; }
+    .status-entregado { background: var(--green-bg); color: var(--green); }
+    .status-pendiente { background: var(--amber-bg); color: var(--amber); }
+
+    .delivery-items { display: none; padding: 8px 14px 12px; border-top: 1px solid var(--border);
+                      background: var(--surface-2); }
+    .delivery-item.expanded .delivery-items { display: block; }
+    .delivery-item.expanded .expand-icon { transform: rotate(180deg); }
+    .expand-icon { font-size: 16px; color: var(--text-3); transition: transform 0.2s; }
+    .item-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 13px; }
+    .item-name { color: var(--text-2); }
+    .item-qty { font-weight: 600; color: var(--text); }
+
+    /* ── Scanner ── */
+    .scanner-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 16px; gap: 12px; }
+    #qr-reader { width: 100%; max-width: 320px; border-radius: 16px; overflow: hidden; border: 2px solid var(--border); }
+    #qr-reader video { border-radius: 14px; }
+    .scanner-hint { font-size: 13px; color: var(--text-2); text-align: center; max-width: 260px; }
+    .scanner-manual { display: flex; gap: 8px; width: 100%; max-width: 320px; }
+    .scanner-manual input { flex: 1; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; background: var(--surface); }
+    .scanner-manual button { padding: 10px 16px; background: var(--primary); color: white; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
+
+    /* ── Customer result ── */
+    .customer-card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin: 12px; }
+    .customer-name { font-size: 18px; font-weight: 800; margin-bottom: 2px; }
+    .customer-code { font-size: 13px; color: var(--text-2); margin-bottom: 4px; }
+    .customer-stats { display: flex; gap: 16px; margin-top: 10px; }
+    .cust-stat { display: flex; flex-direction: column; }
+    .cust-stat-val { font-size: 18px; font-weight: 700; }
+    .cust-stat-val.pending { color: var(--amber); }
+    .cust-stat-val.done { color: var(--green); }
+    .cust-stat-lbl { font-size: 11px; color: var(--text-3); }
+
+    /* ── Pending orders ── */
+    .pending-order { background: var(--surface); border: 2px solid var(--border); border-radius: 12px;
+                     margin: 8px 12px; overflow: hidden; transition: border-color 0.2s; cursor: pointer; }
+    .pending-order:hover { border-color: var(--primary); }
+    .pending-order.selected { border-color: var(--primary); background: #eff6ff; }
+    .pending-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; }
+    .pending-order-num { font-size: 15px; font-weight: 700; }
+    .pending-order-total { font-size: 15px; font-weight: 800; color: var(--primary); }
+    .pending-items { padding: 8px 14px; background: var(--surface-2); }
+    .pending-item { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; }
+    .pending-item-name { color: var(--text-2); }
+    .pending-item-qty { font-weight: 600; color: var(--text); }
+    .pending-footer { padding: 10px 14px; display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
+
+    /* ── Confirm modal ── */
+    .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200;
+                     display: none; align-items: flex-end; justify-content: center; }
+    .modal-overlay.active { display: flex; }
+    .modal-sheet { background: var(--surface); border-radius: 20px 20px 0 0; width: 100%; max-width: 500px;
+                   max-height: 90vh; overflow-y: auto; padding: 20px; animation: slideUp 0.3s ease; }
+    @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+    .modal-title { font-size: 18px; font-weight: 800; margin-bottom: 4px; }
+    .modal-subtitle { font-size: 13px; color: var(--text-2); margin-bottom: 16px; }
+    .modal-section { margin-bottom: 14px; }
+    .modal-section-title { font-size: 11px; font-weight: 700; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+    .modal-row { display: flex; justify-content: space-between; padding: 5px 0; font-size: 14px; }
+    .modal-row.total { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 6px; font-weight: 700; font-size: 16px; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 16px; }
+    .btn { flex: 1; padding: 14px; border: none; border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer; transition: all 0.15s; }
+    .btn-primary { background: var(--green); color: white; }
+    .btn-primary:hover { background: #15803d; }
+    .btn-primary:disabled { background: var(--text-3); cursor: not-allowed; }
+    .btn-secondary { background: var(--surface-2); color: var(--text); }
+    .btn-secondary:hover { background: var(--border); }
+
+    /* ── Success ── */
+    .success-screen { display: none; }
+    .success-screen.active { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 20px; }
+    .success-icon { font-size: 64px; margin-bottom: 16px; animation: popIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1); }
+    @keyframes popIn { from { transform: scale(0); } to { transform: scale(1); } }
+    .success-title { font-size: 22px; font-weight: 800; margin-bottom: 8px; color: var(--green); }
+    .success-detail { font-size: 14px; color: var(--text-2); text-align: center; margin-bottom: 20px; }
+    .success-detail strong { color: var(--text); }
+    .success-actions { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 300px; }
+
+    /* ── Bottom nav ── */
+    .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: var(--surface); border-top: 1px solid var(--border);
+                  display: flex; z-index: 100; padding-bottom: env(safe-area-inset-bottom, 0); }
+    .nav-btn { flex: 1; padding: 10px 4px; border: none; background: none; cursor: pointer; display: flex;
+               flex-direction: column; align-items: center; gap: 3px; color: var(--text-3); font-size: 11px; font-weight: 500;
+               transition: color 0.15s; }
+    .nav-btn.active { color: var(--primary); }
+    .nav-icon { font-size: 20px; }
+
+    /* ── Loading ── */
+    .loading { display: flex; align-items: center; justify-content: center; padding: 40px; color: var(--text-3); font-size: 14px; gap: 8px; }
+    .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin 0.8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Empty ── */
+    .empty-state { text-align: center; padding: 40px 20px; color: var(--text-3); font-size: 14px; }
+    .empty-state-icon { font-size: 40px; margin-bottom: 10px; }
+
+    /* ── Repartidor card ── */
+    .repartidor-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin: 0 12px 8px; cursor: pointer; transition: border-color 0.15s; }
+    .repartidor-card:hover { border-color: var(--primary); }
+    .repartidor-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .repartidor-name { font-size: 15px; font-weight: 700; }
+    .repartidor-today { font-size: 20px; font-weight: 800; color: var(--green); }
+    .repartidor-stats { display: flex; gap: 12px; }
+    .repartidor-stat { display: flex; flex-direction: column; }
+    .repartidor-stat-val { font-size: 14px; font-weight: 600; }
+    .repartidor-stat-lbl { font-size: 11px; color: var(--text-3); }
+
+    /* ── Date range ── */
+    .date-range { display: flex; gap: 8px; padding: 0 12px 10px; align-items: center; }
+    .date-range input[type="date"] { flex: 1; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: var(--surface); }
+    .date-range-label { font-size: 12px; color: var(--text-3); }
+
+    /* ── Admin filters ── */
+    .admin-filters { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin: 0 12px 10px; padding: 12px; display: none; }
+    .admin-filters.show { display: block; }
+    .admin-filters-title { font-size: 12px; font-weight: 700; color: var(--text-2); margin-bottom: 8px; }
+    .filter-row-admin { display: flex; flex-direction: column; gap: 8px; }
+    .filter-row-admin input, .filter-row-admin select { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: var(--surface-2); }
+    .filter-row-admin button { padding: 8px; background: var(--primary); color: white; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════ HOME / DASHBOARD ═══════════════════════════════════ -->
+<div id="home-screen" class="screen active">
+  <div class="header">
+    <div>
+      <div class="header-title">🚚 CleanSahel — Entregas</div>
+      <div class="header-user" id="home-user">—</div>
+    </div>
+    <button class="header-back" onclick="showScreen('scanner')" title="Escanear">📷</button>
+  </div>
+
+  <!-- Period filters -->
+  <div class="filter-row">
+    <button class="pill active" data-period="today" onclick="setPeriod('today', this)">Hoy</button>
+    <button class="pill" data-period="week" onclick="setPeriod('week', this)">Semana</button>
+    <button class="pill" data-period="month" onclick="setPeriod('month', this)">Mes</button>
+    <button class="pill" data-period="year" onclick="setPeriod('year', this)">Año</button>
+    <button class="pill" data-period="all" onclick="setPeriod('all', this)">Todo</button>
+    <button class="pill" data-period="custom" onclick="setPeriod('custom', this)">📅 Rango</button>
+  </div>
+
+  <!-- Custom date range -->
+  <div class="date-range" id="custom-range" style="display:none">
+    <span class="date-range-label">Desde</span>
+    <input type="date" id="filter-from" onchange="loadDashboard()">
+    <span class="date-range-label">Hasta</span>
+    <input type="date" id="filter-to" onchange="loadDashboard()">
+  </div>
+
+  <!-- Stats cards -->
+  <div class="stats-grid" id="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Entregas</div>
+      <div class="stat-value" id="stat-total">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Pedidos</div>
+      <div class="stat-value green" id="stat-pedidos">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Clientes visitados</div>
+      <div class="stat-value purple" id="stat-clients">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Repartidores activos</div>
+      <div class="stat-value amber" id="stat-repartidores">—</div>
+    </div>
+  </div>
+
+  <div class="section-title">Entregas recientes</div>
+
+  <!-- Filters toggle -->
+  <div style="padding: 0 12px 6px">
+    <button class="pill" onclick="toggleAdminFilters()" style="font-size:12px">⚙️ Filtros avanzados</button>
+  </div>
+
+  <!-- Admin filters -->
+  <div class="admin-filters" id="admin-filters">
+    <div class="admin-filters-title">Filtrar entregas</div>
+    <div class="filter-row-admin">
+      <select id="filter-repartidor" onchange="loadDashboard()"><option value="">Todos los repartidores</option></select>
+      <select id="filter-customer" onchange="loadDashboard()"><option value="">Todos los clientes</option></select>
+      <button onclick="clearFilters()">Limpiar filtros</button>
+    </div>
+  </div>
+
+  <div class="delivery-list" id="delivery-list-home">
+    <div class="loading"><div class="spinner"></div>Cargando...</div>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="nav-btn active" onclick="showScreen('home')">
+      <span class="nav-icon">📊</span> Dashboard
+    </button>
+    <button class="nav-btn" onclick="showScreen('scanner')">
+      <span class="nav-icon">📷</span> Escanear
+    </button>
+    <button class="nav-btn" onclick="showScreen('history')">
+      <span class="nav-icon">📋</span> Historial
+    </button>
+    <button class="nav-btn" onclick="showScreen('repartidores')">
+      <span class="nav-icon">👤</span> Repartidores
+    </button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ SCANNER ═══════════════════════════════════ -->
+<div id="scanner-screen" class="screen">
+  <div class="header">
+    <button class="header-back" onclick="showScreen('home')">←</button>
+    <div>
+      <div class="header-title">📷 Escanear cliente</div>
+      <div class="header-user">QR / código de cliente</div>
+    </div>
+  </div>
+
+  <div class="scanner-wrap">
+    <div id="qr-reader"></div>
+    <p class="scanner-hint">Apunta la cámara al código QR del cliente o introduce el código manualmente</p>
+    <div class="scanner-manual">
+      <input type="text" id="manual-code" placeholder="Código del cliente...">
+      <button onclick="lookupManual()">Buscar</button>
+    </div>
+  </div>
+
+  <!-- Customer result (hidden initially) -->
+  <div id="customer-result" style="display:none">
+    <div class="customer-card" id="customer-info"></div>
+    <div class="section-title" id="pending-title" style="display:none">Pedidos pendientes</div>
+    <div id="pending-orders"></div>
+    <div class="empty-state" id="no-pending" style="display:none">
+      <div class="empty-state-icon">🎉</div>
+      <div>No hay pedidos pendientes para este cliente</div>
+    </div>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="nav-btn" onclick="showScreen('home')">
+      <span class="nav-icon">📊</span> Dashboard
+    </button>
+    <button class="nav-btn active" onclick="showScreen('scanner')">
+      <span class="nav-icon">📷</span> Escanear
+    </button>
+    <button class="nav-btn" onclick="showScreen('history')">
+      <span class="nav-icon">📋</span> Historial
+    </button>
+    <button class="nav-btn" onclick="showScreen('repartidores')">
+      <span class="nav-icon">👤</span> Repartidores
+    </button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ CONFIRM MODAL ═══════════════════════════════════ -->
+<div class="modal-overlay" id="confirm-modal">
+  <div class="modal-sheet">
+    <div class="modal-title" id="confirm-order-num">—</div>
+    <div class="modal-subtitle" id="confirm-customer">—</div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">Productos a entregar</div>
+      <div id="confirm-items"></div>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">Resumen</div>
+      <div class="modal-row"><span>Subtotal</span><span id="confirm-subtotal">—</span></div>
+      <div class="modal-row"><span>IVA</span><span id="confirm-tax">—</span></div>
+      <div class="modal-row"><span>Descuento</span><span id="confirm-discount">—</span></div>
+      <div class="modal-row total"><span>Total</span><span id="confirm-total">—</span></div>
+    </div>
+
+    <div class="modal-section">
+      <div class="modal-section-title">Repartidor</div>
+      <div id="confirm-delivered-by" style="font-size:14px;font-weight:600;color:var(--text)">—</div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeConfirmModal()">Cancelar</button>
+      <button class="btn btn-primary" id="confirm-btn" onclick="confirmDelivery()">✓ Confirmar entrega</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ SUCCESS ═══════════════════════════════════ -->
+<div id="success-screen" class="success-screen">
+  <div class="success-icon">✅</div>
+  <div class="success-title">¡Entrega registrada!</div>
+  <div class="success-detail" id="success-detail"></div>
+  <div class="success-actions">
+    <button class="btn btn-primary" onclick="showScreen('scanner'); clearScanner()">📷 Escaneear otro</button>
+    <button class="btn btn-secondary" onclick="showScreen('home')">📊 Ver dashboard</button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ HISTORY ═══════════════════════════════════ -->
+<div id="history-screen" class="screen">
+  <div class="header">
+    <button class="header-back" onclick="showScreen('home')">←</button>
+    <div>
+      <div class="header-title">📋 Historial de entregas</div>
+    </div>
+  </div>
+
+  <div class="filter-row">
+    <button class="pill active" data-hperiod="today" onclick="setHistoryPeriod('today', this)">Hoy</button>
+    <button class="pill" data-hperiod="week" onclick="setHistoryPeriod('week', this)">Semana</button>
+    <button class="pill" data-hperiod="month" onclick="setHistoryPeriod('month', this)">Mes</button>
+    <button class="pill" data-hperiod="all" onclick="setHistoryPeriod('all', this)">Todo</button>
+  </div>
+
+  <div class="date-range">
+    <span class="date-range-label">Desde</span>
+    <input type="date" id="hist-from">
+    <span class="date-range-label">Hasta</span>
+    <input type="date" id="hist-to">
+    <button class="pill active" onclick="loadHistory()" style="padding:7px 12px;font-size:12px">Filtrar</button>
+  </div>
+
+  <div class="delivery-list" id="history-list">
+    <div class="loading"><div class="spinner"></div>Cargando...</div>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="nav-btn" onclick="showScreen('home')">
+      <span class="nav-icon">📊</span> Dashboard
+    </button>
+    <button class="nav-btn" onclick="showScreen('scanner')">
+      <span class="nav-icon">📷</span> Escanear
+    </button>
+    <button class="nav-btn active" onclick="showScreen('history')">
+      <span class="nav-icon">📋</span> Historial
+    </button>
+    <button class="nav-btn" onclick="showScreen('repartidores')">
+      <span class="nav-icon">👤</span> Repartidores
+    </button>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ REPARTIDORES ═══════════════════════════════════ -->
+<div id="repartidores-screen" class="screen">
+  <div class="header">
+    <button class="header-back" onclick="showScreen('home')">←</button>
+    <div>
+      <div class="header-title">👤 Repartidores</div>
+    </div>
+  </div>
+
+  <div class="section-title">Actividad de hoy</div>
+  <div id="repartidores-list">
+    <div class="loading"><div class="spinner"></div>Cargando...</div>
+  </div>
+
+  <!-- Selected repartidor detail -->
+  <div id="repartidor-detail" style="display:none">
+    <div class="section-title" id="repartidor-detail-title">—</div>
+    <div class="stats-grid" id="repartidor-stats"></div>
+    <div class="delivery-list" id="repartidor-deliveries"></div>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="nav-btn" onclick="showScreen('home')">
+      <span class="nav-icon">📊</span> Dashboard
+    </button>
+    <button class="nav-btn" onclick="showScreen('scanner')">
+      <span class="nav-icon">📷</span> Escanear
+    </button>
+    <button class="nav-btn" onclick="showScreen('history')">
+      <span class="nav-icon">📋</span> Historial
+    </button>
+    <button class="nav-btn active" onclick="showScreen('repartidores')">
+      <span class="nav-icon">👤</span> Repartidores
+    </button>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// CONFIG
+// ══════════════════════════════════════════════════════════════
+const API = window.location.hostname.includes('railway')
+  ? window.location.origin + '/api'
+  : window.location.origin + '/api'
+const TOKEN = sessionStorage.getItem('token') || localStorage.getItem('token') || ''
+const USER = JSON.parse(sessionStorage.getItem('user') || '{}')
+
+// ══════════════════════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════════════════════
+function apiFetch(path, opts = {}) {
+  return fetch(API + path, {
+    ...opts,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(TOKEN ? { 'Authorization': `Bearer ${TOKEN}` } : {}),
+      ...(opts.headers || {})
+    }
+  }).then(r => r.json())
+}
+
+function fmtDate(iso) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function fmtTime(iso) {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })
+}
+
+function fmtCurrency(n) {
+  return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'XOF' }).format(n || 0)
+}
+
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
+  document.getElementById(name + '-screen').classList.add('active')
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'))
+  document.querySelectorAll(`.nav-btn[onclick*="${name}"]`).forEach(b => b.classList.add('active'))
+}
+
+// ══════════════════════════════════════════════════════════════
+// DASHBOARD
+// ══════════════════════════════════════════════════════════════
+let currentPeriod = 'today'
+
+function setPeriod(period, el) {
+  currentPeriod = period
+  document.querySelectorAll('.filter-row .pill').forEach(p => p.classList.remove('active'))
+  el.classList.add('active')
+  const customRange = document.getElementById('custom-range')
+  customRange.style.display = period === 'custom' ? 'flex' : 'none'
+  loadDashboard()
+}
+
+async function loadDashboard() {
+  const params = new URLSearchParams()
+  params.set('period', currentPeriod === 'custom' ? 'all' : currentPeriod)
+  if (currentPeriod === 'custom') {
+    const from = document.getElementById('filter-from').value
+    const to = document.getElementById('filter-to').value
+    if (from) params.set('from', from)
+    if (to) params.set('to', to)
+  }
+  const repartidor = document.getElementById('filter-repartidor')?.value
+  const customer = document.getElementById('filter-customer')?.value
+
+  const data = await apiFetch('/delivery-stats?' + params.toString())
+  if (data.error) { document.getElementById('delivery-list-home').innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>${data.error}</div></div>`; return }
+
+  const sum = data.summary || {}
+  document.getElementById('stat-total').textContent = sum.total ?? 0
+  document.getElementById('stat-pedidos').textContent = sum.total ?? 0
+  document.getElementById('stat-clients').textContent = sum.clientsVisitedToday ?? 0
+  document.getElementById('stat-repartidores').textContent = sum.activeRepartidoresPeriod ?? sum.activeRepartidoresToday ?? 0
+
+  // Load filter options
+  if (data.byUser?.length) {
+    const sel = document.getElementById('filter-repartidor')
+    if (sel && sel.options.length <= 1) {
+      data.byUser.forEach(u => {
+        const opt = document.createElement('option')
+        opt.value = u.userName
+        opt.textContent = u.userName
+        sel.appendChild(opt)
+      })
+    }
+  }
+
+  // Render recent deliveries
+  const list = document.getElementById('delivery-list-home')
+  const deliveries = data.recent || []
+  if (!deliveries.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><div>Sin entregas en este período</div></div>`
+    return
+  }
+  list.innerHTML = deliveries.map(d => `
+    <div class="delivery-item">
+      <div class="delivery-header" onclick="this.parentElement.classList.toggle('expanded')">
+        <div class="delivery-main">
+          <div class="delivery-order">${d.orderNumber || d.number || '—'}</div>
+          <div class="delivery-meta">${fmtDate(d.deliveredAt)} · ${fmtTime(d.deliveredAt)} · ${d.customerName || '—'} · ${d.deliveredBy || '—'}</div>
+        </div>
+        <div class="delivery-right">
+          <div class="delivery-amount">${fmtCurrency(d.total)}</div>
+          <div class="delivery-time">${fmtTime(d.deliveredAt)}</div>
+          <span class="delivery-status status-entregado">✓ Entregado</span>
+        </div>
+      </div>
+      <div class="expand-icon" style="position:absolute;right:14px;top:14px">▾</div>
+    </div>
+  `).join('')
+
+  // Update user name
+  document.getElementById('home-user').textContent = USER.fullName || USER.username || '—'
+}
+
+function toggleAdminFilters() {
+  document.getElementById('admin-filters').classList.toggle('show')
+}
+
+function clearFilters() {
+  document.getElementById('filter-repartidor').value = ''
+  document.getElementById('filter-customer').value = ''
+  loadDashboard()
+}
+
+// ══════════════════════════════════════════════════════════════
+// SCANNER
+// ══════════════════════════════════════════════════════════════
+let scanner = null
+let selectedOrderId = null
+
+async function initScanner() {
+  if (scanner) return
+  try {
+    scanner = new Html5Qrcode('qr-reader')
+    await scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: 250 },
+      code => { playBeep(); scanner.pause(true); lookupCustomer(code) },
+      () => {}
+    )
+  } catch (e) {
+    document.getElementById('qr-reader').innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-2);font-size:13px">No se pudo iniciar la cámara.<br>Usa la entrada manual abajo.</div>'
+  }
+}
+
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)()
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.connect(gain); gain.connect(ctx.destination)
+    osc.frequency.value = 1200
+    gain.gain.setValueAtTime(0.3, ctx.currentTime)
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15)
+    osc.start(); osc.stop(ctx.currentTime + 0.15)
+  } catch {}
+}
+
+async function lookupManual() {
+  const code = document.getElementById('manual-code').value.trim()
+  if (!code) return
+  await lookupCustomer(code)
+}
+
+async function lookupCustomer(code) {
+  document.getElementById('customer-result').style.display = 'none'
+  const result = document.getElementById('customer-result')
+  result.style.display = 'block'
+  result.innerHTML = '<div class="loading"><div class="spinner"></div>Buscando cliente...</div>'
+
+  const data = await apiFetch('/delivery/lookup/' + encodeURIComponent(code))
+  if (data.error) {
+    result.innerHTML = `<div class="empty-state"><div class="empty-state-icon">❌</div><div>${data.error}</div><div style="margin-top:8px"><button class="pill" onclick="clearScanner()">Reintentar</button></div></div>`
+    return
+  }
+
+  const c = data.customer || {}
+  const pending = data.pendingOrders || []
+  const stats = data.stats || {}
+
+  result.innerHTML = `
+    <div class="customer-card">
+      <div class="customer-name">${c.name || '—'}</div>
+      <div class="customer-code">📋 Código: ${c.code || code}</div>
+      ${c.address ? `<div style="font-size:12px;color:var(--text-2);margin-top:4px">${c.address}</div>` : ''}
+      ${c.phone ? `<div style="font-size:12px;color:var(--text-2)">📞 ${c.phone}</div>` : ''}
+      <div class="customer-stats">
+        <div class="cust-stat"><div class="cust-stat-val pending">${stats.pendingCount || 0}</div><div class="cust-stat-lbl">Pendientes</div></div>
+        <div class="cust-stat"><div class="cust-stat-val done">${stats.deliveredCount || 0}</div><div class="cust-stat-lbl">Entregados</div></div>
+        <div class="cust-stat"><div class="cust-stat-val">${fmtCurrency(stats.pendingAmount || 0)}</div><div class="cust-stat-lbl">Importe pendiente</div></div>
+      </div>
+    </div>
+  `
+
+  const pendingTitle = document.getElementById('pending-title')
+  const pendingOrdersDiv = document.getElementById('pending-orders')
+  const noPending = document.getElementById('no-pending')
+
+  if (!pending.length) {
+    pendingTitle.style.display = 'none'
+    pendingOrdersDiv.innerHTML = ''
+    noPending.style.display = 'block'
+    return
+  }
+
+  pendingTitle.style.display = 'block'
+  noPending.style.display = 'none'
+  pendingOrdersDiv.innerHTML = pending.map(o => `
+    <div class="pending-order" id="order-${o.id}" onclick="selectOrder('${o.id}', '${o.number || o.id}', ${o.total || 0}, ${JSON.stringify(o.items || []).replace(/"/g, '&quot;')}, '${(o.customer_name || c.name || '').replace(/'/g, "\\'")}', ${o.subtotal || 0}, ${o.tax || 0}, ${o.discount || 0})">
+      <div class="pending-header">
+        <div>
+          <div class="pending-order-num">📦 ${o.number || o.id}</div>
+          <div style="font-size:12px;color:var(--text-2);margin-top:2px">${o.items?.length || 0} productos · ${o.totalItems || 0} unidades</div>
+        </div>
+        <div class="pending-order-total">${fmtCurrency(o.total)}</div>
+      </div>
+      <div class="pending-items">
+        ${(o.items || []).slice(0, 3).map(item => `
+          <div class="pending-item">
+            <span class="pending-item-name">${item.productName || item.name || '—'}</span>
+            <span class="pending-item-qty">×${item.quantity || 0}</span>
+          </div>
+        `).join('')}
+        ${(o.items || []).length > 3 ? `<div style="font-size:12px;color:var(--text-3);padding-top:4px">+${(o.items || []).length - 3} más</div>` : ''}
+      </div>
+      <div class="pending-footer">
+        <span style="font-size:12px;color:var(--text-3)">Toca para confirmar entrega</span>
+        <span style="font-size:18px">→</span>
+      </div>
+    </div>
+  `).join('')
+}
+
+function selectOrder(id, number, total, items, customerName, subtotal, tax, discount) {
+  document.querySelectorAll('.pending-order').forEach(el => el.classList.remove('selected'))
+  document.getElementById('order-' + id)?.classList.add('selected')
+  selectedOrderId = id
+
+  document.getElementById('confirm-order-num').textContent = '📦 Pedido ' + number
+  document.getElementById('confirm-customer').textContent = customerName
+
+  const itemsDiv = document.getElementById('confirm-items')
+  itemsDiv.innerHTML = (items || []).map(item => `
+    <div class="modal-row">
+      <span>${item.productName || item.name || '—'} ×${item.quantity || 0}</span>
+      <span>${fmtCurrency((item.unitPrice || 0) * (item.quantity || 0))}</span>
+    </div>
+  `).join('')
+
+  document.getElementById('confirm-subtotal').textContent = fmtCurrency(subtotal)
+  document.getElementById('confirm-tax').textContent = fmtCurrency(tax)
+  document.getElementById('confirm-discount').textContent = fmtCurrency(discount)
+  document.getElementById('confirm-total').textContent = fmtCurrency(total)
+  document.getElementById('confirm-delivered-by').textContent = USER.fullName || USER.username || '—'
+
+  document.getElementById('confirm-modal').classList.add('active')
+}
+
+function closeConfirmModal() {
+  document.getElementById('confirm-modal').classList.remove('active')
+  selectedOrderId = null
+}
+
+async function confirmDelivery() {
+  if (!selectedOrderId) return
+  const btn = document.getElementById('confirm-btn')
+  btn.disabled = true
+  btn.textContent = 'Registrando...'
+
+  const data = await apiFetch('/delivery/' + selectedOrderId, {
+    method: 'POST',
+    body: JSON.stringify({})
+  })
+
+  btn.disabled = false
+  btn.textContent = '✓ Confirmar entrega'
+
+  if (data.error) {
+    alert('Error: ' + data.error)
+    return
+  }
+
+  closeConfirmModal()
+  showScreen('success')
+
+  document.getElementById('success-detail').innerHTML = `
+    <div>📦 <strong>Pedido ${data.orderNumber || selectedOrderId}</strong></div>
+    <div>👤 ${data.customerName || '—'}</div>
+    <div>📅 ${fmtDate(data.deliveredAt)} · ${fmtTime(data.deliveredAt)}</div>
+    <div>💰 ${fmtCurrency(data.total)}</div>
+    <div style="margin-top:6px">👤 Entregado por: <strong>${data.deliveredBy || '—'}</strong></div>
+    <div style="margin-top:6px">📦 ${data.totalItems || 0} unidades entregadas</div>
+  `
+
+  // Refresh dashboard
+  loadDashboard()
+}
+
+function clearScanner() {
+  selectedOrderId = null
+  document.getElementById('customer-result').style.display = 'none'
+  document.getElementById('pending-orders').innerHTML = ''
+  document.getElementById('manual-code').value = ''
+  document.querySelectorAll('.pending-order').forEach(el => el.classList.remove('selected'))
+}
+
+// ══════════════════════════════════════════════════════════════
+// HISTORY
+// ══════════════════════════════════════════════════════════════
+let historyPeriod = 'today'
+
+function setHistoryPeriod(period, el) {
+  historyPeriod = period
+  document.querySelectorAll('[data-hperiod]').forEach(p => p.classList.remove('active'))
+  el.classList.add('active')
+  loadHistory()
+}
+
+async function loadHistory() {
+  const params = new URLSearchParams({ limit: '50' })
+  const from = document.getElementById('hist-from').value
+  const to = document.getElementById('hist-to').value
+  if (historyPeriod === 'today') params.set('from', new Date().toISOString().slice(0, 10))
+  else if (historyPeriod === 'week') {
+    const d = new Date(); d.setDate(d.getDate() - 7)
+    params.set('from', d.toISOString().slice(0, 10))
+  } else if (historyPeriod === 'month') {
+    const d = new Date(); d.setDate(1)
+    params.set('from', d.toISOString().slice(0, 10))
+  }
+  if (from) params.set('from', from)
+  if (to) params.set('to', to)
+
+  const data = await apiFetch('/delivery-history?' + params.toString())
+  const list = document.getElementById('history-list')
+  const deliveries = data.deliveries || data.items || []
+  if (!deliveries.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><div>Sin entregas en este período</div></div>`
+    return
+  }
+  list.innerHTML = deliveries.map(d => `
+    <div class="delivery-item">
+      <div class="delivery-header" onclick="this.parentElement.classList.toggle('expanded')">
+        <div class="delivery-main">
+          <div class="delivery-order">${d.orderNumber || '—'}</div>
+          <div class="delivery-meta">${fmtDate(d.deliveredAt)} · ${fmtTime(d.deliveredAt)} · ${d.customerName || '—'} · ${d.deliveredBy || '—'}</div>
+        </div>
+        <div class="delivery-right">
+          <div class="delivery-amount">${fmtCurrency(d.total)}</div>
+          <span class="delivery-status status-entregado">✓</span>
+        </div>
+      </div>
+      <div class="delivery-items">
+        ${(d.items || []).map(item => `
+          <div class="item-row">
+            <span class="item-name">${item.productName || item.name || '—'}</span>
+            <span class="item-qty">×${item.quantity || 0}</span>
+          </div>
+        `).join('')}
+        ${!(d.items || []).length ? '<div style="font-size:12px;color:var(--text-3)">Sin detalle de productos</div>' : ''}
+      </div>
+    </div>
+  `).join('')
+}
+
+// ══════════════════════════════════════════════════════════════
+// REPARTIDORES
+// ══════════════════════════════════════════════════════════════
+async function loadRepartidores() {
+  const data = await apiFetch('/deliveries/repartidores')
+  const list = document.getElementById('repartidores-list')
+  const reps = data.repartidores || []
+  if (!reps.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">👤</div><div>Sin datos de repartidores</div></div>`
+    return
+  }
+  list.innerHTML = reps.map(r => `
+    <div class="repartidor-card" onclick="showRepartidor('${r.userName.replace(/'/g, "\\'")}')">
+      <div class="repartidor-header">
+        <div class="repartidor-name">👤 ${r.userName}</div>
+        <div class="repartidor-today">${r.deliveriesToday}</div>
+      </div>
+      <div style="font-size:11px;color:var(--text-3);margin-bottom:6px">entregas hoy · ${r.clientsVisitedToday} clientes visitados</div>
+      <div class="repartidor-stats">
+        <div class="repartidor-stat"><div class="repartidor-stat-val">${r.deliveriesWeek}</div><div class="repartidor-stat-lbl">Semana</div></div>
+        <div class="repartidor-stat"><div class="repartidor-stat-val">${r.deliveriesMonth}</div><div class="repartidor-stat-lbl">Mes</div></div>
+        <div class="repartidor-stat"><div class="repartidor-stat-val">${r.deliveriesYear}</div><div class="repartidor-stat-lbl">Año</div></div>
+        <div class="repartidor-stat"><div class="repartidor-stat-val">${r.deliveriesTotal}</div><div class="repartidor-stat-lbl">Total</div></div>
+      </div>
+    </div>
+  `).join('')
+}
+
+async function showRepartidor(userName) {
+  document.getElementById('repartidor-detail').style.display = 'block'
+  document.getElementById('repartidor-detail-title').textContent = '👤 ' + userName + ' — Estadísticas'
+
+  const data = await apiFetch('/deliveries/by-repartidor/' + encodeURIComponent(userName) + '?limit=20')
+  const sum = data.summary || {}
+  const deliveries = data.deliveries || []
+
+  document.getElementById('repartidor-stats').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Hoy</div><div class="stat-value green">${sum.today || 0}</div></div>
+    <div class="stat-card"><div class="stat-label">Semana</div><div class="stat-value">${sum.week || 0}</div></div>
+    <div class="stat-card"><div class="stat-label">Mes</div><div class="stat-value blue">${sum.month || 0}</div></div>
+    <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value purple">${sum.total || 0}</div></div>
+  `
+
+  document.getElementById('repartidor-deliveries').innerHTML = deliveries.length
+    ? deliveries.map(d => `
+      <div class="delivery-item">
+        <div class="delivery-header" onclick="this.parentElement.classList.toggle('expanded')">
+          <div class="delivery-main">
+            <div class="delivery-order">${d.orderNumber || '—'}</div>
+            <div class="delivery-meta">${fmtDate(d.deliveredAt)} · ${fmtTime(d.deliveredAt)} · ${d.customerName || '—'}</div>
+          </div>
+          <div class="delivery-right">
+            <div class="delivery-amount">${fmtCurrency(d.total)}</div>
+          </div>
+        </div>
+        <div class="delivery-items">
+          ${(d.items || []).map(item => `<div class="item-row"><span class="item-name">${item.productName || '—'}</span><span class="item-qty">×${item.quantity || 0}</span></div>`).join('')}
+        </div>
+      </div>
+    `).join('')
+    : '<div class="empty-state"><div class="empty-state-icon">📭</div><div>Sin entregas registradas</div></div>'
+}
+
+// ══════════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  loadDashboard()
+  loadRepartidores()
+  initScanner()
+})
+</script>
+</body>
+</html>
