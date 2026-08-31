@@ -963,6 +963,10 @@ document.addEventListener('DOMContentLoaded', () => {
   showTab('scanner')
   initScanner()
   loadHistoryUsers()
+  // Show admin-only elements
+  if (isAdmin()) {
+    document.querySelectorAll('.nav-btn#nav-users-btn').forEach(function(b) { b.style.display = 'flex' })
+  }
 })
 </script>
 <!-- ═══════════════════════════════════ USER FORM MODAL ═══════════════════════════════════ -->
