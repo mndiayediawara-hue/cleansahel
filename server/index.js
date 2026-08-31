@@ -34,7 +34,12 @@ app.use((req, _res, next) => {
 
 // Health check
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, time: new Date().toISOString(), version: '1.0.0' })
+  res.json({ ok: true, time: new Date().toISOString(), version: '2.0.0' })
+})
+
+// Extra public endpoint to verify server is running
+app.get('/ping', (_req, res) => {
+  res.json({ pong: true, ts: new Date().toISOString() })
 })
 
 // ENDPOINT TEMPORAL: Reset DB (usar para forzar re-seed)
