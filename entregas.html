@@ -493,7 +493,6 @@ const API = window.location.hostname.includes('railway')
   : window.location.origin + '/api'
 const TOKEN = sessionStorage.getItem('token') || localStorage.getItem('token') || ''
 const USER = JSON.parse(sessionStorage.getItem('user') || '{}')
-const TOKEN = sessionStorage.getItem('token') || ''
 
 // ── Login overlay ──────────────────────────────────────────────
 function showLogin() {
