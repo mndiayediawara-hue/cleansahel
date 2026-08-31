@@ -112,8 +112,8 @@ router.get('/users', auth, requirePermission('users', 'view'), (_req, res) => {
 router.post('/users', auth, requirePermission('users', 'create'), (req, res) => {
   const { username, password, fullName, email, role, permissions } = req.body
   if (!username || !password || !fullName) return res.status(400).json({ error: 'Datos incompletos' })
-  // Only allow 3 roles
-  const validRoles = ['admin', 'produccion', 'contabilidad']
+  // Only allow valid roles
+  const validRoles = ['admin', 'produccion', 'contabilidad', 'repartidor']
   const finalRole = validRoles.includes(role) ? role : 'produccion'
   try {
     const id = uid('u-')

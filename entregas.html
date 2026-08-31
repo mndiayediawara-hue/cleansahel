@@ -201,6 +201,52 @@
     .stat-mini-val { font-size: 18px; font-weight: 800; color: var(--text); }
     .stat-mini-val.green { color: var(--green); }
     .stat-mini-lbl { font-size: 10px; color: var(--text-3); font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em; margin-top: 2px; }
+
+    /* ── User management ── */
+    .users-header { padding: 12px 12px 8px; display: flex; justify-content: space-between; align-items: center; }
+    .users-list { padding: 0 12px 80px; }
+    .user-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 10px; padding: 14px; display: flex; align-items: center; gap: 12px; }
+    .user-avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--primary); color: white; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: 700; flex-shrink: 0; }
+    .user-avatar.admin { background: var(--purple); }
+    .user-avatar.prod { background: var(--amber); }
+    .user-avatar.cont { background: var(--green); }
+    .user-avatar.rep { background: #0891b2; }
+    .user-info { flex: 1; min-width: 0; }
+    .user-name { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
+    .user-meta { font-size: 12px; color: var(--text-2); }
+    .user-actions { display: flex; gap: 6px; }
+    .user-action-btn { width: 34px; height: 34px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+    .user-action-btn:hover { background: var(--surface-2); }
+    .user-action-btn.delete:hover { background: var(--red-bg); border-color: var(--red); color: var(--red); }
+    .role-badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+    .role-admin { background: #f3e8ff; color: var(--purple); }
+    .role-produccion { background: var(--amber-bg); color: var(--amber); }
+    .role-contabilidad { background: var(--green-bg); color: var(--green); }
+    .role-repartidor { background: #e0f2fe; color: #0891b2; }
+    .inactive-badge { background: var(--surface-2); color: var(--text-3); }
+    /* ── Form inputs ── */
+    .form-group { margin-bottom: 14px; }
+    .form-label { display: block; font-size: 12px; font-weight: 600; color: var(--text-2); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.04em; }
+    .form-input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; background: var(--surface); color: var(--text); font-family: inherit; transition: border-color 0.15s; }
+    .form-input:focus { outline: none; border-color: var(--primary); }
+    .form-select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; background: var(--surface); color: var(--text); font-family: inherit; cursor: pointer; }
+    .form-row { display: flex; gap: 10px; }
+    .form-row .form-group { flex: 1; }
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; }
+    .toggle-label { font-size: 14px; font-weight: 500; }
+    .toggle-sub { font-size: 12px; color: var(--text-3); }
+    .toggle { position: relative; width: 44px; height: 24px; }
+    .toggle input { opacity: 0; width: 0; height: 0; }
+    .toggle-slider { position: absolute; inset: 0; background: var(--border); border-radius: 24px; cursor: pointer; transition: 0.2s; }
+    .toggle-slider::before { content: ''; position: absolute; width: 18px; height: 18px; left: 3px; bottom: 3px; background: white; border-radius: 50%; transition: 0.2s; }
+    .toggle input:checked + .toggle-slider { background: var(--green); }
+    .toggle input:checked + .toggle-slider::before { transform: translateX(20px); }
+    .admin-only-badge { display: inline-block; background: var(--purple); color: white; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.05em; margin-left: 6px; }
+    .user-mgmt-section { display: none; }
+    .user-mgmt-section.visible { display: block; }
+    /* ── Admin panel alert ── */
+    .admin-banner { background: linear-gradient(135deg, var(--purple), #6d28d9); color: white; padding: 10px 12px; font-size: 12px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+
   </style>
 </head>
 <body>
@@ -355,6 +401,45 @@
     </button>
   </div>
 </div>
+
+<!-- ═══════════════════════════════════ USERS SCREEN ═══════════════════════════════════ -->
+<div id="users-screen" class="screen user-mgmt-section">
+  <div class="header">
+    <div>
+      <div class="header-title">👥 Gestión de usuarios</div>
+      <div class="header-user">Solo administradores</div>
+    </div>
+  </div>
+
+  <div class="admin-banner">
+    <span>🛡️</span>
+    <span>Panel de administración — solo administradores pueden gestionar usuarios</span>
+  </div>
+
+  <div class="users-header">
+    <div class="section-title" style="padding:0">Usuarios del sistema</div>
+    <button class="pill active" id="btn-add-user" onclick="openUserModal()" style="padding:8px 16px; font-size:13px; font-weight:700;">
+      + Nuevo usuario
+    </button>
+  </div>
+
+  <div class="users-list" id="users-list">
+    <div class="loading"><div class="spinner"></div>Cargando...</div>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="nav-btn" onclick="showTab('scanner')">
+      <span class="nav-icon">📷</span> Escanear
+    </button>
+    <button class="nav-btn" onclick="showTab('history')">
+      <span class="nav-icon">📋</span> Historial
+    </button>
+    <button class="nav-btn active" onclick="showTab('users')">
+      <span class="nav-icon">👥</span> Usuarios
+    </button>
+  </div>
+</div>
+
 
 <script>
 // ══════════════════════════════════════════════════════════════
@@ -697,11 +782,38 @@ async function loadHistoryUsers() {
 // ══════════════════════════════════════════════════════════════
 // TAB NAVIGATION
 // ══════════════════════════════════════════════════════════════
+// showTab is now defined in the USER MANAGEMENT section
+
+// ══════════════════════════════════════════════════════════════
+
+// ══════════════════════════════════════════════════════════════
+// USER MANAGEMENT
+// ══════════════════════════════════════════════════════════════
+function isAdmin() { return USER.role === 'admin' }
+
 function showTab(name) {
+  // Hide all screens
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
-  document.getElementById(name + '-screen').classList.add('active')
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'))
-  document.querySelectorAll(`.nav-btn[onclick*="${name}"]`).forEach(b => b.classList.add('active'))
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'))
+
+  // Show selected screen
+  var target = document.getElementById(name + '-screen')
+  if (target) target.classList.add('active')
+
+  // Highlight nav button
+  document.querySelectorAll('.nav-btn').forEach(function(b) {
+    if (b.getAttribute('onclick') && b.getAttribute('onclick').indexOf(name) >= 0) b.classList.add('active')
+  })
+
+  // Load users if showing users tab
+  if (name === 'users') {
+    if (!isAdmin()) {
+      document.getElementById('users-list').innerHTML = '<div class="empty-state"><div class="empty-state-icon">🔒</div><div>Solo administradores pueden gestionar usuarios</div></div>'
+    } else {
+      loadUsers()
+    }
+  }
   if (name === 'history' && !historyLoaded) {
     historyLoaded = true
     loadHistoryUsers()
@@ -709,7 +821,135 @@ function showTab(name) {
   }
 }
 
-// ══════════════════════════════════════════════════════════════
+function loadUsers() {
+  var list = document.getElementById('users-list')
+  list.innerHTML = '<div class="loading"><div class="spinner"></div>Cargando...</div>'
+  apiFetch('/users').then(function(data) {
+    if (data.error) { list.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><div>' + data.error + '</div></div>'; return }
+    if (!data.length) { list.innerHTML = '<div class="empty-state"><div class="empty-state-icon">👥</div><div>No hay usuarios</div></div>'; return }
+    list.innerHTML = data.map(function(u) {
+      var initials = (u.fullName || u.username || '?').split(' ').map(function(w) { return w[0] || '' }).slice(0, 2).join('').toUpperCase()
+      var roleClass = 'rep'
+      var roleLabel = u.role || 'repartidor'
+      if (u.role === 'admin') { roleClass = 'admin'; roleLabel = 'Admin' }
+      else if (u.role === 'produccion') { roleClass = 'prod'; roleLabel = 'Producción' }
+      else if (u.role === 'contabilidad') { roleClass = 'cont'; roleLabel = 'Contabilidad' }
+      else { roleLabel = 'Repartidor' }
+      var activeClass = u.active ? '' : 'inactive-badge'
+      var activeLabel = u.active ? 'Activo' : 'Inactivo'
+      var editBtn = isAdmin() ? '<button class="user-action-btn" onclick="event.stopPropagation(); openUserModal(\'' + u.id + '\')" title="Editar">✏️</button>' : ''
+      var delBtn = (isAdmin() && u.id !== USER.id) ? '<button class="user-action-btn delete" onclick="event.stopPropagation(); openDeleteModal(\'' + u.id + '\', \'' + (u.fullName || u.username) + '\')" title="Eliminar">🗑️</button>' : ''
+      return '<div class="user-card"><div class="user-avatar ' + roleClass + '">' + initials + '</div><div class="user-info"><div class="user-name">' + (u.fullName || '—') + '</div><div class="user-meta"><span class="role-badge role-' + roleClass + '">' + roleLabel + '</span> <span style="margin-left:4px;font-size:11px;color:var(--text-3)">' + (u.email || '') + '</span></div><div style="margin-top:3px"><span class="role-badge ' + activeClass + '" style="font-size:10px">' + activeLabel + '</span></div></div><div class="user-actions">' + editBtn + delBtn + '</div></div>'
+    }).join('')
+  })
+}
+
+var deleteTargetId = null
+
+function openUserModal(userId) {
+  var modal = document.getElementById('user-modal')
+  var title = document.getElementById('user-modal-title')
+  var subtitle = document.getElementById('user-modal-subtitle')
+  var passwordLabel = document.getElementById('user-password-label')
+  var passwordInput = document.getElementById('user-password')
+  var activeRow = document.getElementById('user-active-row')
+
+  document.getElementById('user-edit-id').value = ''
+  document.getElementById('user-fullname').value = ''
+  document.getElementById('user-username').value = ''
+  document.getElementById('user-email').value = ''
+  document.getElementById('user-role').value = 'repartidor'
+  document.getElementById('user-active').checked = true
+  passwordInput.required = true
+
+  if (userId) {
+    // Edit mode
+    title.textContent = 'Editar usuario'
+    subtitle.textContent = 'Modifica los datos del usuario'
+    passwordLabel.textContent = 'Nueva contraseña (opcional)'
+    passwordInput.placeholder = 'Dejar en blanco para no cambiar'
+    passwordInput.required = false
+    passwordInput.value = ''
+    activeRow.style.display = 'flex'
+    apiFetch('/users').then(function(data) {
+      var u = (data || []).find(function(x) { return x.id === userId })
+      if (!u) return
+      document.getElementById('user-edit-id').value = u.id
+      document.getElementById('user-fullname').value = u.fullName || ''
+      document.getElementById('user-username').value = u.username || ''
+      document.getElementById('user-email').value = u.email || ''
+      document.getElementById('user-role').value = u.role || 'repartidor'
+      document.getElementById('user-active').checked = u.active !== false && u.active !== 0
+    })
+  } else {
+    // Create mode
+    title.textContent = 'Nuevo usuario'
+    subtitle.textContent = 'Completa los datos del usuario'
+    passwordLabel.textContent = 'Contraseña *'
+    passwordInput.placeholder = 'Mínimo 6 caracteres'
+    passwordInput.required = true
+    activeRow.style.display = 'none'
+  }
+
+  modal.classList.add('active')
+}
+
+function closeUserModal() {
+  document.getElementById('user-modal').classList.remove('active')
+}
+
+function saveUser() {
+  var editId = document.getElementById('user-edit-id').value
+  var fullName = document.getElementById('user-fullname').value.trim()
+  var username = document.getElementById('user-username').value.trim()
+  var email = document.getElementById('user-email').value.trim()
+  var role = document.getElementById('user-role').value
+  var password = document.getElementById('user-password').value
+  var active = document.getElementById('user-active').checked
+
+  if (!fullName || !username) { alert('Nombre y usuario son obligatorios'); return }
+  if (!editId && (!password || password.length < 6)) { alert('La contraseña debe tener al menos 6 caracteres'); return }
+
+  var btn = document.getElementById('user-save-btn')
+  btn.disabled = true
+  btn.textContent = 'Guardando...'
+
+  var body = { fullName: fullName, username: username, email: email, role: role, active: active }
+  if (password) body.password = password
+
+  var method = editId ? 'PUT' : 'POST'
+  var url = editId ? '/users/' + editId : '/users'
+
+  apiFetch(url, { method: method, body: body }).then(function(data) {
+    btn.disabled = false
+    btn.textContent = '✓ Guardar'
+    if (data.error) { alert('Error: ' + data.error); return }
+    closeUserModal()
+    loadUsers()
+  })
+}
+
+function openDeleteModal(userId, userName) {
+  deleteTargetId = userId
+  document.getElementById('delete-user-name').textContent = userName || ''
+  document.getElementById('delete-modal').classList.add('active')
+}
+
+function closeDeleteModal() {
+  document.getElementById('delete-modal').classList.remove('active')
+  deleteTargetId = null
+}
+
+function confirmDeleteUser() {
+  if (!deleteTargetId) return
+  apiFetch('/users/' + deleteTargetId, { method: 'DELETE' }).then(function(data) {
+    closeDeleteModal()
+    if (data.error) { alert('Error: ' + data.error); return }
+    loadUsers()
+  })
+}
+
+
 // INIT
 // ══════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
@@ -719,5 +959,80 @@ document.addEventListener('DOMContentLoaded', () => {
   loadHistoryUsers()
 })
 </script>
+<!-- ═══════════════════════════════════ USER FORM MODAL ═══════════════════════════════════ -->
+<div class="modal-overlay" id="user-modal">
+  <div class="modal-sheet">
+    <div class="modal-title" id="user-modal-title">Nuevo usuario</div>
+    <div class="modal-subtitle" id="user-modal-subtitle">Completa los datos del usuario</div>
+
+    <input type="hidden" id="user-edit-id">
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Nombre completo *</label>
+        <input type="text" class="form-input" id="user-fullname" placeholder="Ej: Moussa Diallo" required>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Usuario *</label>
+        <input type="text" class="form-input" id="user-username" placeholder="Ej: moussa" required>
+      </div>
+    </div>
+
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input type="email" class="form-input" id="user-email" placeholder="correo@ejemplo.com">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Rol <span class="admin-only-badge">Admin</span></label>
+        <select class="form-select" id="user-role">
+          <option value="repartidor">Repartidor</option>
+          <option value="produccion">Producción</option>
+          <option value="contabilidad">Contabilidad</option>
+          <option value="admin">Administrador</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" id="user-password-label">Contraseña *</label>
+      <input type="password" class="form-input" id="user-password" placeholder="Mínimo 6 caracteres" minlength="6">
+    </div>
+
+    <div class="toggle-row" id="user-active-row">
+      <div>
+        <div class="toggle-label">Usuario activo</div>
+        <div class="toggle-sub">Puede iniciar sesión</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" id="user-active" checked>
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+
+    <div class="modal-actions" style="margin-top:20px">
+      <button class="btn btn-secondary" onclick="closeUserModal()">Cancelar</button>
+      <button class="btn btn-primary" id="user-save-btn" onclick="saveUser()">✓ Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ DELETE CONFIRM MODAL ═══════════════════════════════════ -->
+<div class="modal-overlay" id="delete-modal">
+  <div class="modal-sheet" style="max-width:360px; margin:0 auto;">
+    <div style="text-align:center; padding: 10px 0 20px;">
+      <div style="font-size:48px; margin-bottom:12px;">⚠️</div>
+      <div class="modal-title">¿Eliminar usuario?</div>
+      <div class="modal-subtitle" id="delete-user-name" style="margin-top:6px;"></div>
+      <div style="font-size:13px; color:var(--text-2); margin-top:10px;">Esta acción no se puede deshacer.</div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeDeleteModal()">Cancelar</button>
+      <button class="btn" style="flex:1; padding:14px; border:none; border-radius:12px; font-size:15px; font-weight:700; background:var(--red); color:white; cursor:pointer;" onclick="confirmDeleteUser()">🗑️ Eliminar</button>
+    </div>
+  </div>
+</div>
+
+
 </body>
 </html>
