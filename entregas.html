@@ -503,7 +503,7 @@ const API = (function() {
   if (host === 'localhost' || host === '127.0.0.1') return 'http://localhost:3001/api'
   return 'https://cleansahel-production.up.railway.app/api'
 })()
-const TOKEN = sessionStorage.getItem('token') || localStorage.getItem('token') || ''
+const TOKEN = sessionStorage.getItem('token') || ''
 const USER = JSON.parse(sessionStorage.getItem('user') || '{}')
 
 // ── Server settings ────────────────────────────────────────────
@@ -580,10 +580,13 @@ function doLogin() {
   if (!u || !p) { document.getElementById('login-error').textContent = 'Completa usuario y contraseña'; return }
   document.getElementById('login-btn').disabled = true
   document.getElementById('login-btn').textContent = 'Conectando...'
+  var controller = new AbortController()
+  var timeout = setTimeout(function() { controller.abort() }, 15000)
   fetch(API + '/auth/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: u, password: p })
+    body: JSON.stringify({ username: u, password: p }),
+    signal: controller.signal
   }).then(function(r) {
     if (!r.ok) {
       return r.json().catch(function() { return {} }).then(function(data) {
@@ -603,7 +606,9 @@ function doLogin() {
       loadHistoryUsers()
     }
   }).catch(function(e) {
-    document.getElementById('login-error').textContent = e.message || 'Error de conexión'
+    clearTimeout(timeout)
+    var msg = e.name === 'AbortError' ? 'Tiempo de espera agotado. Comprueba tu conexión.' : (e.message || 'Error de conexión')
+    document.getElementById('login-error').textContent = msg
     document.getElementById('login-btn').disabled = false
     document.getElementById('login-btn').textContent = 'Entrar'
   })
