@@ -56,4 +56,3 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       </BrowserRouter>
     </Safe>
   </React.StrictMode>,
-)
