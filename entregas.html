@@ -251,12 +251,49 @@
 </head>
 <body>
 
+<!-- ═══════════════════════════════════ LOGIN SCREEN ═══════════════════════════════════ -->
+<div id="login-screen" style="display:none; min-height:100vh; background:var(--bg); flex-direction:column; align-items:center; justify-content:center; padding:24px;">
+  <div style="text-align:center; margin-bottom:32px;">
+    <div style="font-size:56px; margin-bottom:8px;">🚚</div>
+    <div style="font-size:24px; font-weight:800; color:var(--text);">CleanSahel</div>
+    <div style="font-size:13px; color:var(--text-2); margin-top:4px;">App de entregas</div>
+  </div>
+  <div style="width:100%; max-width:340px;">
+    <div style="background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:24px;">
+      <div style="font-size:18px; font-weight:700; margin-bottom:16px; text-align:center;">Iniciar sesión</div>
+      <div class="form-group">
+        <label class="form-label">Usuario</label>
+        <input type="text" class="form-input" id="login-username" placeholder="Ej: admin" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Contraseña</label>
+        <input type="password" class="form-input" id="login-password" placeholder="Tu contraseña" autocomplete="current-password" onkeydown="if(event.key==='Enter')doLogin()">
+      </div>
+      <div id="login-error" style="color:var(--red); font-size:13px; margin-bottom:10px; text-align:center;"></div>
+      <button class="btn btn-primary" id="login-btn" onclick="doLogin()" style="width:100%; padding:14px; font-size:16px; border:none; border-radius:12px; cursor:pointer;">
+        Entrar
+      </button>
+      <div style="margin-top:16px; padding:10px; background:var(--surface-2); border-radius:8px; font-size:11px; color:var(--text-2); text-align:center;">
+        Admin: <strong>admin</strong> / <strong>41668585Z</strong><br>
+        Repartidor: <strong>moussa</strong> / <strong>moussa123</strong>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════ APP WRAPPER ═══════════════════════════════════ -->
+<div id="app-screen" style="display:none">
+
 <!-- ═══════════════════════════════════ SCANNER TAB (PRIMARY) ═══════════════════════════════════ -->
 <div id="scanner-screen" class="screen active">
   <div class="header">
     <div>
       <div class="header-title">📷 Escanear cliente</div>
       <div class="header-user">QR / código de cliente</div>
+    </div>
+    <div style="display:flex; align-items:center; gap:6px;">
+      <span style="font-size:12px; color:var(--text-2); max-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;" id="header-username"></span>
+      <button onclick="doLogout()" style="background:none; border:none; cursor:pointer; font-size:16px; padding:4px;" title="Cerrar sesión">🚪</button>
     </div>
   </div>
 
@@ -456,6 +493,53 @@ const API = window.location.hostname.includes('railway')
   : window.location.origin + '/api'
 const TOKEN = sessionStorage.getItem('token') || localStorage.getItem('token') || ''
 const USER = JSON.parse(sessionStorage.getItem('user') || '{}')
+const TOKEN = sessionStorage.getItem('token') || ''
+
+// ── Login overlay ──────────────────────────────────────────────
+function showLogin() {
+  document.getElementById('login-screen').style.display = 'flex'
+  document.getElementById('app-screen').style.display = 'none'
+  document.getElementById('login-error').textContent = ''
+}
+function showApp() {
+  document.getElementById('login-screen').style.display = 'none'
+  document.getElementById('app-screen').style.display = 'block'
+  if (isAdmin()) {
+    document.querySelectorAll('.nav-btn#nav-users-btn').forEach(function(b) { b.style.display = 'flex' })
+  }
+}
+function doLogin() {
+  var u = document.getElementById('login-username').value.trim()
+  var p = document.getElementById('login-password').value
+  if (!u || !p) { document.getElementById('login-error').textContent = 'Completa usuario y contraseña'; return }
+  document.getElementById('login-btn').disabled = true
+  document.getElementById('login-btn').textContent = 'Conectando...'
+  fetch(API + '/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username: u, password: p })
+  }).then(function(r) { return r.json() })
+    .then(function(data) {
+      if (data.error) { document.getElementById('login-error').textContent = data.error; document.getElementById('login-btn').disabled = false; document.getElementById('login-btn').textContent = 'Entrar' }
+      else {
+        sessionStorage.setItem('token', data.token)
+        sessionStorage.setItem('user', JSON.stringify(data.user))
+        window.USER = data.user
+        window.TOKEN = data.token
+        showApp()
+        showTab('scanner')
+        initScanner()
+        loadHistoryUsers()
+      }
+    })
+}
+function doLogout() {
+  sessionStorage.removeItem('token')
+  sessionStorage.removeItem('user')
+  window.USER = {}
+  window.TOKEN = ''
+  location.reload()
+}
 
 // ══════════════════════════════════════════════════════════════
 // HELPERS
@@ -958,14 +1042,15 @@ function confirmDeleteUser() {
 
 // INIT
 // ══════════════════════════════════════════════════════════════
-document.addEventListener('DOMContentLoaded', () => {
-  // Start on scanner tab
-  showTab('scanner')
-  initScanner()
-  loadHistoryUsers()
-  // Show admin-only elements
-  if (isAdmin()) {
-    document.querySelectorAll('.nav-btn#nav-users-btn').forEach(function(b) { b.style.display = 'flex' })
+document.addEventListener('DOMContentLoaded', function() {
+  if (TOKEN && Object.keys(USER).length > 0 && USER.username) {
+    document.getElementById('header-username').textContent = USER.fullName || USER.username
+    showApp()
+    showTab('scanner')
+    initScanner()
+    loadHistoryUsers()
+  } else {
+    showLogin()
   }
 })
 </script>
@@ -1043,6 +1128,7 @@ document.addEventListener('DOMContentLoaded', () => {
   </div>
 </div>
 
+</div><!-- end #app-screen -->
 
 </body>
 </html>
