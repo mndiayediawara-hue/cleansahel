@@ -205,10 +205,10 @@ export function seed({ force = false } = {}) {
   console.log(`✓ ${testCustomers.length} clientes de prueba asegurados`)
 
   // ========== PEDIDOS ENTREGADOS PARA HISTORIAL (idempotente) ==========
-  const products = db.prepare('SELECT id, name, price FROM products').all()
+  const prods = db.prepare('SELECT id, name, price FROM products').all()
   const customers = db.prepare('SELECT id, name, code FROM customers').all()
   const reps = db.prepare("SELECT id, username, full_name FROM users WHERE role = 'repartidor'").all()
-  if (products.length && customers.length && reps.length) {
+  if (prods.length && customers.length && reps.length) {
     // Crear 15 pedidos entregados en las últimas 2 semanas
     const existingDelivered = db.prepare("SELECT COUNT(*) as c FROM orders WHERE status = 'delivered'").get().c
     if (existingDelivered === 0) {
@@ -217,7 +217,7 @@ export function seed({ force = false } = {}) {
         const customer = customers[i % customers.length]
         const daysAgo = i
         const qty = Math.floor(Math.random() * 5) + 1
-        const items = products.slice(0, Math.min(3, products.length)).map(p => ({
+        const items = prods.slice(0, Math.min(3, prods.length)).map(p => ({
           productId: p.id, productName: p.name, quantity: qty, unitPrice: p.price
         }))
         const subtotal = items.reduce((s, item) => s + item.unitPrice * item.quantity, 0)
@@ -226,7 +226,7 @@ export function seed({ force = false } = {}) {
         const d = new Date(); d.setDate(d.getDate() - daysAgo)
         const deliveryInfo = JSON.stringify({ userId: rep.id, userName: rep.username, userFullName: rep.full_name, items, totalItems: qty * items.length })
         db.prepare(`INSERT OR IGNORE INTO orders (id, number, customer_id, items_json, subtotal, tax, discount, total, status, created_at, delivered_at, delivered_by, notes) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-          .run(uid('ord-'), 'D' + String(i).padStart(4, '0'), customer.id, JSON.stringify(items), subtotal, tax, 0, total, 'delivered', d.toISOString(), d.toISOString(), rep.id, deliveryInfo)
+          .run(uid('ord-'), 'D' + String(i).padStart(4, '0'), customer.id, JSON.stringify(items), subtotal, tax, 0, total, 'delivered', d.toISOString(), d.toISOString(), rep.username, deliveryInfo)
       }
       console.log(`✓ 15 pedidos entregados de ejemplo creados (historial)`)
     }

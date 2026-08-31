@@ -623,7 +623,7 @@ router.get('/delivery-history', auth, requirePermission('entregas', 'history'), 
       params.push(`%${deliveredBy}%`)
     }
     if (customer) {
-      where += ` AND customer_name LIKE ?`
+      where += ` AND c.name LIKE ?`
       params.push(`%${customer}%`)
     }
     if (from) {
@@ -640,14 +640,16 @@ router.get('/delivery-history', auth, requirePermission('entregas', 'history'), 
     }
 
     // Total count
-    const countRow = db.prepare(`SELECT COUNT(*) as total FROM orders ${where}`).get(...params)
+    const countRow = db.prepare(`SELECT COUNT(*) as total FROM orders o LEFT JOIN customers c ON c.id = o.customer_id ${where}`).get(...params)
     const total = countRow?.total || 0
 
     // Data with pagination
     const rows = db.prepare(`
-      SELECT id, number, customer_id, customer_name, subtotal, tax, discount, total, delivered_at, delivered_by, items_json, status, created_at
-      FROM orders ${where}
-      ORDER BY delivered_at DESC
+      SELECT o.id, o.number, o.customer_id, COALESCE(c.name, '') as customer_name, o.subtotal, o.tax, o.discount, o.total, o.delivered_at, o.delivered_by, o.items_json, o.status, o.created_at
+      FROM orders o
+      LEFT JOIN customers c ON c.id = o.customer_id
+      ${where}
+      ORDER BY o.delivered_at DESC
       LIMIT ? OFFSET ?
     `).all(...params, limitNum, offset)
 
@@ -732,14 +734,14 @@ router.get('/delivery-stats', auth, requirePermission('entregas', 'stats'), (req
     if (to) toDate = new Date(to.includes('T') ? to : to + 'T23:59:59')
 
     // Base query para pedidos entregados
-    let baseQuery = 'SELECT * FROM orders WHERE delivered_at IS NOT NULL AND delivered_at != ""'
+    let baseQuery = "SELECT * FROM orders WHERE delivered_at IS NOT NULL AND delivered_at != ''"
     if (fromDate) baseQuery += ` AND delivered_at >= '${fromDate.toISOString()}'`
     if (toDate) baseQuery += ` AND delivered_at <= '${toDate.toISOString()}'`
     if (userId) baseQuery += ` AND delivered_by LIKE '%${String(userId)}%'`
     const allDelivered = db.prepare(baseQuery).all()
 
     // También conseguir TODOS los entregados (sin filtro de fecha) para totales globales
-    const allTime = db.prepare('SELECT * FROM orders WHERE delivered_at IS NOT NULL AND delivered_at != ""').all()
+    const allTime = db.prepare("SELECT * FROM orders WHERE delivered_at IS NOT NULL AND delivered_at != ''").all()
 
     // Rangos de tiempo
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -858,13 +860,15 @@ router.get('/delivery-stats', auth, requirePermission('entregas', 'stats'), (req
 // GET /api/deliveries/repartidores — Lista de repartidores con estadísticas
 router.get('/deliveries/repartidores', auth, requirePermission('entregas', 'stats'), (req, res) => {
   try {
+    console.log('DEBUG /deliveries/repartidores: user=', req.user?.username, 'role=', req.user?.role)
     const now = new Date()
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     const weekStart = (() => { const d = new Date(now); d.setDate(d.getDate() - d.getDay()); return new Date(d.getFullYear(), d.getMonth(), d.getDate()) })()
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
     const yearStart = new Date(now.getFullYear(), 0, 1)
 
-    const allDelivered = db.prepare('SELECT * FROM orders WHERE delivered_at IS NOT NULL AND delivered_at != ""').all()
+    const allDelivered = db.prepare("SELECT * FROM orders WHERE delivered_at IS NOT NULL AND delivered_at != ''").all()
+    console.log('DEBUG allDelivered:', allDelivered.length)
 
     // Agrupar por repartidor
     const repartidorMap = {}
@@ -1603,7 +1607,7 @@ router.get('/invoice-view/:orderId', (req, res) => {
   const token = req.query.token
   if (token) {
     try {
-      const jwt = require('jsonwebtoken')
+      // jwt already imported
       req.user = jwt.verify(token, process.env.JWT_SECRET || 'cleanerp-dev-secret-change-in-production-9f8e7d6c5b4a3210')
     } catch (e) {}
   }
@@ -2088,7 +2092,7 @@ router.get('/order-sheet-view/:orderId', (req, res) => {
   const token = req.query.token
   if (token) {
     try {
-      const jwt = require('jsonwebtoken')
+      // jwt already imported
       req.user = jwt.verify(token, process.env.JWT_SECRET || 'cleanerp-dev-secret-change-in-production-9f8e7d6c5b4a3210')
     } catch (e) {}
   }
@@ -2411,7 +2415,7 @@ router.get('/order-sheet-view/:orderId', (req, res) => {
   const token = req.query.token
   if (token) {
     try {
-      const jwt = require('jsonwebtoken')
+      // jwt already imported
       req.user = jwt.verify(token, process.env.JWT_SECRET || 'cleanerp-dev-secret-change-in-production-9f8e7d6c5b4a3210')
     } catch (e) {}
   }
@@ -3399,7 +3403,7 @@ router.post('/auth/emergency-unlock', (req, res) => {
     
     // Si se quiere cambiar la contraseña
     if (newPassword && username) {
-      const bcrypt = require('bcryptjs')
+      // bcrypt already imported
       const u = db.prepare('SELECT * FROM users WHERE username = ?').get(username)
       if (!u) return res.status(404).json({ error: 'Usuario no encontrado' })
       const hash = bcrypt.hashSync(newPassword, 10)
@@ -3820,7 +3824,7 @@ router.get('/print-rml/:rmlId', (req, res) => {
   const token = req.query.token
   if (token) {
     try {
-      const jwt = require('jsonwebtoken')
+      // jwt already imported
       req.user = jwt.verify(token, process.env.JWT_SECRET || 'cleanerp-dev-secret-change-in-production-9f8e7d6c5b4a3210')
     } catch (e) {
       // Token inválido, continuar sin auth
@@ -4135,7 +4139,7 @@ router.get('/customer-card-view/:code', (req, res) => {
   const token = req.query.token
   if (token) {
     try {
-      const jwt = require('jsonwebtoken')
+      // jwt already imported
       req.user = jwt.verify(token, process.env.JWT_SECRET || 'cleanerp-dev-secret-change-in-production-9f8e7d6c5b4a3210')
     } catch (e) {}
   }

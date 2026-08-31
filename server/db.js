@@ -648,7 +648,8 @@ try {
       FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
     )
   `)
-  // Añadir columna lot_id a stock_adjustments si no existe
+} catch (e) { console.warn('migration stock_adjustments:', e.message) }
+// Añadir columna lot_id a stock_adjustments si no existe
 try {
   const adjCols = db.prepare("PRAGMA table_info(stock_adjustments)").all()
   if (!adjCols.find(c => c.name === 'lot_id')) {
