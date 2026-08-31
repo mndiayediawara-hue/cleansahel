@@ -273,10 +273,6 @@
       <button class="btn btn-primary" id="login-btn" onclick="doLogin()" style="width:100%; padding:14px; font-size:16px; border:none; border-radius:12px; cursor:pointer;">
         Entrar
       </button>
-      <div style="margin-top:16px; padding:10px; background:var(--surface-2); border-radius:8px; font-size:11px; color:var(--text-2); text-align:center;">
-        Admin: <strong>admin</strong> / <strong>41668585Z</strong><br>
-        Repartidor: <strong>moussa</strong> / <strong>moussa123</strong>
-      </div>
     </div>
   </div>
 </div>
@@ -488,9 +484,14 @@
 // ══════════════════════════════════════════════════════════════
 // CONFIG
 // ══════════════════════════════════════════════════════════════
-const API = window.location.hostname.includes('railway')
-  ? window.location.origin + '/api'
-  : window.location.origin + '/api'
+// Railway backend — swap URL here when backend URL changes
+const API = (function() {
+  const host = window.location.hostname
+  if (host.includes('railway') || host.includes('onrender')) return window.location.origin + '/api'
+  if (host === 'localhost' || host === '127.0.0.1') return 'http://localhost:3001/api'
+  // Default: point to Railway production backend
+  return 'https://cleansahel.up.railway.app/api'
+})()
 const TOKEN = sessionStorage.getItem('token') || localStorage.getItem('token') || ''
 const USER = JSON.parse(sessionStorage.getItem('user') || '{}')
 
@@ -517,20 +518,30 @@ function doLogin() {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ username: u, password: p })
-  }).then(function(r) { return r.json() })
-    .then(function(data) {
-      if (data.error) { document.getElementById('login-error').textContent = data.error; document.getElementById('login-btn').disabled = false; document.getElementById('login-btn').textContent = 'Entrar' }
-      else {
-        sessionStorage.setItem('token', data.token)
-        sessionStorage.setItem('user', JSON.stringify(data.user))
-        window.USER = data.user
-        window.TOKEN = data.token
-        showApp()
-        showTab('scanner')
-        initScanner()
-        loadHistoryUsers()
-      }
-    })
+  }).then(function(r) {
+    if (!r.ok) {
+      return r.json().catch(function() { return {} }).then(function(data) {
+        throw Object.assign(new Error(data.error || 'Error de conexión'), { status: r.status })
+      })
+    }
+    return r.json()
+  }).then(function(data) {
+    if (data.error) { document.getElementById('login-error').textContent = data.error; document.getElementById('login-btn').disabled = false; document.getElementById('login-btn').textContent = 'Entrar' }
+    else {
+      sessionStorage.setItem('token', data.token)
+      sessionStorage.setItem('user', JSON.stringify(data.user))
+      window.USER = data.user
+      window.TOKEN = data.token
+      showApp()
+      showTab('scanner')
+      initScanner()
+      loadHistoryUsers()
+    }
+  }).catch(function(e) {
+    document.getElementById('login-error').textContent = e.message || 'Error de conexión'
+    document.getElementById('login-btn').disabled = false
+    document.getElementById('login-btn').textContent = 'Entrar'
+  })
 }
 function doLogout() {
   sessionStorage.removeItem('token')
@@ -551,7 +562,15 @@ function apiFetch(path, opts = {}) {
       ...(TOKEN ? { 'Authorization': `Bearer ${TOKEN}` } : {}),
       ...(opts.headers || {})
     }
-  }).then(r => r.json())
+  }).then(function(r) {
+    if (!r.ok) return r.json().catch(function() { return {} }).then(function(data) {
+      throw Object.assign(new Error(data.error || ('Error ' + r.status)), { status: r.status })
+    })
+    return r.json()
+  }).catch(function(e) {
+    if (e.status) throw e
+    throw Object.assign(new Error('No se puede conectar al servidor. Comprueba tu conexión.'), { network: true })
+  })
 }
 
 function fmtDate(iso) {
@@ -624,7 +643,11 @@ async function lookupCustomer(code) {
   result.style.display = 'block'
   result.innerHTML = '<div class="loading"><div class="spinner"></div>Buscando cliente...</div>'
 
-  const data = await apiFetch('/delivery/lookup/' + encodeURIComponent(code))
+  const data = await apiFetch('/delivery/lookup/' + encodeURIComponent(code)).catch(function(e) {
+    result.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🌐</div><div>No se puede conectar al servidor</div><div style="font-size:12px;color:var(--text-2);margin-top:4px">' + (e.message || '') + '</div><div style="margin-top:8px"><button class="pill" onclick="clearScanner()">Reintentar</button></div></div>'
+    return null
+  })
+  if (!data) return
   if (data.error) {
     result.innerHTML = `<div class="empty-state"><div class="empty-state-icon">❌</div><div>${data.error}</div><div style="margin-top:8px"><button class="pill" onclick="clearScanner()">Reintentar</button></div></div>`
     return
