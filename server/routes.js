@@ -2595,52 +2595,59 @@ router.delete('/expenses/:id', auth, requirePermission('expenses', 'delete'), (r
 // ---------- LOTS ----------
 // Helper: calcular si un lote pendiente/en_curso se puede producir con el stock actual
 function canProduceLot(lotId) {
-  const lot = db.prepare('SELECT * FROM lots WHERE id = ?').get(lotId)
-  if (!lot) return { canProduce: false, shortages: [] }
-  const recipe = db.prepare('SELECT * FROM recipes WHERE product_id = ?').get(lot.product_id)
-  if (!recipe) return { canProduce: true, shortages: [] } // sin receta, asumimos OK
-  let items = []
-  try { items = JSON.parse(recipe.items_json || '[]') } catch {}
-  const recipeBatch = recipe.batch_size || 1
-  const liters = Number(lot.quantity) || 0
-  const ratio = liters / recipeBatch
-  const shortages = []
-  for (const it of items) {
-    const totalQty = it.quantity * ratio
-    let available = 0
-    if (it.materialType === 'raw') {
-      const m = db.prepare('SELECT stock FROM raw_materials WHERE id = ?').get(it.materialId)
-      available = m ? m.stock : 0
-    } else {
-      const m = db.prepare('SELECT stock FROM packaging WHERE id = ?').get(it.materialId)
-      available = m ? m.stock : 0
+  try {
+    const lot = db.prepare('SELECT * FROM lots WHERE id = ?').get(lotId)
+    if (!lot) return { canProduce: false, shortages: [] }
+    const recipe = db.prepare('SELECT * FROM recipes WHERE product_id = ?').get(lot.product_id)
+    if (!recipe) return { canProduce: true, shortages: [] } // sin receta, asumimos OK
+    let items = []
+    try { items = JSON.parse(recipe.items_json || '[]') } catch { items = [] }
+    const recipeBatch = recipe.batch_size || 1
+    const liters = Number(lot.quantity) || 0
+    const ratio = liters / recipeBatch
+    const shortages = []
+    for (const it of items) {
+      const totalQty = it.quantity * ratio
+      let available = 0
+      if (it.materialType === 'raw') {
+        const m = db.prepare('SELECT stock FROM raw_materials WHERE id = ?').get(it.materialId)
+        available = m ? m.stock : 0
+      } else {
+        const m = db.prepare('SELECT stock FROM packaging WHERE id = ?').get(it.materialId)
+        available = m ? m.stock : 0
+      }
+      if (available < totalQty) {
+        shortages.push({
+          materialId: it.materialId,
+          materialType: it.materialType,
+          required: totalQty,
+          available: available,
+          missing: totalQty - available
+        })
+      }
     }
-    if (available < totalQty) {
-      shortages.push({
-        materialId: it.materialId,
-        materialType: it.materialType,
-        required: totalQty,
-        available: available,
-        missing: totalQty - available
-      })
-    }
+    return { canProduce: shortages.length === 0, shortages }
+  } catch (e) {
+    return { canProduce: true, shortages: [], error: e.message }
   }
-  return { canProduce: shortages.length === 0, shortages }
 }
 
 const mapLot = (l) => {
-  const result = (l.status === 'pendiente' || l.status === 'en_curso') ? canProduceLot(l.id) : { canProduce: true, shortages: [] }
-  return {
+  try {
+    const result = (l.status === 'pendiente' || l.status === 'en_curso') ? canProduceLot(l.id) : { canProduce: true, shortages: [] }
+    let rawMaterialsUsed = []
+    try { rawMaterialsUsed = JSON.parse(l.raw_materials_json || '[]') } catch { rawMaterialsUsed = [] }
+    return {
     id: l.id,
     lotNumber: l.code || l.lot_number || '',
     productionOrderNumber: l.production_order_number || '',
     productId: l.product_id,
     recipeId: l.recipe_id || '',
     quantity: l.quantity || 0,
-    rawMaterialsUsed: JSON.parse(l.raw_materials_json || '[]'),
+    rawMaterialsUsed,
     producedBy: l.produced_by,
     machineId: l.machine_id || undefined,
-    producedAt: l.received_at || l.produced_at,
+    producedAt: l.produced_at,
     expiryDate: l.expiry_date || undefined,
     status: l.status,
     notes: l.notes,
@@ -2648,7 +2655,7 @@ const mapLot = (l) => {
     shortages: result.shortages,
     startedAt: l.started_at || undefined,
     finishedAt: l.finished_at || undefined
-  }
+  }} catch (e) { return { id: l.id, lotNumber: l.code || l.lot_number || '', quantity: 0, rawMaterialsUsed: [], canProduce: true, shortages: [], status: l.status || 'unknown' } }
 }
 
 function mapUser(u) {
