@@ -360,9 +360,12 @@
 // ══════════════════════════════════════════════════════════════
 // CONFIG
 // ══════════════════════════════════════════════════════════════
-const API = window.location.hostname.includes('railway')
+const _savedApi = localStorage.getItem('cleansahel_api')
+const API = _savedApi
+  ? _savedApi
+  : window.location.hostname.includes('railway') || window.location.hostname.includes('localhost')
   ? window.location.origin + '/api'
-  : window.location.origin + '/api'
+  : 'https://cleansahel-production.up.railway.app/api'
 const TOKEN = sessionStorage.getItem('token') || localStorage.getItem('token') || ''
 const USER = JSON.parse(sessionStorage.getItem('user') || '{}')
 
