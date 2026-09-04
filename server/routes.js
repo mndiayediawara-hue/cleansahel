@@ -2693,7 +2693,13 @@ function requirePermission(module, action) {
 }
 
 router.get('/lots', auth, (_req, res) => {
-  res.json(db.prepare('SELECT * FROM lots ORDER BY produced_at DESC').all().map(mapLot))
+  try {
+    const lots = db.prepare('SELECT * FROM lots ORDER BY produced_at DESC').all().map(mapLot)
+    res.json(lots)
+  } catch (e) {
+    console.error('Error in GET /lots:', e)
+    res.status(500).json({ error: 'Error loading lots', detail: e.message })
+  }
 })
 // GET /api/lots/preview-number — previsualizar el próximo número de lote (sin crear)
 router.get('/lots/preview-number', auth, (_req, res) => {
@@ -2986,6 +2992,7 @@ router.put('/config', auth, requirePermission('settings', 'edit'), (req, res) =>
 
 // ---------- DASHBOARD ----------
 router.get('/dashboard', auth, (_req, res) => {
+  try {
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
   const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - 7)
   const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0)
@@ -3061,6 +3068,10 @@ router.get('/dashboard', auth, (_req, res) => {
     recent: { orders: recentOrders, purchases: recentPurchases, lots: recentLots },
     unreadNotifs,
   })
+  } catch (e) {
+    console.error('Dashboard error:', e)
+    res.status(500).json({ error: e.message })
+  }
 })
 
 // ---------- REPORTS ----------
