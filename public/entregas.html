@@ -715,9 +715,20 @@ function showTab(name) {
 // ══════════════════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════════════════
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   // Start on scanner tab
   showTab('scanner')
+
+  // Auto-login via URL params (?user=moussa&pass=moussa123)
+  const params = new URLSearchParams(window.location.search)
+  const autoUser = params.get('user')
+  const autoPass = params.get('pass')
+  if (autoUser && autoPass) {
+    document.getElementById('login-username').value = autoUser
+    document.getElementById('login-password').value = autoPass
+    await doLogin()
+  }
+
   initScanner()
   loadHistoryUsers()
 })
