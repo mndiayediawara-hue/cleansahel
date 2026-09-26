@@ -467,7 +467,48 @@
   console.info('[Reception Integrated] Patch loaded - Lotes integrados en recepción');
 })();
     </script>
-    <script type="module" crossorigin src="./assets/index-DskLDoYx.js"></script>
+    <script>
+(function(){
+  // Monkey-patch fetch to intercept the main bundle and inject STATUS_TONES fix
+  var origFetch = window.fetch;
+  window.fetch = function(url, opts) {
+    var bundleUrl = './assets/index-DUENdaaH.js';
+    var bundleUrlAlt = 'https://cleansahel.onrender.com/assets/index-DUENdaaH.js';
+    var urlStr = typeof url === 'string' ? url : (url instanceof Request ? url.url : String(url));
+    if (urlStr.indexOf(bundleUrl) !== -1 || urlStr.indexOf(bundleUrlAlt) !== -1) {
+      return origFetch(url, opts).then(function(resp) {
+        if (!resp.ok) return resp;
+        var clone = resp.clone();
+        return clone.text().then(function(code) {
+          // Only patch if not already patched
+          if (code.indexOf('delivered') === -1) {
+            // Fix 1: extend nu with English status keys
+            code = code.replace(
+              /nu=\{([^}]+)\}\;/,
+              function(m, props) {
+                return 'nu={' + props + ',delivered:{label:"Entregado",cls:"bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"},shipped:{label:"Enviado",cls:"bg-brand-100 text-brand-800 dark:bg-brand-950/40 dark:text-brand-300"},cancelled:{label:"Cancelado",cls:"bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300"},__stAdded:true};function _st(n){return nu[n]||{label:n||"—",cls:"bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-300"}};';
+              }
+            );
+            // Fix 2: replace nu[...].cls with _st(...).cls and nu[...].label with _st(...).label
+            code = code.replace(/nu\[P\.status\]\.cls/g, '_st(P.status).cls');
+            code = code.replace(/nu\[P\.status\]\.label/g, '_st(P.status).label');
+            // Also fix nu[o.status] patterns in the Delivered counter
+            code = code.replace(/nu\[o\.status\]\.cls/g, '_st(o.status).cls');
+            code = code.replace(/nu\[o\.status\]\.label/g, '_st(o.status).label');
+            // Fix pending counter too
+            code = code.replace(/nu\[o\.status\]/g, '_st(o.status)');
+            // Fix TOTAL_SALES filter if it uses nu
+            console.log('[CleanSahel] STATUS_TONES patch applied');
+          }
+          return new Response(code, { status: resp.status, headers: resp.headers });
+        });
+      });
+    }
+    return origFetch(url, opts);
+  };
+})();
+</script>
+<script type="module" crossorigin src="./assets/index-DskLDoYx.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-DRWKbYCY.css">
   </head>
   <body>
