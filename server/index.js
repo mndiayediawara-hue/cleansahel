@@ -151,6 +151,7 @@ window.location.replace('/entregas');
   })
   // Serve Zonas standalone page
   app.get('/zonas', (_req, res) => {
+    console.log('[zonas] distPath:', distPath, 'cwd:', process.cwd());
     res.sendFile(path.join(distPath, 'zonas.html'))
   })
   app.get(/^(?!\/api).*/, (_req, res) => {
