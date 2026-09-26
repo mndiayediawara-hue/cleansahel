@@ -88,10 +88,9 @@
 
     /* ── Scanner ── */
     .scanner-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 16px; gap: 12px; }
-    #qr-reader { width: 100%; max-width: 320px; height: 280px; border-radius: 16px; overflow: hidden; border: 2px solid var(--border); position: relative; }
-    #qr-reader video { width: 100%; height: 100%; object-fit: cover; border-radius: 14px; display: block; }
-    .scanner-hint { font-size: 13px; color: var(--text-2); text-align: center; max-width: 280px; }
-    .scanner-hint.camera-error { color: var(--amber); font-weight: 600; }
+    #qr-reader { width: 100%; max-width: 320px; border-radius: 16px; overflow: hidden; border: 2px solid var(--border); }
+    #qr-reader video { border-radius: 14px; }
+    .scanner-hint { font-size: 13px; color: var(--text-2); text-align: center; max-width: 260px; }
     .scanner-manual { display: flex; gap: 8px; width: 100%; max-width: 320px; }
     .scanner-manual input { flex: 1; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; background: var(--surface); }
     .scanner-manual button { padding: 10px 16px; background: var(--primary); color: white; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
@@ -118,20 +117,6 @@
     .pending-items { padding: 8px 14px; background: var(--surface-2); }
     .pending-item { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; }
     .pending-item-name { color: var(--text-2); }
-    .pending-footer { padding: 10px 14px; display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
-    .pending-item-qty { font-weight: 600; color: var(--text); }
-
-    /* ── Delivered orders ── */
-    .section-title { font-size: 13px; font-weight: 700; color: var(--text-2); text-transform: uppercase; letter-spacing: 1px; margin: 20px 12px 8px; }
-    .section-title.delivered-title { color: var(--green); margin-top: 24px; }
-    .delivered-order { background: var(--surface); border: 2px solid #d1fae5; border-radius: 12px;
-                       margin: 8px 12px; overflow: hidden; }
-    .delivered-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; }
-    .delivered-order-num { font-size: 15px; font-weight: 700; color: var(--text); }
-    .delivered-total { font-size: 15px; font-weight: 800; color: var(--green); }
-    .delivered-info { padding: 8px 14px; background: #f0fdf4; }
-    .delivered-badge { display: inline-block; background: #d1fae5; color: #065f46; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; text-transform: uppercase; }
-    .delivered-date { font-size: 12px; color: var(--text-3); margin-top: 4px; }
     .pending-item-qty { font-weight: 600; color: var(--text); }
     .pending-footer { padding: 10px 14px; display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
 
@@ -230,23 +215,19 @@
   </div>
 
   <div class="scanner-wrap">
-    <!-- Manual input: always visible first, works immediately -->
-    <div class="scanner-manual" style="margin-bottom:4px">
+    <div id="qr-reader"></div>
+    <p class="scanner-hint">Apunta la cámara al código QR del cliente o introduce el código manualmente</p>
+    <div class="scanner-manual">
       <input type="text" id="manual-code" placeholder="Código del cliente...">
       <button onclick="lookupManual()">Buscar</button>
     </div>
-    <!-- Camera scanner: works if the device/browser supports it -->
-    <div id="qr-reader"></div>
-    <p class="scanner-hint" id="scanner-hint">Escanea el QR del cliente o escribe el código arriba</p>
   </div>
 
   <!-- Customer result (hidden initially) -->
   <div id="customer-result" style="display:none">
     <div class="customer-card" id="customer-info"></div>
-    <div class="section-title" id="pending-title">Pedidos pendientes</div>
+    <div class="section-title" id="pending-title" style="display:none">Pedidos pendientes</div>
     <div id="pending-orders"></div>
-    <div class="section-title delivered-title" id="delivered-title" style="display:none">Historial de entregas</div>
-    <div id="delivered-orders"></div>
     <div class="empty-state" id="no-pending" style="display:none">
       <div class="empty-state-icon">🎉</div>
       <div>No hay pedidos pendientes para este cliente</div>
@@ -379,58 +360,27 @@
 // ══════════════════════════════════════════════════════════════
 // CONFIG
 // ══════════════════════════════════════════════════════════════
-const API = window.location.origin + '/api'
+const _savedApi = localStorage.getItem('cleansahel_api')
+const API = _savedApi
+  ? _savedApi
+  : window.location.hostname.includes('railway') || window.location.hostname.includes('localhost')
+  ? window.location.origin + '/api'
+  : 'https://cleansahel-production.up.railway.app/api'
 const TOKEN = sessionStorage.getItem('token') || localStorage.getItem('token') || ''
 const USER = JSON.parse(sessionStorage.getItem('user') || '{}')
 
 // ══════════════════════════════════════════════════════════════
 // HELPERS
 // ══════════════════════════════════════════════════════════════
-
-/**
- * Robust fetch with:
- * - 10-second timeout (prevents infinite loading)
- * - HTTP error detection (4xx/5xx → thrown as error)
- * - Network error handling (thrown as error)
- * Returns { data, error } to let callers handle gracefully.
- */
 function apiFetch(path, opts = {}) {
-  return new Promise((resolve) => {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 10000)
-
-    const headers = {
+  return fetch(API + path, {
+    ...opts,
+    headers: {
       'Content-Type': 'application/json',
       ...(TOKEN ? { 'Authorization': `Bearer ${TOKEN}` } : {}),
       ...(opts.headers || {})
     }
-
-    fetch(API + path, { ...opts, headers, signal: controller.signal })
-      .then((r) => {
-        clearTimeout(timer)
-        const ct = r.headers.get('content-type') || ''
-        if (!ct.includes('application/json')) {
-          resolve({ error: `Respuesta inesperada del servidor (${r.status}). Intenta de nuevo.` })
-          return
-        }
-        return r.json().then((data) => {
-          if (!r.ok) {
-            // HTTP error — pass the error from API body, or generic message
-            resolve({ error: data?.error || `Error del servidor (${r.status})` })
-          } else {
-            resolve({ data })
-          }
-        })
-      })
-      .catch((err) => {
-        clearTimeout(timer)
-        if (err.name === 'AbortError') {
-          resolve({ error: '⏱ La consulta tardó demasiado. Verifica tu conexión e inténtalo de nuevo.' })
-        } else {
-          resolve({ error: `🌐 No se pudo conectar al servidor. Verifica tu conexión a internet.` })
-        }
-      })
-  })
+  }).then(r => r.json())
 }
 
 function fmtDate(iso) {
@@ -449,27 +399,12 @@ function fmtCurrency(n) {
   return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'XOF' }).format(n || 0)
 }
 
-function showError(id, msg) {
-  const el = document.getElementById(id)
-  if (!el) return
-  el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div style="color:var(--red);font-size:14px">${msg}</div><div style="margin-top:8px"><button class="pill" onclick="clearScanner()">Reintentar</button></div></div>`
-}
-
 function showTab(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
   document.getElementById(name + '-screen').classList.add('active')
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'))
   document.querySelectorAll(`.nav-btn[onclick*="${name}"]`).forEach(b => b.classList.add('active'))
-  if (name === 'scanner') {
-    // Restart scanner when switching back to scanner tab
-    initScanner()
-    clearScanner()
-  }
-  if (name === 'history' && !historyLoaded) {
-    historyLoaded = true
-    loadHistoryUsers()
-    loadHistory()
-  }
+  if (name === 'history') loadHistory()
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -478,52 +413,18 @@ function showTab(name) {
 let scanner = null
 let selectedOrderId = null
 
-let lookupInProgress = false
-
 async function initScanner() {
-  // Always stop any existing scanner before creating a new one — prevents
-  // the "scanner is dead but exists so we skip creation" bug
-  if (scanner) {
-    try { await scanner.stop() } catch {}
-    scanner = null
-  }
-
+  if (scanner) return
   try {
-    // Clear any stale content from previous attempts
-    document.getElementById('qr-reader').innerHTML = ''
-
     scanner = new Html5Qrcode('qr-reader')
     await scanner.start(
       { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 220, height: 220 } },
-      async rawCode => {
-        if (lookupInProgress) return
-        lookupInProgress = true
-        try { playBeep() } catch {}
-
-        const code = extractCodeFromQR(rawCode)
-        if (!code) {
-          showError('customer-result', 'Código QR no válido. Intenta de nuevo.')
-          lookupInProgress = false
-          if (scanner) try { scanner.resume() } catch {}
-          return
-        }
-
-        await lookupCustomer(code)
-      },
-      () => {} // scan error — ignore silently, keep scanning
+      { fps: 10, qrbox: 250 },
+      code => { playBeep(); scanner.pause(true); lookupCustomer(code) },
+      () => {}
     )
   } catch (e) {
-    console.error('Camera init error:', e && e.message ? e.message : e)
-    document.getElementById('qr-reader').innerHTML = `
-      <div style="padding:20px;text-align:center;color:var(--text-2);height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center">
-        <div style="font-size:40px;margin-bottom:10px">📷</div>
-        <div style="font-size:14px;font-weight:700;margin-bottom:4px">Cámara no disponible</div>
-        <div style="font-size:12px">${e && e.message ? e.message : 'Comprueba los permisos del navegador'}</div>
-        <button onclick="initScanner()" style="margin-top:12px;padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px">Reintentar cámara</button>
-      </div>`
-    const hint = document.getElementById('scanner-hint')
-    if (hint) { hint.textContent = '❌ Cámara no disponible'; hint.classList.add('camera-error') }
+    document.getElementById('qr-reader').innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-2);font-size:13px">No se pudo iniciar la cámara.<br>Usa la entrada manual abajo.</div>'
   }
 }
 
@@ -540,144 +441,79 @@ function playBeep() {
   } catch {}
 }
 
-function clearScanner() {
-  if (!scanner) return
-  try { scanner.pause(true) } catch {}
-}
-
 async function lookupManual() {
-  if (lookupInProgress) return
   const code = document.getElementById('manual-code').value.trim()
   if (!code) return
-  lookupInProgress = true
-  try {
-    await lookupCustomer(code)
-  } finally {
-    lookupInProgress = false
-  }
+  await lookupCustomer(code)
 }
 
 async function lookupCustomer(code) {
+  document.getElementById('customer-result').style.display = 'none'
   const result = document.getElementById('customer-result')
-  result.style.display = 'none'
-  result.innerHTML = '<div class="loading"><div class="spinner"></div>Buscando código...</div>'
   result.style.display = 'block'
+  result.innerHTML = '<div class="loading"><div class="spinner"></div>Buscando cliente...</div>'
 
-  if (scanner) {
-    try { scanner.pause(true) } catch {}
+  const data = await apiFetch('/delivery/lookup/' + encodeURIComponent(code))
+  if (data.error) {
+    result.innerHTML = `<div class="empty-state"><div class="empty-state-icon">❌</div><div>${data.error}</div><div style="margin-top:8px"><button class="pill" onclick="clearScanner()">Reintentar</button></div></div>`
+    return
   }
 
-  try {
-    const res = await apiFetch('/delivery/lookup/' + encodeURIComponent(code))
+  const c = data.customer || {}
+  const pending = data.pendingOrders || []
+  const stats = data.stats || {}
 
-    if (res.error) {
-      // Distinguish server errors from "not found"
-      const isNetworkError = res.error.includes('No se pudo conectar') || res.error.includes('tardó demasiado')
-      result.innerHTML = `<div class="empty-state">
-        <div class="empty-state-icon">${isNetworkError ? '📡' : '⚠️'}</div>
-        <div style="color:var(--red);font-size:14px;line-height:1.4">${res.error}</div>
-        <div style="margin-top:12px"><button class="pill" onclick="clearScanner(); initScanner()">Escanear otro código</button></div>
-        <div style="margin-top:8px"><button class="pill" onclick="document.getElementById('manual-code').focus()">Escribir código</button></div>
-      </div>`
-      return
-    }
-
-    const data = res.data
-    const c = data.customer || {}
-    const pending = data.pendingOrders || []
-    const delivered = data.deliveredOrders || []
-    const stats = data.stats || {}
-
-    // Render customer card with stats
-    result.innerHTML = `
-      <div class="customer-card">
-        <div class="customer-name">${c.name || '—'}</div>
-        <div class="customer-code">📋 Código: ${c.code || code}</div>
-        ${c.address ? `<div style="font-size:12px;color:var(--text-2);margin-top:4px">${c.address}</div>` : ''}
-        ${c.phone ? `<div style="font-size:12px;color:var(--text-2)">📞 ${c.phone}</div>` : ''}
-        <div class="customer-stats">
-          <div class="cust-stat"><div class="cust-stat-val pending">${stats.pendingCount || 0}</div><div class="cust-stat-lbl">Pendientes</div></div>
-          <div class="cust-stat"><div class="cust-stat-val done">${stats.deliveredCount || 0}</div><div class="cust-stat-lbl">Entregados</div></div>
-          <div class="cust-stat"><div class="cust-stat-val">${fmtCurrency(stats.pendingAmount || 0)}</div><div class="cust-stat-lbl">Importe pendiente</div></div>
-        </div>
+  result.innerHTML = `
+    <div class="customer-card">
+      <div class="customer-name">${c.name || '—'}</div>
+      <div class="customer-code">📋 Código: ${c.code || code}</div>
+      ${c.address ? `<div style="font-size:12px;color:var(--text-2);margin-top:4px">${c.address}</div>` : ''}
+      ${c.phone ? `<div style="font-size:12px;color:var(--text-2)">📞 ${c.phone}</div>` : ''}
+      <div class="customer-stats">
+        <div class="cust-stat"><div class="cust-stat-val pending">${stats.pendingCount || 0}</div><div class="cust-stat-lbl">Pendientes</div></div>
+        <div class="cust-stat"><div class="cust-stat-val done">${stats.deliveredCount || 0}</div><div class="cust-stat-lbl">Entregados</div></div>
+        <div class="cust-stat"><div class="cust-stat-val">${fmtCurrency(stats.pendingAmount || 0)}</div><div class="cust-stat-lbl">Importe pendiente</div></div>
       </div>
-    `
+    </div>
+  `
 
-    const pendingTitle = document.getElementById('pending-title')
-    const pendingOrdersDiv = document.getElementById('pending-orders')
-    const noPending = document.getElementById('no-pending')
-    const deliveredTitle = document.getElementById('delivered-title')
-    const deliveredOrdersDiv = document.getElementById('delivered-orders')
+  const pendingTitle = document.getElementById('pending-title')
+  const pendingOrdersDiv = document.getElementById('pending-orders')
+  const noPending = document.getElementById('no-pending')
 
-    // Pending orders section
-    if (pending.length) {
-      pendingTitle.style.display = 'block'
-      noPending.style.display = 'none'
-      pendingOrdersDiv.innerHTML = pending.map(o => `
-        <div class="pending-order" id="order-${o.id}" onclick="selectOrder('${o.id}', '${(o.number || o.id).replace(/'/g, "\\'")}', ${o.total || 0}, ${JSON.stringify(o.items || []).replace(/"/g, '&quot;')}, '${(o.customer_name || c.name || '').replace(/'/g, "\\'")}', ${o.subtotal || 0}, ${o.tax || 0}, ${o.discount || 0})">
-          <div class="pending-header">
-            <div>
-              <div class="pending-order-num">📦 ${o.number || o.id}</div>
-              <div style="font-size:12px;color:var(--text-2);margin-top:2px">${o.items?.length || 0} productos · ${o.totalItems || 0} unidades</div>
-            </div>
-            <div class="pending-order-total">${fmtCurrency(o.total)}</div>
-          </div>
-          <div class="pending-items">
-            ${(o.items || []).slice(0, 3).map(item => `
-              <div class="pending-item">
-                <span class="pending-item-name">${item.productName || item.name || '—'}</span>
-                <span class="pending-item-qty">×${item.quantity || 0}</span>
-              </div>
-            `).join('')}
-            ${(o.items || []).length > 3 ? `<div style="font-size:12px;color:var(--text-3);padding-top:4px">+${(o.items || []).length - 3} más</div>` : ''}
-          </div>
-          <div class="pending-footer">
-            <span style="font-size:12px;color:var(--text-3)">Toca para confirmar entrega</span>
-            <span style="font-size:18px">→</span>
-          </div>
-        </div>
-      `).join('')
-    } else {
-      pendingTitle.style.display = 'none'
-      pendingOrdersDiv.innerHTML = ''
-      noPending.style.display = 'block'
-    }
-
-    // Delivered orders section — show ALL delivered orders for this customer
-    if (delivered.length) {
-      deliveredTitle.style.display = 'block'
-      deliveredOrdersDiv.innerHTML = delivered.map(o => `
-        <div class="delivered-order">
-          <div class="delivered-header">
-            <div>
-              <div class="delivered-order-num">✅ ${o.number || o.id}</div>
-              <div class="delivered-date">${o.items?.length || 0} productos · ${o.totalItems || 0} unidades</div>
-            </div>
-            <div class="delivered-total">${fmtCurrency(o.total)}</div>
-          </div>
-          <div class="delivered-info">
-            <span class="delivered-badge">Entregado</span>
-            ${o.delivered_at ? `<div class="delivered-date" style="margin-top:4px">Fecha: ${fmtDate(o.delivered_at)}</div>` : ''}
-            ${o.delivered_by ? `<div class="delivered-date">Por: ${o.delivered_by}</div>` : ''}
-          </div>
-        </div>
-      `).join('')
-    } else {
-      deliveredTitle.style.display = 'none'
-      deliveredOrdersDiv.innerHTML = ''
-    }
-
-  } catch (err) {
-    console.error('lookupCustomer error:', err)
-    result.innerHTML = `<div class="empty-state">
-      <div class="empty-state-icon">⚠️</div>
-      <div style="color:var(--red);font-size:14px">Error inesperado. Intenta de nuevo.</div>
-      <div style="margin-top:12px"><button class="pill" onclick="clearScanner(); initScanner()">Escanear otro código</button></div>
-    </div>`
-  } finally {
-    if (scanner) { try { scanner.resume() } catch {} }
-    lookupInProgress = false
+  if (!pending.length) {
+    pendingTitle.style.display = 'none'
+    pendingOrdersDiv.innerHTML = ''
+    noPending.style.display = 'block'
+    return
   }
+
+  pendingTitle.style.display = 'block'
+  noPending.style.display = 'none'
+  pendingOrdersDiv.innerHTML = pending.map(o => `
+    <div class="pending-order" id="order-${o.id}" onclick="selectOrder('${o.id}', '${o.number || o.id}', ${o.total || 0}, ${JSON.stringify(o.items || []).replace(/"/g, '&quot;')}, '${(o.customer_name || c.name || '').replace(/'/g, "\\'")}', ${o.subtotal || 0}, ${o.tax || 0}, ${o.discount || 0})">
+      <div class="pending-header">
+        <div>
+          <div class="pending-order-num">📦 ${o.number || o.id}</div>
+          <div style="font-size:12px;color:var(--text-2);margin-top:2px">${o.items?.length || 0} productos · ${o.totalItems || 0} unidades</div>
+        </div>
+        <div class="pending-order-total">${fmtCurrency(o.total)}</div>
+      </div>
+      <div class="pending-items">
+        ${(o.items || []).slice(0, 3).map(item => `
+          <div class="pending-item">
+            <span class="pending-item-name">${item.productName || item.name || '—'}</span>
+            <span class="pending-item-qty">×${item.quantity || 0}</span>
+          </div>
+        `).join('')}
+        ${(o.items || []).length > 3 ? `<div style="font-size:12px;color:var(--text-3);padding-top:4px">+${(o.items || []).length - 3} más</div>` : ''}
+      </div>
+      <div class="pending-footer">
+        <span style="font-size:12px;color:var(--text-3)">Toca para confirmar entrega</span>
+        <span style="font-size:18px">→</span>
+      </div>
+    </div>
+  `).join('')
 }
 
 function selectOrder(id, number, total, items, customerName, subtotal, tax, discount) {
@@ -716,23 +552,19 @@ async function confirmDelivery() {
   btn.disabled = true
   btn.textContent = 'Registrando...'
 
-  const res = await apiFetch('/delivery/' + selectedOrderId, {
+  const data = await apiFetch('/delivery/' + selectedOrderId, {
     method: 'POST',
     body: JSON.stringify({})
   })
 
-  // Always re-enable button
   btn.disabled = false
   btn.textContent = '✓ Confirmar entrega'
 
-  if (res.error) {
-    // Show error inline in modal instead of alert
-    const subtitle = document.getElementById('confirm-customer')
-    subtitle.innerHTML = `<span style="color:var(--red);font-size:12px">⚠️ ${res.error}</span>`
+  if (data.error) {
+    alert('Error: ' + data.error)
     return
   }
 
-  const data = res.data
   closeConfirmModal()
   showTab('success')
 
@@ -746,76 +578,18 @@ async function confirmDelivery() {
   `
 }
 
-// Extract the actual delivery code from raw QR data.
-// Handles all known QR formats:
-//   - Plain code: "CL-00005", "00005", "5", "D0001", "ord-xxx"
-//   - URL with path: "https://cleansahel.onrender.com/cliente/00005"
-//   - URL with query param (customer card QR): "https://cleansahel.onrender.com/api/delivery-mobile?code=CL-00005"
-//   - URL with path+query: "https://cleansahel.onrender.com/entrega/ord-xxx"
-function extractCodeFromQR(raw) {
-  if (!raw) return null
-  let code = raw.trim()
-
-  try {
-    if (code.startsWith('http://') || code.startsWith('https://')) {
-      const url = new URL(code)
-
-      // PRIORITY 1: Check for ?code= parameter (customer card QR format)
-      // e.g. https://cleansahel.onrender.com/api/delivery-mobile?code=CL-00005
-      if (url.searchParams.has('code')) {
-        return url.searchParams.get('code').trim() || null
-      }
-
-      // PRIORITY 2: Check for ?id= parameter
-      if (url.searchParams.has('id')) {
-        return url.searchParams.get('id').trim() || null
-      }
-
-      // PRIORITY 3: Extract from path
-      // e.g. "https://cleansahel.onrender.com/cliente/00005" → "cliente/00005"
-      // or "https://cleansahel.onrender.com/entrega/ord-xxx" → "entrega/ord-xxx"
-      let path = url.pathname.replace(/^\/+|\/+$/g, '').trim()
-      if (!path || path === url.host) return null
-
-      // Get the LAST meaningful segment (handles /cliente/00005, /entrega/ord-xxx)
-      const segments = path.split('/').filter(s => s.length > 0)
-      return segments[segments.length - 1] || null
-    }
-  } catch {}
-
-  // Plain text code (no URL)
-  return code || null
-}
-
 function clearScanner() {
   selectedOrderId = null
-  const result = document.getElementById('customer-result')
-  if (result) {
-    result.style.display = 'none'
-    result.innerHTML = ''
-  }
+  document.getElementById('customer-result').style.display = 'none'
   document.getElementById('pending-orders').innerHTML = ''
-  document.getElementById('delivered-orders').innerHTML = ''
-  document.getElementById('delivered-title').style.display = 'none'
   document.getElementById('manual-code').value = ''
-  document.getElementById('pending-title').style.display = 'none'
-  document.getElementById('no-pending').style.display = 'none'
   document.querySelectorAll('.pending-order').forEach(el => el.classList.remove('selected'))
-
-  // Reset scanner hint
-  const hint = document.getElementById('scanner-hint')
-  if (hint) { hint.textContent = 'Escanea el QR del cliente o escribe el código arriba'; hint.classList.remove('camera-error') }
-
-  // Resume scanner if it exists and is paused
-  if (scanner) {
-    try { scanner.resume() } catch {}
-  }
 }
 
 // ══════════════════════════════════════════════════════════════
 // HISTORY TAB
 // ══════════════════════════════════════════════════════════════
-let historyPeriod = 'all'
+let historyPeriod = 'today'
 let historyLoaded = false
 
 function setHistoryPeriod(period, el) {
@@ -854,30 +628,34 @@ async function loadHistory() {
   const list = document.getElementById('history-list')
   list.innerHTML = '<div class="loading"><div class="spinner"></div>Cargando...</div>'
 
-  let res
+  let data
   if (selectedUser) {
     // Use per-repartidor endpoint with period param
     const periodParam = historyPeriod === 'all' ? 'all' : historyPeriod
-    res = await apiFetch('/deliveries/by-repartidor/' + encodeURIComponent(selectedUser) + '?period=' + periodParam + '&' + params.toString())
+    data = await apiFetch('/deliveries/by-repartidor/' + encodeURIComponent(selectedUser) + '?period=' + periodParam + '&' + params.toString())
+
+    // Show user stats
+    const statsDiv = document.getElementById('hist-user-stats')
+    statsDiv.style.display = 'block'
+    const sum = data.summary || {}
+    document.getElementById('hist-stat-today').textContent = sum.today ?? 0
+    document.getElementById('hist-stat-week').textContent = sum.week ?? 0
+    document.getElementById('hist-stat-month').textContent = sum.month ?? 0
+    document.getElementById('hist-stat-total').textContent = sum.total ?? 0
+
+    document.getElementById('hist-section-title').textContent = 'Entregas de ' + selectedUser
   } else {
     // Use global delivery-history endpoint
-    res = await apiFetch('/delivery-history?' + params.toString())
+    data = await apiFetch('/delivery-history?' + params.toString())
+    document.getElementById('hist-user-stats').style.display = 'none'
+    document.getElementById('hist-section-title').textContent = 'Todas las entregas'
   }
 
-  // Handle errors
-  if (res.error) {
-    list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div style="color:var(--red);font-size:14px">${res.error}</div><div style="margin-top:8px"><button class="pill" onclick="loadHistory()">Reintentar</button></div></div>`
-    return
-  }
-
-  const data = res.data
   const deliveries = data.deliveries || data.items || []
-
   if (!deliveries.length) {
     list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><div>Sin entregas en este período</div></div>`
     return
   }
-
   list.innerHTML = deliveries.map(d => `
     <div class="delivery-item">
       <div class="delivery-header" onclick="this.parentElement.classList.toggle('expanded')">
@@ -905,11 +683,10 @@ async function loadHistory() {
 }
 
 async function loadHistoryUsers() {
-  const res = await apiFetch('/deliveries/repartidores')
-  if (res.error) return  // Silently fail - the "Todos" option is already there
-  const data = res.data
+  const data = await apiFetch('/deliveries/repartidores')
   const sel = document.getElementById('hist-user')
   const reps = data.repartidores || []
+  // Keep first "Todos" option, add users
   if (reps.length) {
     reps.forEach(r => {
       const opt = document.createElement('option')
@@ -921,76 +698,29 @@ async function loadHistoryUsers() {
 }
 
 // ══════════════════════════════════════════════════════════════
+// TAB NAVIGATION
+// ══════════════════════════════════════════════════════════════
+function showTab(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
+  document.getElementById(name + '-screen').classList.add('active')
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'))
+  document.querySelectorAll(`.nav-btn[onclick*="${name}"]`).forEach(b => b.classList.add('active'))
+  if (name === 'history' && !historyLoaded) {
+    historyLoaded = true
+    loadHistoryUsers()
+    loadHistory()
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
-  // Check auth - if no token, show login overlay
-  if (!TOKEN) {
-    document.getElementById('auth-overlay')?.classList.add('active')
-    return
-  }
   // Start on scanner tab
   showTab('scanner')
   initScanner()
   loadHistoryUsers()
-  // Si hay ?code= en la URL (viene del QR), hacer lookup automático
-  const urlParams = new URLSearchParams(window.location.search)
-  if (urlParams.has('code') || urlParams.has('id')) {
-    const code = extractCodeFromQR(window.location.href)
-    if (code) {
-      document.getElementById('manual-code').value = code
-      lookupCustomer(code)
-    }
-  }
 })
-
-// Quick login form (used when no token in storage)
-async function quickLogin() {
-  const u = document.getElementById('login-username').value.trim()
-  const p = document.getElementById('login-password').value
-  if (!u || !p) return
-  const btn = document.getElementById('login-btn')
-  btn.disabled = true
-  btn.textContent = 'Conectando...'
-  try {
-    const r = await fetch(API + '/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: u, password: p })
-    })
-    const data = await r.json()
-    if (data.token) {
-      sessionStorage.setItem('token', data.token)
-      sessionStorage.setItem('user', JSON.stringify(data.user))
-      document.getElementById('auth-overlay')?.classList.remove('active')
-      location.reload()
-    } else {
-      document.getElementById('login-error').textContent = data.error || 'Login fallido'
-    }
-  } catch {
-    document.getElementById('login-error').textContent = 'No se pudo conectar al servidor'
-  }
-  btn.disabled = false
-  btn.textContent = 'Entrar'
-}
 </script>
-<!-- ═══════════════════════════════════ AUTH OVERLAY ═══════════════════════════════════ -->
-<div id="auth-overlay" style="position:fixed;inset:0;background:var(--bg);z-index:999;flex-direction:column;align-items:center;justify-content:center;padding:24px">
-  <style>#auth-overlay{display:none}#auth-overlay.active{display:flex}</style>
-  <div style="text-align:center;max-width:320px">
-    <div style="font-size:48px;margin-bottom:16px">🚚</div>
-    <div style="font-size:22px;font-weight:800;margin-bottom:4px">CleanSahel Entregas</div>
-    <div style="font-size:13px;color:var(--text-2);margin-bottom:32px">Inicia sesión para acceder al escáner</div>
-    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;text-align:left">
-      <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:6px">Usuario</div>
-      <input id="login-username" type="text" placeholder="admin" value="admin" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:14px;margin-bottom:12px;box-sizing:border-box">
-      <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:6px">Contraseña</div>
-      <input id="login-password" type="password" placeholder="••••••••" value="41668585Z" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:14px;margin-bottom:16px;box-sizing:border-box">
-      <div id="login-error" style="color:var(--red);font-size:13px;margin-bottom:12px;min-height:18px;text-align:center"></div>
-      <button id="login-btn" onclick="quickLogin()" style="width:100%;padding:12px;background:var(--primary);color:white;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer">Entrar</button>
-    </div>
-  </div>
-</div>
-
 </body>
 </html>
