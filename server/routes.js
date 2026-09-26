@@ -141,7 +141,7 @@ router.put('/users/:id', auth, requirePermission('users', 'edit'), (req, res) =>
   res.json({ ok: true })
 })
 
-// PATCH /api/users/:id/unlock — Desbloquear cuenta por intentos fallidos
+// PATCH /api/users/:id/unlock — Desbloquear cuenta
 router.patch('/users/:id/unlock', auth, requirePermission('users', 'edit'), (req, res) => {
   const { id } = req.params
   const u = db.prepare('SELECT * FROM users WHERE id = ?').get(id)
@@ -1143,8 +1143,14 @@ router.post('/orders', auth, requirePermission('sales', 'create'), (req, res) =>
   const id = uid('o-')
   const count = db.prepare("SELECT COUNT(*) c FROM orders WHERE number LIKE 'PED-%'").get().c
   const number = b.number || `PED-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`
+  // Auto-calculate totals from items if not provided
+  const items = b.items || []
+  const subtotal = b.subtotal ?? items.reduce((s, i) => s + (i.quantity || 0) * (i.unitPrice || 0), 0)
+  const discount = b.discount || 0
+  const tax = b.tax ?? subtotal * 0.18
+  const total = b.total ?? subtotal + tax - discount
   db.prepare('INSERT INTO orders (id, number, customer_id, items_json, subtotal, tax, discount, total, status, created_at, delivery_date, notes, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
-    .run(id, number, b.customerId, JSON.stringify(b.items || []), b.subtotal || 0, b.tax || 0, b.discount || 0, b.total || 0, b.status || 'pendiente', new Date().toISOString(), b.deliveryDate || null, b.notes || null, req.user.id)
+    .run(id, number, b.customerId, JSON.stringify(items), subtotal, tax, discount, total, b.status || 'pendiente', new Date().toISOString(), b.deliveryDate || null, b.notes || null, req.user.id)
   addHistory(req, { action: 'crear', module: 'Pedidos', entityId: id, description: `Creado pedido ${number}` })
   // add notification
   db.prepare('INSERT INTO notifications (id, type, title, message, severity, read, created_at, related_id) VALUES (?,?,?,?,?,0,?,?)')
