@@ -441,6 +441,11 @@ function showTab(name) {
   document.getElementById(name + '-screen').classList.add('active')
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'))
   document.querySelectorAll(`.nav-btn[onclick*="${name}"]`).forEach(b => b.classList.add('active'))
+  if (name === 'scanner') {
+    // Restart scanner when switching back to scanner tab
+    initScanner()
+    clearScanner()
+  }
   if (name === 'history' && !historyLoaded) {
     historyLoaded = true
     loadHistoryUsers()
@@ -457,23 +462,43 @@ let selectedOrderId = null
 let lookupInProgress = false
 
 async function initScanner() {
-  if (scanner) return
+  if (scanner) {
+    // If scanner exists but may have stopped, try to restart it
+    try { await scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: 250 }, () => {}, () => {}) } catch {}
+    return
+  }
   try {
     scanner = new Html5Qrcode('qr-reader')
     await scanner.start(
       { facingMode: 'environment' },
       { fps: 10, qrbox: 250 },
-      async code => {
+      async rawCode => {
         if (lookupInProgress) return
         lookupInProgress = true
         try { playBeep() } catch {}
+
+        // Extract the actual code from whatever the QR contains
+        const code = extractCodeFromQR(rawCode)
+        if (!code) {
+          showError('customer-result', 'Código QR no válido. Intenta de nuevo.')
+          lookupInProgress = false
+          if (scanner) try { scanner.resume() } catch {}
+          return
+        }
+
         await lookupCustomer(code)
         // lookupCustomer's finally block handles scanner.resume() and lookupInProgress = false
       },
-      () => {}
+      () => {} // QR scan error — ignore silently
     )
   } catch (e) {
-    document.getElementById('qr-reader').innerHTML = '<div style="padding:20px;text-align:center;color:var(--text-2);font-size:13px">No se pudo iniciar la cámara.<br>Usa la entrada manual abajo.</div>'
+    // Camera not available — show clear message with manual input
+    document.getElementById('qr-reader').innerHTML = `
+      <div style="padding:24px;text-align:center;color:var(--text-2)">
+        <div style="font-size:40px;margin-bottom:12px">📷</div>
+        <div style="font-size:14px;font-weight:600;margin-bottom:6px">Cámara no disponible</div>
+        <div style="font-size:12px">Usa el campo de texto abajo para escribir el código manualmente.</div>
+      </div>`
   }
 }
 
@@ -503,18 +528,27 @@ async function lookupManual() {
 }
 
 async function lookupCustomer(code) {
-  document.getElementById('customer-result').style.display = 'none'
   const result = document.getElementById('customer-result')
+  result.style.display = 'none'
+  result.innerHTML = '<div class="loading"><div class="spinner"></div>Buscando código...</div>'
   result.style.display = 'block'
-  result.innerHTML = '<div class="loading"><div class="spinner"></div>Buscando cliente...</div>'
 
-  if (scanner) scanner.pause(true)
+  if (scanner) {
+    try { scanner.pause(true) } catch {}
+  }
 
   try {
     const res = await apiFetch('/delivery/lookup/' + encodeURIComponent(code))
 
     if (res.error) {
-      result.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div style="color:var(--red);font-size:14px">${res.error}</div><div style="margin-top:8px"><button class="pill" onclick="clearScanner(); if(scanner)scanner.resume()">Reintentar</button></div></div>`
+      // Distinguish server errors from "not found"
+      const isNetworkError = res.error.includes('No se pudo conectar') || res.error.includes('tardó demasiado')
+      result.innerHTML = `<div class="empty-state">
+        <div class="empty-state-icon">${isNetworkError ? '📡' : '⚠️'}</div>
+        <div style="color:var(--red);font-size:14px;line-height:1.4">${res.error}</div>
+        <div style="margin-top:12px"><button class="pill" onclick="clearScanner(); initScanner()">Escanear otro código</button></div>
+        <div style="margin-top:8px"><button class="pill" onclick="document.getElementById('manual-code').focus()">Escribir código</button></div>
+      </div>`
       return
     }
 
@@ -542,8 +576,15 @@ async function lookupCustomer(code) {
     const noPending = document.getElementById('no-pending')
 
     if (!pending.length) {
+      // Customer found but NO pending orders — this is NOT an error
       pendingTitle.style.display = 'none'
       pendingOrdersDiv.innerHTML = ''
+      noPending.innerHTML = `<div style="text-align:center;padding:20px;color:var(--text-2);font-size:14px">
+        <div style="font-size:36px;margin-bottom:8px">✅</div>
+        <div style="font-weight:600;color:var(--green)">No hay entregas pendientes</div>
+        <div style="margin-top:4px;font-size:12px">Este cliente no tiene pedidos pendientes en este momento.</div>
+        <div style="margin-top:12px"><button class="pill" onclick="clearScanner(); initScanner()">Escanear otro código</button></div>
+      </div>`
       noPending.style.display = 'block'
       return
     }
@@ -551,7 +592,7 @@ async function lookupCustomer(code) {
     pendingTitle.style.display = 'block'
     noPending.style.display = 'none'
     pendingOrdersDiv.innerHTML = pending.map(o => `
-      <div class="pending-order" id="order-${o.id}" onclick="selectOrder('${o.id}', '${o.number || o.id}', ${o.total || 0}, ${JSON.stringify(o.items || []).replace(/"/g, '&quot;')}, '${(o.customer_name || c.name || '').replace(/'/g, "\\'")}', ${o.subtotal || 0}, ${o.tax || 0}, ${o.discount || 0})">
+      <div class="pending-order" id="order-${o.id}" onclick="selectOrder('${o.id}', '${(o.number || o.id).replace(/'/g, "\\'")}', ${o.total || 0}, ${JSON.stringify(o.items || []).replace(/"/g, '&quot;')}, '${(o.customer_name || c.name || '').replace(/'/g, "\\'")}', ${o.subtotal || 0}, ${o.tax || 0}, ${o.discount || 0})">
         <div class="pending-header">
           <div>
             <div class="pending-order-num">📦 ${o.number || o.id}</div>
@@ -576,12 +617,14 @@ async function lookupCustomer(code) {
     `).join('')
 
   } catch (err) {
-    // Fallback de seguridad: si algo falla inesperadamente, muestra error y reactiva scanner
-    result.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div style="color:var(--red);font-size:14px">Error inesperado. Intenta de nuevo.</div><div style="margin-top:8px"><button class="pill" onclick="clearScanner(); if(scanner)scanner.resume()">Reintentar</button></div></div>`
     console.error('lookupCustomer error:', err)
+    result.innerHTML = `<div class="empty-state">
+      <div class="empty-state-icon">⚠️</div>
+      <div style="color:var(--red);font-size:14px">Error inesperado. Intenta de nuevo.</div>
+      <div style="margin-top:12px"><button class="pill" onclick="clearScanner(); initScanner()">Escanear otro código</button></div>
+    </div>`
   } finally {
-    // SIEMPRE reactiva el scanner (incluso si hay error)
-    if (scanner) scanner.resume()
+    if (scanner) { try { scanner.resume() } catch {} }
     lookupInProgress = false
   }
 }
@@ -652,19 +695,60 @@ async function confirmDelivery() {
   `
 }
 
+// Extract the actual delivery code from raw QR data.
+// QRs may contain: "00002", "CL-00002", "https://cleansahel.onrender.com/cliente/00002",
+// "https://cleansahel.onrender.com/pedido/D0001", "https://cleansahel.onrender.com/entrega/ord-xxx"
+function extractCodeFromQR(raw) {
+  if (!raw) return null
+  let code = raw.trim()
+
+  // Remove common URL schemes and domains
+  try {
+    if (code.startsWith('http://') || code.startsWith('https://')) {
+      // Extract path: "https://cleansahel.onrender.com/cliente/00002" → "cliente/00002"
+      const url = new URL(code)
+      code = url.pathname.replace(/^\//, '')
+    }
+  } catch {}
+
+  // Remove leading/trailing slashes and whitespace
+  code = code.replace(/^\/+|\/+$/g, '').trim()
+
+  // Extract the LAST segment (the actual code) if it's a path like "cliente/00002" or "pedido/D0001"
+  const segments = code.split('/')
+  code = segments[segments.length - 1]
+
+  // If it looks like a full URL again, just take everything after the last slash
+  if (code.includes('://') || code.includes('http')) {
+    code = raw.trim()
+  }
+
+  return code || null
+}
+
 function clearScanner() {
   selectedOrderId = null
-  document.getElementById('customer-result').style.display = 'none'
+  const result = document.getElementById('customer-result')
+  if (result) {
+    result.style.display = 'none'
+    result.innerHTML = ''
+  }
   document.getElementById('pending-orders').innerHTML = ''
   document.getElementById('manual-code').value = ''
+  document.getElementById('pending-title').style.display = 'none'
+  document.getElementById('no-pending').style.display = 'none'
   document.querySelectorAll('.pending-order').forEach(el => el.classList.remove('selected'))
-  if (scanner) scanner.resume()
+
+  // Resume scanner if it exists and is paused
+  if (scanner) {
+    try { scanner.resume() } catch {}
+  }
 }
 
 // ══════════════════════════════════════════════════════════════
 // HISTORY TAB
 // ══════════════════════════════════════════════════════════════
-let historyPeriod = 'today'
+let historyPeriod = 'all'
 let historyLoaded = false
 
 function setHistoryPeriod(period, el) {
