@@ -696,33 +696,43 @@ async function confirmDelivery() {
 }
 
 // Extract the actual delivery code from raw QR data.
-// QRs may contain: "00002", "CL-00002", "https://cleansahel.onrender.com/cliente/00002",
-// "https://cleansahel.onrender.com/pedido/D0001", "https://cleansahel.onrender.com/entrega/ord-xxx"
+// Handles all known QR formats:
+//   - Plain code: "CL-00005", "00005", "5", "D0001", "ord-xxx"
+//   - URL with path: "https://cleansahel.onrender.com/cliente/00005"
+//   - URL with query param (customer card QR): "https://cleansahel.onrender.com/api/delivery-mobile?code=CL-00005"
+//   - URL with path+query: "https://cleansahel.onrender.com/entrega/ord-xxx"
 function extractCodeFromQR(raw) {
   if (!raw) return null
   let code = raw.trim()
 
-  // Remove common URL schemes and domains
   try {
     if (code.startsWith('http://') || code.startsWith('https://')) {
-      // Extract path: "https://cleansahel.onrender.com/cliente/00002" → "cliente/00002"
       const url = new URL(code)
-      code = url.pathname.replace(/^\//, '')
+
+      // PRIORITY 1: Check for ?code= parameter (customer card QR format)
+      // e.g. https://cleansahel.onrender.com/api/delivery-mobile?code=CL-00005
+      if (url.searchParams.has('code')) {
+        return url.searchParams.get('code').trim() || null
+      }
+
+      // PRIORITY 2: Check for ?id= parameter
+      if (url.searchParams.has('id')) {
+        return url.searchParams.get('id').trim() || null
+      }
+
+      // PRIORITY 3: Extract from path
+      // e.g. "https://cleansahel.onrender.com/cliente/00005" → "cliente/00005"
+      // or "https://cleansahel.onrender.com/entrega/ord-xxx" → "entrega/ord-xxx"
+      let path = url.pathname.replace(/^\/+|\/+$/g, '').trim()
+      if (!path || path === url.host) return null
+
+      // Get the LAST meaningful segment (handles /cliente/00005, /entrega/ord-xxx)
+      const segments = path.split('/').filter(s => s.length > 0)
+      return segments[segments.length - 1] || null
     }
   } catch {}
 
-  // Remove leading/trailing slashes and whitespace
-  code = code.replace(/^\/+|\/+$/g, '').trim()
-
-  // Extract the LAST segment (the actual code) if it's a path like "cliente/00002" or "pedido/D0001"
-  const segments = code.split('/')
-  code = segments[segments.length - 1]
-
-  // If it looks like a full URL again, just take everything after the last slash
-  if (code.includes('://') || code.includes('http')) {
-    code = raw.trim()
-  }
-
+  // Plain text code (no URL)
   return code || null
 }
 
