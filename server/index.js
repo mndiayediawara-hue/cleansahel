@@ -115,6 +115,10 @@ if (fs.existsSync(distPath)) {
     app.use('/assets', express.static(rootAssetsPath))
   }
   app.use(express.static(distPath))
+  // Serve Entregas app directly (before the catch-all SPA route)
+  app.get('/entregas', (_req, res) => {
+    res.sendFile(path.join(distPath, 'entregas.html'))
+  })
   app.get(/^(?!\/api).*/, (_req, res) => {
     res.sendFile(path.join(distPath, 'index.html'))
   })
