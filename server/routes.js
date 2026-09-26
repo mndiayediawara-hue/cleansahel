@@ -482,33 +482,13 @@ router.get('/delivery/lookup/:code', auth, requirePermission('entregas', 'view')
   // 1. Exact match por código de cliente
   let customer = db.prepare('SELECT * FROM customers WHERE UPPER(code) = ?').get(clean)
 
-  // 2. Si no, buscar en TODOS los clientes cuyo código contenga el valor escaneado
-  if (!customer) {
-    const noDash = clean.replace(/-/g, '')
-    const allCustomers = db.prepare('SELECT * FROM customers').all()
-    console.log(`[LOOKUP] step2: noDash="${noDash}", checking ${allCustomers.length} customers`)
-    for (const c of allCustomers) {
-      const cCode = (c.code || '').replace(/-/g, '').toUpperCase()
-      const cCodeOrig = (c.code || '').toUpperCase()
-      const match = cCode === noDash || cCodeOrig === clean || cCode.endsWith(noDash) || c.code === code || c.code === clean
-      if (match) {
-        console.log(`[LOOKUP] MATCH: code="${c.code}", cCode="${cCode}", noDash="${noDash}"`)
-        customer = c
-        break
-      } else {
-        console.log(`[LOOKUP] skip: code="${c.code}", cCode="${cCode}", cCodeOrig="${cCodeOrig}", clean="${clean}", noDash="${noDash}", match=${match}`)
-      }
-    }
-  }
-
-  // 3. Si no, buscar por número de pedido
+  // 2. Si no, buscar pedidos PRIMERO (número de pedido > código de cliente cuando hay ambigüedad)
   let orderByNumber = null
   if (!customer) {
     const allOrders = db.prepare('SELECT * FROM orders').all()
     for (const o of allOrders) {
       const oNum = (o.number || '').replace(/[_\s-]/g, '').toUpperCase()
       const oNumOrig = (o.number || '').toUpperCase()
-      // Comparar: 0001 = D0001 = d0001 = PED-2026-0001
       const cleanNoDash = clean.replace(/[_\s-]/g, '')
       if (oNum === cleanNoDash || oNumOrig === clean || oNum.endsWith(cleanNoDash)) {
         orderByNumber = o
@@ -517,6 +497,20 @@ router.get('/delivery/lookup/:code', auth, requirePermission('entregas', 'view')
     }
     if (orderByNumber) {
       customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(orderByNumber.customer_id)
+    }
+  }
+
+  // 3. Si no, buscar en clientes (solo si no se encontró pedido)
+  if (!customer) {
+    const allCustomers = db.prepare('SELECT * FROM customers').all()
+    for (const c of allCustomers) {
+      const cCode = (c.code || '').replace(/-/g, '').toUpperCase()
+      const cCodeOrig = (c.code || '').toUpperCase()
+      // "00002" matches "CL00002" y "CL-00002"
+      if (cCode === clean || cCodeOrig === clean || cCode.endsWith(clean) || c.code === code || c.code === clean) {
+        customer = c
+        break
+      }
     }
   }
 
