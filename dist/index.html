@@ -467,21 +467,17 @@
   console.info('[Reception Integrated] Patch loaded - Lotes integrados en recepción');
 })();
     </script>
-    <script type="module" crossorigin src="./assets/index-DUENdaaH.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-DRWKbYCY.css">
-  
-<script>
+    <script>
 (function(){
-  // STATUS_TONES fix: find nu object end via brace counting, inject keys + _st
-  var oldFetch = window.fetch;
+  var origFetch = window.fetch;
   window.fetch = function(url, opts) {
-    var u = typeof url === 'string' ? url : (url && url.url) || String(url);
-    if (u.indexOf('index-DUENdaaH.js') === -1) return oldFetch(url, opts);
-    return oldFetch(url, opts).then(function(resp) {
+    var bundleUrl = './assets/index-DskLDoYx.js';
+    var u = typeof url === 'string' ? url : (url && url.url) || '';
+    if (!u.includes(bundleUrl.split('/').pop()) && !u.endsWith(bundleUrl)) return origFetch.apply(this, arguments);
+    return fetch(url, opts).then(function(resp) {
       if (!resp.ok) return resp;
       return resp.clone().text().then(function(code) {
         if (code.indexOf('delivered') !== -1) return new Response(code, {status: resp.status, headers: resp.headers});
-        // Find nu={...}end position using brace counting
         var nuStart = code.indexOf('nu={');
         if (nuStart === -1) return new Response(code, {status: resp.status, headers: resp.headers});
         var depth = 0, nuEnd = -1;
@@ -492,26 +488,81 @@
         }
         if (nuEnd === -1) return new Response(code, {status: resp.status, headers: resp.headers});
         var afterNu = code.substring(nuEnd);
-        // Ensure we are at };function pattern
-        var semiFn = afterNu.match(/^;\s*function\s+/);
-        if (!semiFn) return new Response(code, {status: resp.status, headers: resp.headers});
-        // Build the nu extension + _st function
-        var extension = ';function _st(n){return nu[n]||{label:n||"—",cls:"bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-300"}};';
-        var nuExtended = code.substring(nuStart, nuEnd) +
-          ',delivered:{label:"Entregado",cls:"bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"},shipped:{label:"Enviado",cls:"bg-brand-100 text-brand-800 dark:bg-brand-950/40 dark:text-brand-300"},cancelled:{label:"Cancelado",cls:"bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300"}' +
-          extension;
+        if (!/^;\s*function\s+/.test(afterNu)) return new Response(code, {status: resp.status, headers: resp.headers});
+        var extra = ',delivered:{label:"Entregado",cls:"bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"},shipped:{label:"Enviado",cls:"bg-brand-100 text-brand-800 dark:bg-brand-950/40 dark:text-brand-300"},cancelled:{label:"Cancelado",cls:"bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300"}';
+        var stFn = ';function _st(n){return nu[n]||{label:n||"—",cls:"bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-300"}};';
+        var nuExtended = code.substring(nuStart, nuEnd) + extra + '}' + stFn;
         var patched = nuExtended + afterNu;
-        // Fix nu[P.status].cls and nu[P.status].label
         patched = patched.replace(/nu\[P\.status\]\.cls/g, '_st(P.status).cls');
         patched = patched.replace(/nu\[P\.status\]\.label/g, '_st(P.status).label');
-        console.log('[CleanSahel] STATUS_TONES fix: nu patched with brace-counting, _st() added');
+        console.log('[CleanSahel] STATUS_TONES fix applied via brace-counting');
         return new Response(patched, {status: resp.status, headers: resp.headers});
       });
     });
   };
 })();
 </script>
-</head>
+<script>
+(function(){
+  var origDefine = window.define;
+  var bundlePatched = false;
+  var moduleScript = null;
+  var observer = new MutationObserver(function(mutations) {
+    for (var mi = 0; mi < mutations.length; mi++) {
+      var added = mutations[mi].addedNodes;
+      for (var ni = 0; ni < added.length; ni++) {
+        var node = added[ni];
+        if (node.nodeType !== 1 || node.tagName !== 'SCRIPT') continue;
+        var src = node.src || '';
+        if (!src) continue;
+        var lastSeg = src.split('/').pop();
+        if (lastSeg !== 'index-DskLDoYx.js' && !src.includes('index-DskLDoYx')) continue;
+        moduleScript = node;
+        var scriptContent = '';
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', src, false);
+        xhr.onload = function() {
+          if (xhr.status !== 200) return;
+          scriptContent = xhr.responseText;
+          if (scriptContent.indexOf('delivered') !== -1) { bundlePatched = true; return; }
+          var nuStart = scriptContent.indexOf('nu={');
+          if (nuStart === -1) return;
+          var depth = 0, nuEnd = -1;
+          for (var i = nuStart + 3; i < scriptContent.length; i++) {
+            var ch = scriptContent[i];
+            if (ch === '{') depth++;
+            else if (ch === '}') { depth--; if (depth === 0) { nuEnd = i + 1; break; } }
+          }
+          if (nuEnd === -1) return;
+          var afterNu = scriptContent.substring(nuEnd);
+          if (!/^;\s*function\s+/.test(afterNu)) return;
+          var extra = ',delivered:{label:"Entregado",cls:"bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"},shipped:{label:"Enviado",cls:"bg-brand-100 text-brand-800 dark:bg-brand-950/40 dark:text-brand-300"},cancelled:{label:"Cancelado",cls:"bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300"}';
+          var stFn = ';function _st(n){return nu[n]||{label:n||"—",cls:"bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-300"}};';
+          var nuExtended = scriptContent.substring(nuStart, nuEnd) + extra + '}' + stFn;
+          var patched = nuExtended + afterNu;
+          patched = patched.replace(/nu\[P\.status\]\.cls/g, '_st(P.status).cls');
+          patched = patched.replace(/nu\[P\.status\]\.label/g, '_st(P.status).label');
+          var blob = new Blob([patched], {type: 'application/javascript'});
+          var blobUrl = URL.createObjectURL(blob);
+          var newScript = document.createElement('script');
+          newScript.src = blobUrl;
+          newScript.type = 'module';
+          newScript.crossOrigin = 'anonymous';
+          moduleScript.parentNode.replaceChild(newScript, moduleScript);
+          bundlePatched = true;
+          console.log('[CleanSahel] STATUS_TONES MutationObserver fix applied via brace-counting');
+        };
+        xhr.send();
+        break;
+      }
+    }
+  });
+  observer.observe(document.documentElement, {childList: true, subtree: true});
+})();
+</script>
+    <script type="module" crossorigin src="./assets/index-CLouT4yk.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DRWKbYCY.css">
+  </head>
   <body>
     <div id="root"></div>
   </body>
