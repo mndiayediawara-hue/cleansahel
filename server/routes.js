@@ -469,10 +469,65 @@ router.delete('/customers/:id', auth, requirePermission('customers', 'delete'), 
 })
 
 // ---------- DELIVERY / ENTREGA DE PEDIDOS ----------
-// GET /api/delivery/lookup/:code - Buscar cliente por código y devolver sus pedidos pendientes con productos
+// GET /api/delivery/lookup/:code - Buscar por código de cliente, número de pedido o ID de pedido
 router.get('/delivery/lookup/:code', auth, requirePermission('entregas', 'view'), (req, res) => {
-  const customer = db.prepare('SELECT * FROM customers WHERE code = ?').get(req.params.code)
-  if (!customer) return res.status(404).json({ error: 'Cliente no encontrado' })
+  const code = req.params.code
+
+  // ===== BÚSQUEDA SIMPLE Y ROBUSTA =====
+  // Soporta: CL-00005, 00005, 5, CL00005, D0001, 0001, PED-2026-0001, ord-xxx, o-xxx
+
+  // Limpiar el código: quitar espacios y normalizar a mayúsculas
+  const clean = code.trim().toUpperCase()
+
+  // 1. Exact match por código de cliente
+  let customer = db.prepare('SELECT * FROM customers WHERE UPPER(code) = ?').get(clean)
+
+  // 2. Si no, buscar pedidos PRIMERO (número de pedido > código de cliente cuando hay ambigüedad)
+  let orderByNumber = null
+  if (!customer) {
+    const allOrders = db.prepare('SELECT * FROM orders').all()
+    for (const o of allOrders) {
+      const oNum = (o.number || '').replace(/[_\s-]/g, '').toUpperCase()
+      const oNumOrig = (o.number || '').toUpperCase()
+      const cleanNoDash = clean.replace(/[_\s-]/g, '')
+      const orderDigits = oNum.replace(/^[A-Z]+/, '')
+      if (oNum === cleanNoDash || oNumOrig === clean || orderDigits === cleanNoDash) {
+        orderByNumber = o
+        break
+      }
+    }
+    if (orderByNumber) {
+      customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(orderByNumber.customer_id)
+    }
+  }
+
+  // 3. Si no, buscar en clientes (con ORDER BY para orden determinista)
+  if (!customer) {
+    const allCustomers = db.prepare('SELECT * FROM customers ORDER BY code ASC').all()
+    for (const c of allCustomers) {
+      const cCode = (c.code || '').replace(/-/g, '').toUpperCase()
+      const cCodeOrig = (c.code || '').toUpperCase()
+      if (cCodeOrig === clean || cCode.endsWith(clean) || c.code === code || c.code === clean) {
+        customer = c
+        break
+      }
+    }
+  }
+
+  // 4. Si no, buscar por ID de pedido exacto
+  let orderById = null
+  if (!customer && !orderByNumber) {
+    orderById = db.prepare('SELECT * FROM orders WHERE id = ?').get(code)
+    if (orderById) {
+      customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(orderById.customer_id)
+    }
+  }
+
+  // Si no se encontró nada
+  if (!customer) {
+    return res.status(404).json({ error: 'Código no encontrado. Verifica el código QR e inténtalo de nuevo.' })
+  }
+
   // Pedidos del cliente con productos detallados
   const allOrders = db.prepare(`SELECT * FROM orders WHERE customer_id = ? ORDER BY created_at DESC`).all(customer.id)
   const ordersList = allOrders.map(o => {

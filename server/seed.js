@@ -204,6 +204,50 @@ export function seed({ force = false } = {}) {
   }
   console.log(`✓ ${testCustomers.length} clientes de prueba asegurados`)
 
+  // ========== CORRECCIÓN DE INTEGRIDAD DE DATOS ==========
+  // 1. Si un pedido tiene status=pendiente/confirmado/preparando pero delivered_at está set → inconsistencia
+  const fixedInconsistent = db.prepare(`
+    UPDATE orders SET delivered_at = NULL, delivered_by = NULL, status = 'pendiente'
+    WHERE delivered_at IS NOT NULL
+      AND status IN ('pendiente', 'confirmado', 'preparando')
+  `).run()
+  if (fixedInconsistent.changes > 0) {
+    console.log(`✓ Corregidos ${fixedInconsistent.changes} pedido(s) con delivered_at inconsistente`)
+  }
+
+  // 2. Si un pedido tiene status='delivered' pero NO tiene delivered_at → asignar fecha de created_at
+  const fixedMissingDate = db.prepare(`
+    UPDATE orders SET delivered_at = created_at
+    WHERE status = 'delivered' AND (delivered_at IS NULL OR delivered_at = '')
+  `).run()
+  if (fixedMissingDate.changes > 0) {
+    console.log(`✓ Corregidos ${fixedMissingDate.changes} pedido(s) sin fecha de entrega (status=delivered sin delivered_at)`)
+  }
+
+  // Asegurar que D0001 (Hotel Liberté) es el pedido pendiente de demo si no existe otro pendiente
+  const hotelId = db.prepare("SELECT id FROM customers WHERE code = 'CL-00002'").get()?.id
+  if (hotelId) {
+    const pendingForHotel = db.prepare(
+      "SELECT id, number FROM orders WHERE customer_id = ? AND delivered_at IS NULL AND status NOT IN ('cancelado', 'cancelled')"
+    ).all(hotelId)
+    if (pendingForHotel.length === 0) {
+      const prods = db.prepare('SELECT id, name, price FROM products').all()
+      if (prods.length) {
+        const qty = 2
+        const items = prods.slice(0, 2).map(p => ({
+          productId: p.id, productName: p.name, quantity: qty, unitPrice: p.price
+        }))
+        const subtotal = items.reduce((s, item) => s + item.unitPrice * item.quantity, 0)
+        const tax = subtotal * 0.18
+        const total = subtotal + tax
+        db.prepare(`INSERT OR REPLACE INTO orders (id, number, customer_id, items_json, subtotal, tax, discount, total, status, created_at, delivered_at, delivered_by, notes)
+          VALUES (?,?,?,?,?,?,?,?,?,?,NULL,NULL,?)`)
+          .run('ord-mthnrld0i1wsu8', 'D0001', hotelId, JSON.stringify(items), subtotal, tax, 0, total, 'pendiente', new Date().toISOString(), null)
+        console.log('✓ Pedido pendiente D0001 creado para Hotel Liberté (demo)')
+      }
+    }
+  }
+
   // ========== PEDIDOS ENTREGADOS PARA HISTORIAL (idempotente) ==========
   const prods = db.prepare('SELECT id, name, price FROM products').all()
   const customers = db.prepare('SELECT id, name, code FROM customers').all()
