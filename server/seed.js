@@ -48,8 +48,8 @@ export function seed({ force = false } = {}) {
     { id: 'u-admin', username: 'admin', password: hashPassword('ADMIN_PASSWORD', '41668585Z'), fullName: 'Administrador', email: 'admin@cleansahel.com', role: 'admin', permissions: allPerms },
     { id: 'u-prod', username: 'produccion', password: hashPassword('PRODUCCION_PASSWORD', 'produccion2024'), fullName: 'Operario Producción', email: 'produccion@cleansahel.com', role: 'produccion', permissions: produccionPerms },
     { id: 'u-cont', username: 'contabilidad', password: hashPassword('CONTABILIDAD_PASSWORD', 'contabilidad2024'), fullName: 'Operario Contabilidad', email: 'contabilidad@cleansahel.com', role: 'contabilidad', permissions: contabilidadPerms },
-    { id: 'u-rep1', username: 'moussa', password: hashPassword('REP1_PASSWORD', 'moussa123'), fullName: 'Moussa Diallo', email: 'moussa@cleansahel.com', role: 'repartidor', permissions: repartidorPerms },
-    { id: 'u-rep2', username: 'fanta', password: hashPassword('REP2_PASSWORD', 'fanta123'), fullName: 'Fanta Samaké', email: 'fanta@cleansahel.com', role: 'repartidor', permissions: repartidorPerms },
+    { id: 'u-rep1', username: 'moussa', password: hashPassword('REP1_PASSWORD', 'SKIP_PASSWORD'), fullName: 'Moussa Diallo', email: 'moussa@cleansahel.com', role: 'repartidor', permissions: repartidorPerms, preservePassword: true },
+    { id: 'u-rep2', username: 'fanta', password: hashPassword('REP2_PASSWORD', 'fanta123'), fullName: 'Fanta Samaké', email: 'fanta@cleansahel.com', role: 'repartidor', permissions: repartidorPerms, preservePassword: false },
   ]
   
   const insUser = db.prepare(`INSERT OR IGNORE INTO users (id, username, password_hash, full_name, email, role, active, created_at, permissions, failed_attempts) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 0)`)
@@ -60,7 +60,8 @@ export function seed({ force = false } = {}) {
       // Solo actualizar permisos y desbloquear (failed_attempts=0), NO la contraseña
       updUser.run(JSON.stringify(u.permissions || null), u.id)
     } else {
-      insUser.run(u.id, u.username, u.password, u.fullName, u.email, u.role, monthsAgo(12), JSON.stringify(u.permissions || null))
+      const pwd = u.preservePassword ? hashPassword(u.password, null) : u.password
+      insUser.run(u.id, u.username, pwd, u.fullName, u.email, u.role, monthsAgo(12), JSON.stringify(u.permissions || null))
     }
   }
   console.log(`✓ ${users.length} usuarios esenciales (admin/produccion/contabilidad/repartidores) asegurados`)
