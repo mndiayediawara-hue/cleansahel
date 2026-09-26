@@ -131,14 +131,24 @@ router.post('/users', auth, requirePermission('users', 'create'), (req, res) => 
 
 router.put('/users/:id', auth, requirePermission('users', 'edit'), (req, res) => {
   const { id } = req.params
-  const { fullName, email, role, active, password } = req.body
+  const { fullName, email, role, active, password, failedAttempts } = req.body
   const u = db.prepare('SELECT * FROM users WHERE id = ?').get(id)
   if (!u) return res.status(404).json({ error: 'No encontrado' })
-  db.prepare('UPDATE users SET full_name = ?, email = ?, role = ?, active = ? WHERE id = ?')
-    .run(fullName || u.full_name, email ?? u.email, role || u.role, active === false ? 0 : 1, id)
+  db.prepare('UPDATE users SET full_name = ?, email = ?, role = ?, active = ?, failed_attempts = ? WHERE id = ?')
+    .run(fullName || u.full_name, email ?? u.email, role || u.role, active === false ? 0 : 1, failedAttempts ?? u.failed_attempts, id)
   if (password) db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(password, 10), id)
   addHistory(req, { action: 'modificar', module: 'Usuarios', entityId: id, description: `Modificado usuario ${u.username}`, before: u })
   res.json({ ok: true })
+})
+
+// PATCH /api/users/:id/unlock — Desbloquear cuenta por intentos fallidos
+router.patch('/users/:id/unlock', auth, requirePermission('users', 'edit'), (req, res) => {
+  const { id } = req.params
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(id)
+  if (!u) return res.status(404).json({ error: 'Usuario no encontrado' })
+  db.prepare('UPDATE users SET failed_attempts = 0 WHERE id = ?').run(id)
+  addHistory(req, { action: 'unlock', module: 'Usuarios', entityId: id, description: `Cuenta desbloqueada: ${u.username}` })
+  res.json({ ok: true, message: 'Cuenta desbloqueada' })
 })
 
 router.delete('/users/:id', auth, requirePermission('users', 'delete'), (req, res) => {
