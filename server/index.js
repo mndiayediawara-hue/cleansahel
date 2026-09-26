@@ -115,6 +115,36 @@ if (fs.existsSync(distPath)) {
     app.use('/assets', express.static(rootAssetsPath))
   }
   app.use(express.static(distPath))
+  // Auto-login page — generates a fresh token and redirects to entregas
+  app.get('/autologin', async (req, res) => {
+    try {
+      const https = await import('node:https')
+      const body = JSON.stringify({ username: 'moussa', password: 'moussa123' })
+      const opts = {
+        hostname: 'cleansahel.onrender.com',
+        path: '/api/auth/login',
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
+      }
+      const data = await new Promise((resolve, reject) => {
+        const req = https.request(opts, r => {
+          let d = ''
+          r.on('data', c => d += c)
+          r.on('end', () => resolve(JSON.parse(d)))
+        })
+        req.on('error', reject)
+        req.write(body)
+        req.end()
+      })
+      if (!data.token) { res.send('Login failed'); return }
+      res.send(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>CleanSahel</title></head><body>
+<script>
+sessionStorage.setItem('token', ${JSON.stringify(data.token)});
+sessionStorage.setItem('user', ${JSON.stringify(JSON.stringify(data.user))});
+window.location.replace('/entregas');
+</script><p style="font-family:sans-serif;text-align:center;padding:40px">Entrando...</p></body></html>`)
+    } catch(e) { res.status(500).send('Error: ' + e.message) }
+  })
   // Serve Entregas app directly (before the catch-all SPA route)
   app.get('/entregas', (_req, res) => {
     res.sendFile(path.join(distPath, 'entregas.html'))
