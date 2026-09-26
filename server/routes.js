@@ -4327,7 +4327,15 @@ router.get('/delivery-mobile', (req, res) => {
   <script>
     const API = window.location.origin + '/api'
     let token = localStorage.getItem('cleanerp-token') || new URLSearchParams(window.location.search).get('token')
-    if (token) { localStorage.setItem('cleanerp-token', token); showMain() } else { document.getElementById('loginSection').classList.remove('hidden') }
+    // Guardar el código prefill ANTES de que startScanner() lo pueda borrar
+    let prefillCode = new URLSearchParams(window.location.search).get('code') || ''
+    if (token) {
+      localStorage.setItem('cleanerp-token', token)
+      showMain()
+      startScanner() // iniciar cámara en background
+    } else {
+      document.getElementById('loginSection').classList.remove('hidden')
+    }
     function showToast(msg, color) { const t = document.getElementById('toast'); t.textContent = msg; t.style.background = color || '#1f2937'; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2500) }
     async function doLogin() {
       const username = document.getElementById('loginUser').value.trim()
@@ -4342,27 +4350,40 @@ router.get('/delivery-mobile', (req, res) => {
         document.getElementById('loginSection').classList.add('hidden')
         document.getElementById('loginError').classList.add('hidden')
         showMain()
+        startScanner()
       } catch (e) { document.getElementById('loginError').textContent = e.message; document.getElementById('loginError').classList.remove('hidden') }
     }
-    function showMain() { document.getElementById('mainSection').classList.remove('hidden'); const prefill = document.getElementById('codeInput').value.trim(); if (prefill) lookupCustomer() }
+    function showMain() {
+      document.getElementById('mainSection').classList.remove('hidden')
+      // Usar prefillCode (de URL) en vez del valor del input (que puede estar vacío tras login)
+      if (prefillCode) {
+        document.getElementById('codeInput').value = prefillCode
+        lookupCustomer()
+      }
+    }
+    let _html5Qr = null
     function startScanner() {
+      if (_html5Qr) return // ya está activo
       const readerEl = document.getElementById('qr-reader'); readerEl.innerHTML = ''
-      const html5QrCode = new Html5Qrcode('qr-reader')
       const startBtn = document.getElementById('startScanBtn')
       startBtn.disabled = true; startBtn.textContent = 'Escaneando...'
-      html5QrCode.start({ facingMode: 'environment' }, { fps: 10, qrbox: 250 },
+      _html5Qr = new Html5Qrcode('qr-reader')
+      _html5Qr.start({ facingMode: 'environment' }, { fps: 10, qrbox: 250 },
         (decodedText) => {
-          html5QrCode.stop().then(() => {
+          _html5Qr.stop().then(() => {
+            _html5Qr = null
             startBtn.disabled = false; startBtn.textContent = 'Reiniciar cámara'
-            const codeMatch = decodedText.match(/CL-\\d{4,6}/)
-            const code = codeMatch ? codeMatch[0] : decodedText.trim()
+            // Soportar tanto URLs completas como códigos planos
+            const codeMatch = decodedText.match(/CL-\d{4,6}/)
+            const code = codeMatch ? codeMatch[0] : decodedText.trim().toUpperCase()
             document.getElementById('codeInput').value = code
+            prefillCode = code // guardar para posible reúso
             lookupCustomer()
           }).catch(() => {})
         }, (error) => {}
-      ).catch(err => { startBtn.disabled = false; startBtn.textContent = 'Iniciar cámara'; showToast('Error al acceder a la cámara: ' + err.message, '#dc2626') })
+      ).catch(err => { _html5Qr = null; startBtn.disabled = false; startBtn.textContent = 'Iniciar cámara'; showToast('Error al acceder a la cámara: ' + err.message, '#dc2626') })
     }
-    async function lookupCustomer() {
+async function lookupCustomer() {
       const code = document.getElementById('codeInput').value.trim().toUpperCase()
       if (!code) { showToast('Introduce un código', '#dc2626'); return }
       document.getElementById('codeInput').value = code
