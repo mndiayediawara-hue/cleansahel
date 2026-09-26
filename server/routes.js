@@ -475,8 +475,6 @@ router.get('/delivery/lookup/:code', auth, requirePermission('entregas', 'view')
 
   // ===== BÚSQUEDA SIMPLE Y ROBUSTA =====
   // Soporta: CL-00005, 00005, 5, CL00005, D0001, 0001, PED-2026-0001, ord-xxx, o-xxx
-
-  // Limpiar el código: quitar espacios y normalizar a mayúsculas
   const clean = code.trim().toUpperCase()
 
   // 1. Exact match por código de cliente
