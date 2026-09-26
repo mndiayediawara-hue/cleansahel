@@ -117,6 +117,20 @@
     .pending-items { padding: 8px 14px; background: var(--surface-2); }
     .pending-item { display: flex; justify-content: space-between; padding: 5px 0; font-size: 13px; }
     .pending-item-name { color: var(--text-2); }
+    .pending-footer { padding: 10px 14px; display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
+    .pending-item-qty { font-weight: 600; color: var(--text); }
+
+    /* ── Delivered orders ── */
+    .section-title { font-size: 13px; font-weight: 700; color: var(--text-2); text-transform: uppercase; letter-spacing: 1px; margin: 20px 12px 8px; }
+    .section-title.delivered-title { color: var(--green); margin-top: 24px; }
+    .delivered-order { background: var(--surface); border: 2px solid #d1fae5; border-radius: 12px;
+                       margin: 8px 12px; overflow: hidden; }
+    .delivered-header { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; }
+    .delivered-order-num { font-size: 15px; font-weight: 700; color: var(--text); }
+    .delivered-total { font-size: 15px; font-weight: 800; color: var(--green); }
+    .delivered-info { padding: 8px 14px; background: #f0fdf4; }
+    .delivered-badge { display: inline-block; background: #d1fae5; color: #065f46; font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 20px; text-transform: uppercase; }
+    .delivered-date { font-size: 12px; color: var(--text-3); margin-top: 4px; }
     .pending-item-qty { font-weight: 600; color: var(--text); }
     .pending-footer { padding: 10px 14px; display: flex; justify-content: flex-end; gap: 8px; align-items: center; }
 
@@ -226,8 +240,10 @@
   <!-- Customer result (hidden initially) -->
   <div id="customer-result" style="display:none">
     <div class="customer-card" id="customer-info"></div>
-    <div class="section-title" id="pending-title" style="display:none">Pedidos pendientes</div>
+    <div class="section-title" id="pending-title">Pedidos pendientes</div>
     <div id="pending-orders"></div>
+    <div class="section-title delivered-title" id="delivered-title" style="display:none">Historial de entregas</div>
+    <div id="delivered-orders"></div>
     <div class="empty-state" id="no-pending" style="display:none">
       <div class="empty-state-icon">🎉</div>
       <div>No hay pedidos pendientes para este cliente</div>
@@ -555,8 +571,10 @@ async function lookupCustomer(code) {
     const data = res.data
     const c = data.customer || {}
     const pending = data.pendingOrders || []
+    const delivered = data.deliveredOrders || []
     const stats = data.stats || {}
 
+    // Render customer card with stats
     result.innerHTML = `
       <div class="customer-card">
         <div class="customer-name">${c.name || '—'}</div>
@@ -574,47 +592,66 @@ async function lookupCustomer(code) {
     const pendingTitle = document.getElementById('pending-title')
     const pendingOrdersDiv = document.getElementById('pending-orders')
     const noPending = document.getElementById('no-pending')
+    const deliveredTitle = document.getElementById('delivered-title')
+    const deliveredOrdersDiv = document.getElementById('delivered-orders')
 
-    if (!pending.length) {
-      // Customer found but NO pending orders — this is NOT an error
+    // Pending orders section
+    if (pending.length) {
+      pendingTitle.style.display = 'block'
+      noPending.style.display = 'none'
+      pendingOrdersDiv.innerHTML = pending.map(o => `
+        <div class="pending-order" id="order-${o.id}" onclick="selectOrder('${o.id}', '${(o.number || o.id).replace(/'/g, "\\'")}', ${o.total || 0}, ${JSON.stringify(o.items || []).replace(/"/g, '&quot;')}, '${(o.customer_name || c.name || '').replace(/'/g, "\\'")}', ${o.subtotal || 0}, ${o.tax || 0}, ${o.discount || 0})">
+          <div class="pending-header">
+            <div>
+              <div class="pending-order-num">📦 ${o.number || o.id}</div>
+              <div style="font-size:12px;color:var(--text-2);margin-top:2px">${o.items?.length || 0} productos · ${o.totalItems || 0} unidades</div>
+            </div>
+            <div class="pending-order-total">${fmtCurrency(o.total)}</div>
+          </div>
+          <div class="pending-items">
+            ${(o.items || []).slice(0, 3).map(item => `
+              <div class="pending-item">
+                <span class="pending-item-name">${item.productName || item.name || '—'}</span>
+                <span class="pending-item-qty">×${item.quantity || 0}</span>
+              </div>
+            `).join('')}
+            ${(o.items || []).length > 3 ? `<div style="font-size:12px;color:var(--text-3);padding-top:4px">+${(o.items || []).length - 3} más</div>` : ''}
+          </div>
+          <div class="pending-footer">
+            <span style="font-size:12px;color:var(--text-3)">Toca para confirmar entrega</span>
+            <span style="font-size:18px">→</span>
+          </div>
+        </div>
+      `).join('')
+    } else {
       pendingTitle.style.display = 'none'
       pendingOrdersDiv.innerHTML = ''
-      noPending.innerHTML = `<div style="text-align:center;padding:20px;color:var(--text-2);font-size:14px">
-        <div style="font-size:36px;margin-bottom:8px">✅</div>
-        <div style="font-weight:600;color:var(--green)">No hay entregas pendientes</div>
-        <div style="margin-top:4px;font-size:12px">Este cliente no tiene pedidos pendientes en este momento.</div>
-        <div style="margin-top:12px"><button class="pill" onclick="clearScanner(); initScanner()">Escanear otro código</button></div>
-      </div>`
       noPending.style.display = 'block'
-      return
     }
 
-    pendingTitle.style.display = 'block'
-    noPending.style.display = 'none'
-    pendingOrdersDiv.innerHTML = pending.map(o => `
-      <div class="pending-order" id="order-${o.id}" onclick="selectOrder('${o.id}', '${(o.number || o.id).replace(/'/g, "\\'")}', ${o.total || 0}, ${JSON.stringify(o.items || []).replace(/"/g, '&quot;')}, '${(o.customer_name || c.name || '').replace(/'/g, "\\'")}', ${o.subtotal || 0}, ${o.tax || 0}, ${o.discount || 0})">
-        <div class="pending-header">
-          <div>
-            <div class="pending-order-num">📦 ${o.number || o.id}</div>
-            <div style="font-size:12px;color:var(--text-2);margin-top:2px">${o.items?.length || 0} productos · ${o.totalItems || 0} unidades</div>
-          </div>
-          <div class="pending-order-total">${fmtCurrency(o.total)}</div>
-        </div>
-        <div class="pending-items">
-          ${(o.items || []).slice(0, 3).map(item => `
-            <div class="pending-item">
-              <span class="pending-item-name">${item.productName || item.name || '—'}</span>
-              <span class="pending-item-qty">×${item.quantity || 0}</span>
+    // Delivered orders section — show ALL delivered orders for this customer
+    if (delivered.length) {
+      deliveredTitle.style.display = 'block'
+      deliveredOrdersDiv.innerHTML = delivered.map(o => `
+        <div class="delivered-order">
+          <div class="delivered-header">
+            <div>
+              <div class="delivered-order-num">✅ ${o.number || o.id}</div>
+              <div class="delivered-date">${o.items?.length || 0} productos · ${o.totalItems || 0} unidades</div>
             </div>
-          `).join('')}
-          ${(o.items || []).length > 3 ? `<div style="font-size:12px;color:var(--text-3);padding-top:4px">+${(o.items || []).length - 3} más</div>` : ''}
+            <div class="delivered-total">${fmtCurrency(o.total)}</div>
+          </div>
+          <div class="delivered-info">
+            <span class="delivered-badge">Entregado</span>
+            ${o.delivered_at ? `<div class="delivered-date" style="margin-top:4px">Fecha: ${fmtDate(o.delivered_at)}</div>` : ''}
+            ${o.delivered_by ? `<div class="delivered-date">Por: ${o.delivered_by}</div>` : ''}
+          </div>
         </div>
-        <div class="pending-footer">
-          <span style="font-size:12px;color:var(--text-3)">Toca para confirmar entrega</span>
-          <span style="font-size:18px">→</span>
-        </div>
-      </div>
-    `).join('')
+      `).join('')
+    } else {
+      deliveredTitle.style.display = 'none'
+      deliveredOrdersDiv.innerHTML = ''
+    }
 
   } catch (err) {
     console.error('lookupCustomer error:', err)
@@ -876,6 +913,15 @@ document.addEventListener('DOMContentLoaded', () => {
   showTab('scanner')
   initScanner()
   loadHistoryUsers()
+  // Si hay ?code= en la URL (viene del QR), hacer lookup automático
+  const urlParams = new URLSearchParams(window.location.search)
+  if (urlParams.has('code') || urlParams.has('id')) {
+    const code = extractCodeFromQR(window.location.href)
+    if (code) {
+      document.getElementById('manual-code').value = code
+      lookupCustomer(code)
+    }
+  }
 })
 
 // Quick login form (used when no token in storage)
