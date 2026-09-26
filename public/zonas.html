@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SAHEL — Zonas Comerciales</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Inter', -apple-system, sans-serif; background: #f8fafc; color: #0f172a; }
+    .header { background: white; border-bottom: 1px solid #e2e8f0; padding: 1rem 1.5rem; display: flex; align-items: center; justify-content: space-between; }
+    .header h1 { font-size: 1.25rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem; }
+    .logo { width: 32px; height: 32px; background: #2563eb; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 800; font-size: 0.875rem; }
+    .container { max-width: 1400px; margin: 0 auto; padding: 1.5rem; }
+    .card { background: white; border-radius: 0.75rem; border: 1px solid #e2e8f0; padding: 1.25rem; }
+    .card-title { font-size: 0.9rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; color: #0f172a; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; margin-bottom: 1.5rem; }
+    .metric { background: white; border-radius: 0.75rem; border: 1px solid #e2e8f0; padding: 1rem; }
+    .metric-label { font-size: 0.7rem; color: #64748b; font-weight: 500; margin-bottom: 0.25rem; }
+    .metric-value { font-size: 1.25rem; font-weight: 700; }
+    .period-btns { display: flex; gap: 0.25rem; background: #f1f5f9; border-radius: 0.75rem; padding: 0.25rem; }
+    .period-btn { padding: 0.4rem 0.75rem; border-radius: 0.5rem; font-size: 0.75rem; font-weight: 500; border: none; cursor: pointer; transition: all 0.15s; background: transparent; color: #64748b; }
+    .period-btn.active { background: #2563eb; color: white; }
+    .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1.5rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    th { text-align: left; padding: 0.6rem 0.75rem; background: #f8fafc; color: #64748b; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em; border-bottom: 1px solid #e2e8f0; }
+    td { padding: 0.6rem 0.75rem; border-bottom: 1px solid #f8fafc; }
+    tr:hover { background: #f8fafc; cursor: pointer; }
+    .badge { display: inline-block; padding: 0.2rem 0.5rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; }
+    .badge-high { background: #dcfce7; color: #166534; }
+    .badge-medium { background: #fef9c3; color: #854d0e; }
+    .badge-low { background: #ffedd5; color: #9a3412; }
+    .badge-none { background: #f1f5f9; color: #64748b; }
+    .loading { display: flex; align-items: center; justify-content: center; height: 200px; color: #64748b; }
+    .error-msg { color: #dc2626; padding: 2rem; text-align: center; }
+    .legend { display: flex; align-items: center; gap: 1.5rem; font-size: 0.75rem; color: #64748b; flex-wrap: wrap; margin-bottom: 1rem; }
+    .legend-item { display: flex; align-items: center; gap: 0.25rem; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; }
+    .map-hint { text-align: center; font-size: 0.75rem; color: #94a3b8; margin-top: 0.5rem; }
+    @media (max-width: 768px) { .layout { grid-template-columns: 1fr; } .period-btns { flex-wrap: wrap; } }
+    .back-link { display: inline-flex; align-items: center; gap: 0.25rem; color: #2563eb; text-decoration: none; font-size: 0.875rem; font-weight: 500; margin-bottom: 1rem; }
+    .back-link:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1><div class="logo">S</div> Zonas Comerciales — CleanSahel</h1>
+    <a href="/" class="back-link">← Volver al dashboard</a>
+  </div>
+  <div class="container" id="app">
+    <div class="loading">Cargando zonas...</div>
+  </div>
+
+  <script>
+// Zonas Commercial Coverage Module — ES Module
+const zonasStyles = `
+.zonas-card { background: white; border-radius: 0.75rem; border: 1px solid #e2e8f0; padding: 1rem; }
+.zonas-map { background: #f8fafc; border-radius: 0.5rem; padding: 1rem; }
+.zonas-table { width: 100%; font-size: 0.875rem; }
+.zonas-table th { text-align: left; padding: 0.5rem; background: #f1f5f9; color: #64748b; text-transform: uppercase; font-size: 0.7rem; letter-spacing: 0.05em; }
+.zonas-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid #f1f5f9; }
+.zonas-table tr:hover { background: #f8fafc; cursor: pointer; }
+.zonas-metric { font-size: 1.5rem; font-weight: 700; color: #0f172a; }
+.zonas-period-btn { padding: 0.4rem 0.75rem; border-radius: 0.5rem; font-size: 0.75rem; font-weight: 500; border: none; cursor: pointer; transition: all 0.15s; }
+.zonas-period-btn.active { background: #2563eb; color: white; }
+.zonas-period-btn:not(.active) { background: #f1f5f9; color: #64748b; }
+.zonas-modal { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; }
+.zonas-modal-content { background: white; border-radius: 1rem; max-width: 32rem; width: 100%; max-height: 85vh; overflow-y: auto; box-shadow: 0 25px 50px rgba(0,0,0,0.25); }
+.zonas-badge { display: inline-block; padding: 0.25rem 0.5rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 600; }
+.zonas-badge-high { background: #dcfce7; color: #166534; }
+.zonas-badge-medium { background: #fef9c3; color: #854d0e; }
+.zonas-badge-low { background: #ffedd5; color: #9a3412; }
+.zonas-badge-none { background: #f1f5f9; color: #64748b; }
+`;
+
+const MALI_MAP_REGIONS = {
+  kayes: { path: 'M10,10 L80,10 L100,30 L90,80 L60,100 L20,80 L5,40 Z', label: 'Kayes', cx: 45, cy: 50 },
+  koulikoro: { path: 'M80,10 L180,10 L200,60 L180,100 L130,100 L100,80 L100,30 Z', label: 'Koulikoro', cx: 145, cy: 55 },
+  sikasso: { path: 'M180,100 L280,80 L300,120 L280,200 L200,220 L160,200 L130,150 L130,100 Z', label: 'Sikasso', cx: 210, cy: 160 },
+  segou: { path: 'M100,30 L200,30 L220,60 L200,100 L160,100 L130,100 L130,60 Z', label: 'Ségou', cx: 162, cy: 65 },
+  mopti: { path: 'M130,150 L200,150 L220,180 L200,220 L160,230 L120,220 L100,200 Z', label: 'Mopti', cx: 160, cy: 190 },
+  tombouctou: { path: 'M60,100 L130,100 L150,120 L140,150 L100,160 L60,150 L50,120 Z', label: 'Tombouctou', cx: 98, cy: 128 },
+  gao: { path: 'M140,50 L220,50 L240,70 L230,110 L180,120 L150,110 L140,80 Z', label: 'Gao', cx: 190, cy: 82 },
+  kidal: { path: 'M220,10 L300,10 L310,40 L290,70 L240,70 L230,50 Z', label: 'Kidal', cx: 262, cy: 40 },
+  taoudeni: { path: 'M20,80 L60,80 L70,100 L60,120 L30,130 L10,110 Z', label: 'Taoudéni', cx: 40, cy: 102 },
+  menaka: { path: 'M240,70 L290,70 L310,90 L300,120 L260,130 L240,110 Z', label: 'Ménaka', cx: 272, cy: 97 },
+  bamako: { path: 'M145,95 L165,95 L165,115 L145,115 Z', label: 'Bamako', cx: 155, cy: 105 },
+};
+
+const LEVEL_COLORS = { high: '#10b981', medium: '#f59e0b', low: '#f97316', none: '#e2e8f0' };
+const LEVEL_LABELS = { high: 'Alta', medium: 'Media', low: 'Baja', none: 'Sin clientes' };
+
+async function fetchZonas(from = '') {
+  const token = localStorage.getItem('cleanerp-token');
+  const base = window.PN || 'https://cleansahel.onrender.com';
+  const url = from ? `${base}/api/zonas?from=${from}` : `${base}/api/zonas`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) throw new Error('Error cargando zonas');
+  return res.json();
+}
+
+function formatMoney(n) {
+  if (n >= 1000000) return (n/1000000).toFixed(1) + 'M FCFA';
+  if (n >= 1000) return (n/1000).toFixed(1) + 'K FCFA';
+  return n.toFixed(0) + ' FCFA';
+}
+
+function formatNumber(n) {
+  return n.toLocaleString('es-ML');
+}
+
+function formatDate(iso) {
+  if (!iso) return '—';
+  return iso.slice(0, 10);
+}
+
+function createZonasPage() {
+  // Inject styles
+  const styleEl = document.createElement('style');
+  styleEl.textContent = zonasStyles;
+  document.head.appendChild(styleEl);
+
+  const container = document.createElement('div');
+  container.className = 'p-6 space-y-6 max-w-[1400px] mx-auto';
+  container.style.cssText = 'font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;';
+
+  let data = null;
+  let period = 30;
+  let selectedZone = null;
+
+  const PERIODS = [
+    { label: '7 días', days: 7 },
+    { label: '30 días', days: 30 },
+    { label: '3 meses', days: 90 },
+    { label: '6 meses', days: 180 },
+    { label: '1 año', days: 365 },
+    { label: 'Todo', days: 0 },
+  ];
+
+  function getFrom(days) {
+    if (!days) return '';
+    return new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+  }
+
+  function buildHeader() {
+    const header = document.createElement('div');
+    header.style.cssText = 'display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem;';
+
+    const title = document.createElement('div');
+    title.innerHTML = '<h1 style="font-size: 1.5rem; font-weight: 700; color: #0f172a; display: flex; align-items: center; gap: 0.5rem; margin: 0;">' +
+      '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>' +
+      'Zonas Comerciales</h1>' +
+      '<p style="color: #64748b; font-size: 0.875rem; margin: 0.25rem 0 0;">Cobertura y actividad comercial por zona de Mali</p>';
+
+    const periodBtns = document.createElement('div');
+    periodBtns.style.cssText = 'display: flex; gap: 0.25rem; background: #f1f5f9; border-radius: 0.75rem; padding: 0.25rem;';
+    PERIODS.forEach(p => {
+      const btn = document.createElement('button');
+      btn.className = 'zonas-period-btn' + (p.days === period ? ' active' : '');
+      btn.textContent = p.label;
+      btn.onclick = () => { period = p.days; load(); };
+      periodBtns.appendChild(btn);
+    });
+
+    header.appendChild(title);
+    header.appendChild(periodBtns);
+    return header;
+  }
+
+  function buildSummaryCards() {
+    if (!data) return document.createElement('div');
+    const d = data.totals;
+    const cards = [
+      { label: 'Clientes', value: d.customers, color: '#2563eb', icon: '👥' },
+      { label: 'Pedidos', value: d.orders, color: '#7c3aed', icon: '🛒' },
+      { label: 'Facturación', value: formatMoney(d.revenue), color: '#10b981', icon: '💶' },
+      { label: 'Margen', value: formatMoney(d.margin) + (d.marginPct > 0 ? ` (+${d.marginPct}%)` : ''), color: '#059669', icon: '📈' },
+      { label: 'Unidades', value: formatNumber(d.units), color: '#ea580c', icon: '📦' },
+      { label: 'Ticket medio', value: formatMoney(d.avgTicket), color: '#0891b2', icon: '📊' },
+      { label: 'Nuevos', value: d.newCustomers, color: '#4f46e5', icon: '🆕' },
+    ];
+
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem;';
+
+    cards.forEach(card => {
+      const cardEl = document.createElement('div');
+      cardEl.className = 'zonas-card';
+      cardEl.innerHTML = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.25rem;">
+        <span style="font-size:0.75rem;color:#64748b;font-weight:500;">${card.label}</span>
+        <span style="font-size:1rem;">${card.icon}</span>
+      </div>
+      <div style="font-weight:700;color:#0f172a;font-size:1.1rem;">${card.value}</div>`;
+      grid.appendChild(cardEl);
+    });
+    return grid;
+  }
+
+  function buildMap() {
+    const mapCard = document.createElement('div');
+    mapCard.className = 'zonas-card';
+    mapCard.innerHTML = '<h2 style="font-size:1rem;font-weight:600;color:#0f172a;margin:0 0 1rem;display:flex;align-items:center;gap:0.5rem;">' +
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>' +
+      'Mapa de Mali</h2>';
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 320 240');
+    svg.style.cssText = 'width: 100%; max-height: 300px;';
+
+    Object.entries(MALI_MAP_REGIONS).forEach(([id, r]) => {
+      const zone = data?.zones?.find(z => z.id === id);
+      const level = zone?.level || 'none';
+      const color = LEVEL_COLORS[level];
+      const hasCustomers = zone && zone.customers > 0;
+
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      if (zone) g.style.cursor = 'pointer';
+      g.addEventListener('click', () => { if (zone) showZoneDetail(zone); });
+
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      path.setAttribute('d', r.path);
+      path.setAttribute('fill', color);
+      path.setAttribute('stroke', hasCustomers ? '#1e40af' : '#cbd5e1');
+      path.setAttribute('stroke-width', id === 'bamako' ? '2.5' : '1.5');
+      path.setAttribute('opacity', level === 'none' ? '0.5' : '1');
+      path.style.transition = 'opacity 0.2s';
+      path.addEventListener('mouseover', () => { path.setAttribute('opacity', '0.8'); });
+      path.addEventListener('mouseout', () => { path.setAttribute('opacity', level === 'none' ? '0.5' : '1'); });
+      g.appendChild(path);
+
+      if (hasCustomers) {
+        const r2 = zone.customers >= 5 ? 10 : zone.customers >= 2 ? 7 : 5;
+        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        circle.setAttribute('cx', String(r.cx));
+        circle.setAttribute('cy', String(r.cy));
+        circle.setAttribute('r', String(r2));
+        circle.setAttribute('fill', '#1e40af');
+        g.appendChild(circle);
+
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        text.setAttribute('x', String(r.cx));
+        text.setAttribute('y', String(r.cy + 1));
+        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('dominant-baseline', 'middle');
+        text.setAttribute('fill', 'white');
+        text.setAttribute('font-size', zone.customers >= 10 ? '9' : '7');
+        text.setAttribute('font-weight', 'bold');
+        text.textContent = String(zone.customers);
+        g.appendChild(text);
+      }
+
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('x', String(r.cx));
+      label.setAttribute('y', id === 'bamako' ? String(r.cy + 22) : String(r.cy));
+      label.setAttribute('text-anchor', 'middle');
+      if (id !== 'bamako') label.setAttribute('dominant-baseline', 'middle');
+      label.setAttribute('font-size', '7');
+      label.setAttribute('fill', id === 'bamako' ? '#1e40af' : '#475569');
+      label.setAttribute('opacity', '0.8');
+      if (id === 'bamako') label.setAttribute('font-weight', 'bold');
+      label.textContent = id === 'bamako' ? 'Bamako' : r.label;
+      g.appendChild(label);
+
+      svg.appendChild(g);
+    });
+
+    const hint = document.createElement('p');
+    hint.style.cssText = 'text-align: center; font-size: 0.75rem; color: #94a3b8; margin-top: 0.5rem;';
+    hint.textContent = 'Haz clic en una zona para ver detalles · El número indica clientes';
+
+    mapCard.appendChild(svg);
+    mapCard.appendChild(hint);
+    return mapCard;
+  }
+
+  function buildTable() {
+    const tableCard = document.createElement('div');
+    tableCard.className = 'zonas-card';
+    tableCard.innerHTML = '<h2 style="font-size:1rem;font-weight:600;color:#0f172a;margin:0 0 1rem;display:flex;align-items:center;gap:0.5rem;">' +
+      '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>' +
+      'Zonas por ranking</h2>';
+
+    const table = document.createElement('table');
+    table.className = 'zonas-table';
+    table.innerHTML = `<thead><tr>
+      <th>Zona</th><th style="text-align:right">Clientes</th><th style="text-align:right">Pedidos</th>
+      <th style="text-align:right">Facturación</th><th style="text-align:right">Margen</th><th style="text-align:center">Estado</th>
+    </tr></thead>`;
+
+    const tbody = document.createElement('tbody');
+    const sorted = [...(data?.zones || [])].sort((a, b) => b.revenue - a.revenue)
+      .filter(z => z.type === 'region' || z.id === 'bamako');
+
+    sorted.forEach(zone => {
+      const badgeClass = `zonas-badge zonas-badge-${zone.level}`;
+      const row = document.createElement('tr');
+      row.style.cssText = 'border-bottom: 1px solid #f1f5f9; cursor: pointer; transition: background 0.15s;';
+      row.addEventListener('mouseover', () => { row.style.background = '#f8fafc'; });
+      row.addEventListener('mouseout', () => { row.style.background = 'transparent'; });
+      row.addEventListener('click', () => showZoneDetail(zone));
+
+      row.innerHTML = `<td style="display:flex;align-items:center;gap:0.5rem;">
+        <span style="width:8px;height:8px;border-radius:50%;background:${LEVEL_COLORS[zone.level]};flex-shrink:0;"></span>
+        <div>
+          <div style="font-weight:500;color:#0f172a;">${zone.name}</div>
+          ${zone.cities?.length ? `<div style="font-size:0.75rem;color:#94a3b8;">${zone.cities.join(', ')}</div>` : ''}
+        </div>
+      </td>
+      <td style="text-align:right;font-weight:600;">${zone.customers}</td>
+      <td style="text-align:right;">${zone.orders}</td>
+      <td style="text-align:right;font-weight:600;">${zone.revenue > 0 ? formatMoney(zone.revenue) : '—'}</td>
+      <td style="text-align:right;">${zone.margin > 0 ? `<span style="color:#059669;font-weight:500;font-size:0.8rem;">${formatMoney(zone.margin)}</span>` : '—'}</td>
+      <td style="text-align:center;"><span class="${badgeClass}">${LEVEL_LABELS[zone.level]}</span></td>`;
+      tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+    tableCard.appendChild(table);
+    return tableCard;
+  }
+
+  function showZoneDetail(zone) {
+    const modal = document.createElement('div');
+    modal.className = 'zonas-modal';
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+
+    const content = document.createElement('div');
+    content.className = 'zonas-modal-content';
+
+    content.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.5rem;border-bottom:1px solid #f1f5f9;">
+        <div>
+          <h2 style="font-size:1.125rem;font-weight:700;margin:0;color:#0f172a;">${zone.name}</h2>
+          <span class="zonas-badge zonas-badge-${zone.level}" style="margin-top:0.25rem;display:inline-block;">${LEVEL_LABELS[zone.level]} actividad</span>
+        </div>
+        <button id="zonas-close" style="padding:0.5rem;border-radius:0.5rem;border:none;background:#f1f5f9;cursor:pointer;font-size:1.25rem;line-height:1;">✕</button>
+      </div>
+      <div style="padding:1.25rem;display:grid;grid-template-columns:repeat(3,1fr);gap:0.75rem;">
+        ${[{l:'Clientes',v:zone.customers,i:'👥'}, {l:'Pedidos',v:zone.orders,i:'🛒'}, {l:'Pendientes',v:zone.pendingOrders,i:'⏳'},
+          {l:'Facturación',v:formatMoney(zone.revenue),i:'💶'}, {l:'Margen',v:zone.margin>0?formatMoney(zone.margin):'—',i:'📈'}, {l:'Unidades',v:formatNumber(zone.units),i:'📦'},
+          {l:'Ticket medio',v:zone.avgTicket>0?formatMoney(zone.avgTicket):'—',i:'📊'}, {l:'Margen %',v:zone.marginPct>0?zone.marginPct+'%':'—',i:'%'}, {l:'Nuevos',v:zone.newCustomers,i:'🆕'}
+        ].map(m => `<div style="background:#f8fafc;border-radius:0.75rem;padding:0.75rem;text-align:center;">
+          <div style="font-size:0.7rem;color:#64748b;margin-bottom:0.25rem;">${m.l}</div>
+          <div style="font-weight:700;color:#0f172a;font-size:0.95rem;">${m.v}</div>
+        </div>`).join('')}
+      </div>
+      ${zone.cities?.length ? `<div style="padding:0 1.5rem 1rem;">
+        <div style="font-size:0.7rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem;">Ciudades</div>
+        <div style="display:flex;flex-wrap:wrap;gap:0.5rem;">
+          ${zone.cities.map(c => `<span style="padding:0.25rem 0.75rem;background:#eff6ff;color:#2563eb;border-radius:9999px;font-size:0.75rem;font-weight:500;">${c}</span>`).join('')}
+        </div>
+      </div>` : ''}
+      ${zone.recentOrders?.length ? `<div style="padding:0 1.5rem 1.5rem;">
+        <div style="font-size:0.7rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem;">Últimos pedidos</div>
+        <div style="space-y:0.5rem;">
+          ${zone.recentOrders.map(o => `<div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid #f1f5f9;">
+            <div><div style="font-weight:500;font-size:0.875rem;">${o.number}</div><div style="font-size:0.75rem;color:#94a3b8;">${formatDate(o.created_at)}</div></div>
+            <div style="text-align:right;"><div style="font-weight:600;font-size:0.875rem;">${formatMoney(o.total)}</div><div style="font-size:0.75rem;color:#94a3b8;">${o.delivered_at?'✓ Entregado':o.status}</div></div>
+          </div>`).join('')}
+        </div>
+      </div>` : ''}
+    `;
+
+    document.getElementById('zonas-close')?.addEventListener('click', () => modal.remove());
+    modal.appendChild(content);
+    document.body.appendChild(modal);
+  }
+
+  async function load() {
+    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:200px;color:#64748b;">Cargando zonas...</div>';
+    try {
+      data = await fetchZonas(getFrom(period));
+      render();
+    } catch (e) {
+      container.innerHTML = `<div style="color:#dc2626;padding:2rem;text-align:center;">Error: ${e.message}</div>`;
+    }
+  }
+
+  function render() {
+    container.innerHTML = '';
+    container.appendChild(buildHeader());
+    container.appendChild(buildSummaryCards());
+
+    const coverageNote = document.createElement('div');
+    coverageNote.style.cssText = 'display:flex;align-items:center;gap:1.5rem;font-size:0.75rem;color:#64748b;flex-wrap:wrap;';
+    coverageNote.innerHTML = `<span style="font-weight:600;color:#475569;">Actividad:</span>
+      <span style="display:flex;align-items:center;gap:0.25rem;"><span style="width:10px;height:10px;border-radius:50%;background:#10b981;display:inline-block;"></span> Alta</span>
+      <span style="display:flex;align-items:center;gap:0.25rem;"><span style="width:10px;height:10px;border-radius:50%;background:#f59e0b;display:inline-block;"></span> Media</span>
+      <span style="display:flex;align-items:center;gap:0.25rem;"><span style="width:10px;height:10px;border-radius:50%;background:#e2e8f0;display:inline-block;"></span> Sin clientes</span>
+      <span style="margin-left:auto;">${data?.zones?.filter(z=>z.level!=='none'&&z.type==='region'||z.id==='bamako').length||0} de ${data?.zones?.filter(z=>z.type==='region'||z.id==='bamako').length||0} zonas con actividad</span>`;
+    container.appendChild(coverageNote);
+
+    const grid = document.createElement('div');
+    grid.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem;';
+    grid.appendChild(buildMap());
+    grid.appendChild(buildTable());
+    container.appendChild(grid);
+  }
+
+  load();
+  return container;
+}
+
+window.createZonasPage = createZonasPage;
+export { createZonasPage };
+  </script>
+  <script>
+    const API_BASE = (() => {
+      const pn = (typeof window !== 'undefined' && window.PN) || '';
+      return pn || 'https://cleansahel.onrender.com';
+    })();
+
+    function formatMoney(n) {
+      if (n >= 1000000) return (n/1000000).toFixed(1) + 'M FCFA';
+      if (n >= 1000) return (n/1000).toFixed(1) + 'K FCFA';
+      return n.toFixed(0) + ' FCFA';
+    }
+    function formatNumber(n) { return n.toLocaleString('es-ML'); }
+    function formatDate(iso) { return iso ? iso.slice(0, 10) : '—'; }
+    const LEVEL_COLORS = { high: '#10b981', medium: '#f59e0b', low: '#f97316', none: '#e2e8f0' };
+    const LEVEL_LABELS = { high: 'Alta', medium: 'Media', low: 'Baja', none: 'Sin clientes' };
+
+    const PERIODS = [
+      { label: '7 días', days: 7 }, { label: '30 días', days: 30 },
+      { label: '3 meses', days: 90 }, { label: '6 meses', days: 180 },
+      { label: '1 año', days: 365 }, { label: 'Todo', days: 0 },
+    ];
+
+    const MALI_MAP_REGIONS = {
+      kayes: { path: 'M10,10 L80,10 L100,30 L90,80 L60,100 L20,80 L5,40 Z', label: 'Kayes', cx: 45, cy: 50 },
+      koulikoro: { path: 'M80,10 L180,10 L200,60 L180,100 L130,100 L100,80 L100,30 Z', label: 'Koulikoro', cx: 145, cy: 55 },
+      sikasso: { path: 'M180,100 L280,80 L300,120 L280,200 L200,220 L160,200 L130,150 L130,100 Z', label: 'Sikasso', cx: 210, cy: 160 },
+      segou: { path: 'M100,30 L200,30 L220,60 L200,100 L160,100 L130,100 L130,60 Z', label: 'Ségou', cx: 162, cy: 65 },
+      mopti: { path: 'M130,150 L200,150 L220,180 L200,220 L160,230 L120,220 L100,200 Z', label: 'Mopti', cx: 160, cy: 190 },
+      tombouctou: { path: 'M60,100 L130,100 L150,120 L140,150 L100,160 L60,150 L50,120 Z', label: 'Tombouctou', cx: 98, cy: 128 },
+      gao: { path: 'M140,50 L220,50 L240,70 L230,110 L180,120 L150,110 L140,80 Z', label: 'Gao', cx: 190, cy: 82 },
+      kidal: { path: 'M220,10 L300,10 L310,40 L290,70 L240,70 L230,50 Z', label: 'Kidal', cx: 262, cy: 40 },
+      taoudeni: { path: 'M20,80 L60,80 L70,100 L60,120 L30,130 L10,110 Z', label: 'Taoudéni', cx: 40, cy: 102 },
+      menaka: { path: 'M240,70 L290,70 L310,90 L300,120 L260,130 L240,110 Z', label: 'Ménaka', cx: 272, cy: 97 },
+      bamako: { path: 'M145,95 L165,95 L165,115 L145,115 Z', label: 'Bamako', cx: 155, cy: 105 },
+    };
+
+    let currentPeriod = 30;
+    let zonasData = null;
+
+    async function fetchZonas() {
+      const token = localStorage.getItem('cleanerp-token');
+      if (!token) {
+        document.getElementById('app').innerHTML = '<div class="error-msg">No has iniciado sesión. <a href="/cleansahel/" style="color:#2563eb;">Ir al login</a></div>';
+        return;
+      }
+      const from = currentPeriod > 0
+        ? new Date(Date.now() - currentPeriod * 86400000).toISOString().slice(0, 10)
+        : '';
+      const url = from ? `${API_BASE}/api/zonas?from=${from}` : `${API_BASE}/api/zonas`;
+      try {
+        const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+        if (!res.ok) throw new Error('Error cargando zonas');
+        zonasData = await res.json();
+        render();
+      } catch (e) {
+        document.getElementById('app').innerHTML = `<div class="error-msg">Error: ${e.message}</div>`;
+      }
+    }
+
+    function render() {
+      const d = zonasData;
+      if (!d) return;
+
+      const t = d.totals;
+      const sorted = [...d.zones].sort((a, b) => b.revenue - a.revenue)
+        .filter(z => z.type === 'region' || z.id === 'bamako');
+      const activeCount = sorted.filter(z => z.level !== 'none').length;
+
+      document.getElementById('app').innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem;">
+          <div>
+            <h2 style="font-size:1.5rem;font-weight:700;display:flex;align-items:center;gap:0.5rem;margin:0;">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+              </svg>
+              Zonas Comerciales
+            </h2>
+            <p style="color:#64748b;font-size:0.875rem;margin:0.25rem 0 0;">Cobertura y actividad comercial por zona de Mali</p>
+          </div>
+          <div class="period-btns">
+            ${PERIODS.map(p => `<button class="period-btn${p.days===currentPeriod?' active':''}" onclick="window.__setPeriod(${p.days})">${p.label}</button>`).join('')}
+          </div>
+        </div>
+
+        <div class="grid">
+          ${[
+            {l:'Clientes',v:t.customers,i:'👥'},{l:'Pedidos',v:t.orders,i:'🛒'},{l:'Facturación',v:formatMoney(t.revenue),i:'💶'},
+            {l:'Margen',v:formatMoney(t.margin)+(t.marginPct>0?` (+${t.marginPct}%)`:''),i:'📈'},
+            {l:'Unidades',v:formatNumber(t.units),i:'📦'},{l:'Ticket medio',v:formatMoney(t.avgTicket),i:'📊'},
+            {l:'Nuevos',v:t.newCustomers,i:'🆕'}
+          ].map(m => `<div class="metric"><div class="metric-label">${m.l}</div><div class="metric-value">${m.i} ${m.v}</div></div>`).join('')}
+        </div>
+
+        <div class="legend">
+          <span style="font-weight:600;color:#475569;">Actividad:</span>
+          <span class="legend-item"><span class="dot" style="background:#10b981;"></span> Alta (${d.highZones} zonas)</span>
+          <span class="legend-item"><span class="dot" style="background:#f59e0b;"></span> Media (${d.mediumZones} zonas)</span>
+          <span class="legend-item"><span class="dot" style="background:#e2e8f0;"></span> Sin clientes (${d.noZones} zonas)</span>
+          <span style="margin-left:auto;">${activeCount} de ${sorted.length} zonas con actividad</span>
+        </div>
+
+        <div class="layout">
+          <div class="card">
+            <div class="card-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+              Mapa de Mali
+            </div>
+            <svg viewBox="0 0 320 240" style="width:100%;max-height:300px;">
+              ${Object.entries(MALI_MAP_REGIONS).map(([id, r]) => {
+                const zone = d.zones.find(z => z.id === id);
+                const level = zone?.level || 'none';
+                const color = LEVEL_COLORS[level];
+                const hasC = zone && zone.customers > 0;
+                const r2 = hasC ? (zone.customers >= 5 ? 10 : zone.customers >= 2 ? 7 : 5) : 0;
+                return `<g ${zone ? 'style="cursor:pointer"' : ''} onclick="${zone ? `window.__showZone('${zone.id}')` : ''}">
+                  <path d="${r.path}" fill="${color}" stroke="${hasC ? '#1e40af' : '#cbd5e1'}" stroke-width="${id==='bamako'?'2.5':'1.5'}" opacity="${level==='none'?'0.5':'1'}" style="transition:opacity 0.2s"/>
+                  ${hasC ? `<circle cx="${r.cx}" cy="${r.cy}" r="${r2}" fill="#1e40af"/>
+                    <text x="${r.cx}" y="${r.cy+1}" text-anchor="middle" dominant-baseline="middle" fill="white" font-size="${zone?.customers>=10?'9':'7'}" font-weight="bold">${zone?.customers}</text>` : ''}
+                  <text x="${r.cx}" y="${id==='bamako'?r.cy+22:r.cy}" text-anchor="middle" font-size="7" fill="${id==='bamako'?'#1e40af':'#475569'}" opacity="0.8" ${id==='bamako'?'font-weight="bold"':''}>${id==='bamako'?'Bamako':r.label}</text>
+                </g>`;
+              }).join('')}
+            </svg>
+            <p class="map-hint">Haz clic en una zona para ver detalles · El número indica clientes</p>
+          </div>
+
+          <div class="card">
+            <div class="card-title">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>
+              Zonas por ranking
+            </div>
+            <table>
+              <thead><tr><th>Zona</th><th style="text-align:right">Clientes</th><th style="text-align:right">Pedidos</th><th style="text-align:right">Facturación</th><th style="text-align:center">Estado</th></tr></thead>
+              <tbody>
+                ${sorted.map(z => `
+                  <tr onclick="window.__showZone('${z.id}')">
+                    <td>
+                      <div style="display:flex;align-items:center;gap:0.5rem;">
+                        <span style="width:8px;height:8px;border-radius:50%;background:${LEVEL_COLORS[z.level]};flex-shrink:0;"></span>
+                        <div>
+                          <div style="font-weight:500;">${z.name}</div>
+                          ${z.cities?.length ? `<div style="font-size:0.75rem;color:#94a3b8;">${z.cities.join(', ')}</div>` : ''}
+                        </div>
+                      </div>
+                    </td>
+                    <td style="text-align:right;font-weight:600;">${z.customers}</td>
+                    <td style="text-align:right;">${z.orders}</td>
+                    <td style="text-align:right;font-weight:600;">${z.revenue > 0 ? formatMoney(z.revenue) : '—'}</td>
+                    <td style="text-align:center;"><span class="badge badge-${z.level}">${LEVEL_LABELS[z.level]}</span></td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="zone-modal"></div>
+      `;
+    }
+
+    window.__setPeriod = function(days) {
+      currentPeriod = days;
+      fetchZonas();
+    };
+
+    window.__showZone = function(zoneId) {
+      const zone = zonasData.zones.find(z => z.id === zoneId);
+      if (!zone) return;
+      document.getElementById('zone-modal').innerHTML = `
+        <div style="position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.4);display:flex;align-items:center;justify-content:center;" onclick="this.remove()">
+          <div style="background:white;border-radius:1rem;max-width:32rem;width:100%;max-height:85vh;overflow-y:auto;box-shadow:0 25px 50px rgba(0,0,0,0.25);" onclick="event.stopPropagation()">
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:1rem 1.5rem;border-bottom:1px solid #f1f5f9;">
+              <div>
+                <h2 style="font-size:1.125rem;font-weight:700;margin:0;">${zone.name}</h2>
+                <span class="badge badge-${zone.level}" style="margin-top:0.25rem;display:inline-block;">${LEVEL_LABELS[zone.level]} actividad</span>
+              </div>
+              <button onclick="document.getElementById('zone-modal').innerHTML=''" style="padding:0.5rem;border-radius:0.5rem;border:none;background:#f1f5f9;cursor:pointer;font-size:1.25rem;">✕</button>
+            </div>
+            <div style="padding:1.25rem;display:grid;grid-template-columns:repeat(3,1fr);gap:0.75rem;">
+              ${[{l:'Clientes',v:zone.customers},{l:'Pedidos',v:zone.orders},{l:'Pendientes',v:zone.pendingOrders},
+                {l:'Facturación',v:zone.revenue>0?formatMoney(zone.revenue):'—'},{l:'Margen',v:zone.margin>0?formatMoney(zone.margin):'—'},
+                {l:'Unidades',v:formatNumber(zone.units)},{l:'Ticket medio',v:zone.avgTicket>0?formatMoney(zone.avgTicket):'—'},
+                {l:'Margen %',v:zone.marginPct>0?zone.marginPct+'%':'—'},{l:'Nuevos',v:zone.newCustomers}
+              ].map(m => `<div style="background:#f8fafc;border-radius:0.75rem;padding:0.75rem;text-align:center;">
+                <div style="font-size:0.7rem;color:#64748b;margin-bottom:0.25rem;">${m.l}</div>
+                <div style="font-weight:700;color:#0f172a;font-size:0.95rem;">${m.v}</div>
+              </div>`).join('')}
+            </div>
+            ${zone.cities?.length ? `<div style="padding:0 1.5rem 1rem;">
+              <div style="font-size:0.7rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem;">Ciudades</div>
+              <div style="display:flex;flex-wrap:wrap;gap:0.5rem;">
+                ${zone.cities.map(c => `<span style="padding:0.25rem 0.75rem;background:#eff6ff;color:#2563eb;border-radius:9999px;font-size:0.75rem;font-weight:500;">${c}</span>`).join('')}
+              </div>
+            </div>` : ''}
+            ${zone.recentOrders?.length ? `<div style="padding:0 1.5rem 1.5rem;">
+              <div style="font-size:0.7rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:0.5rem;">Últimos pedidos</div>
+              ${zone.recentOrders.map(o => `<div style="display:flex;justify-content:space-between;padding:0.5rem 0;border-bottom:1px solid #f1f5f9;">
+                <div><div style="font-weight:500;font-size:0.875rem;">${o.number}</div><div style="font-size:0.75rem;color:#94a3b8;">${formatDate(o.created_at)}</div></div>
+                <div style="text-align:right;"><div style="font-weight:600;font-size:0.875rem;">${formatMoney(o.total)}</div><div style="font-size:0.75rem;color:#94a3b8;">${o.delivered_at?'✓ Entregado':o.status}</div></div>
+              </div>`).join('')}
+            </div>` : ''}
+          </div>
+        </div>`;
+    };
+
+    fetchZonas();
+  </script>
+</body>
+</html>
