@@ -473,21 +473,78 @@ router.delete('/customers/:id', auth, requirePermission('customers', 'delete'), 
 router.get('/delivery/lookup/:code', auth, requirePermission('entregas', 'view'), (req, res) => {
   const code = req.params.code
 
-  // 1. Intentar por código de cliente (CL-00001, CL-00002...)
+  // ===== HELPER: normalizar un código de cliente =====
+  // Acepta: "00005" → "CL-00005", "CL-00005" → "CL-00005", "5" → "CL-00005"
+  // Acepta: "00001" → "CL-00001", "1" → "CL-00001"
+  function normalizeCustomerCode(raw) {
+    // Ya tiene prefijo CL-: buscar tal cual
+    if (/^CL-\d+$/i.test(raw)) return raw.toUpperCase()
+    // Solo dígitos: puede ser "00005" o "5" → construir CL-00005
+    if (/^\d+$/.test(raw)) {
+      // Buscar si existe un cliente con CL-XXXXX donde XXXXX es el número con ceros
+      const digits = raw.replace(/^0+/, '') || '0'
+      // Intentar con ceros a la izquierda hasta 5 dígitos
+      for (let len = 5; len >= 1; len--) {
+        const padded = String(digits).padStart(len, '0')
+        const candidate = 'CL-' + padded
+        const found = db.prepare('SELECT * FROM customers WHERE code = ?').get(candidate)
+        if (found) return candidate
+      }
+      // No se encontró: devolver null
+      return null
+    }
+    // Otros formatos: buscar tal cual
+    return raw.toUpperCase()
+  }
+
+  // ===== HELPER: normalizar número de pedido =====
+  // Acepta: "0001" → "D0001", "D0001" → "D0001", "D 0001" → "D0001"
+  function normalizeOrderNumber(raw) {
+    const cleaned = raw.replace(/\s+/g, '').toUpperCase()
+    // Ya empieza con D o PED: buscar tal cual
+    if (/^(D|PED-)/.test(cleaned)) return cleaned
+    // Solo dígitos: probar "D" + padded, "PED-" + year + padded
+    if (/^\d+$/.test(cleaned)) {
+      const digits = cleaned.replace(/^0+/, '') || '0'
+      // Probar D0001, D0002, ... hasta D09999
+      for (let len = 5; len >= 1; len--) {
+        const padded = String(digits).padStart(len, '0')
+        const dCandidate = 'D' + padded
+        const found = db.prepare("SELECT * FROM orders WHERE number = ?").get(dCandidate)
+        if (found) return dCandidate
+        // También probar PED-2026-XXXXX
+        const pedCandidate = 'PED-2026-' + String(digits).padStart(len, '0')
+        const pedFound = db.prepare("SELECT * FROM orders WHERE number = ?").get(pedCandidate)
+        if (pedFound) return pedCandidate
+      }
+    }
+    return null
+  }
+
+  // ===== BÚSQUEDA EN 4 ETAPAS =====
+
+  // 1. Exact match por código de cliente (CL-00005)
   let customer = db.prepare('SELECT * FROM customers WHERE code = ?').get(code)
 
-  // 2. Si no es código de cliente, intentar por número de pedido (D0001, PED-2026-0001, D 00-01...)
+  // 2. Normalizar "00005" → "CL-00005" y buscar
+  if (!customer) {
+    const normalizedCode = normalizeCustomerCode(code)
+    if (normalizedCode) customer = db.prepare('SELECT * FROM customers WHERE code = ?').get(normalizedCode)
+  }
+
+  // 3. Buscar por número de pedido (normalizado: "0001" → "D0001")
   let orderByNumber = null
   if (!customer) {
-    // Normalizar: quitar espacios, mayúsculas
-    const normalized = code.replace(/\s+/g, '').toUpperCase()
-    orderByNumber = db.prepare("SELECT * FROM orders WHERE UPPER(REPLACE(number, ' ', '')) = ? OR number = ?").get(normalized, code)
-    if (orderByNumber) {
-      customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(orderByNumber.customer_id)
+    const normalizedNum = normalizeOrderNumber(code)
+    if (normalizedNum) {
+      orderByNumber = db.prepare("SELECT * FROM orders WHERE number = ?").get(normalizedNum)
+      if (orderByNumber) {
+        customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(orderByNumber.customer_id)
+      }
     }
   }
 
-  // 3. Si no, intentar por ID de pedido (ord-mthnrld0i1wsu8)
+  // 4. Buscar por ID de pedido exacto (ord-mthnrld0i1wsu8)
   let orderById = null
   if (!customer && !orderByNumber) {
     orderById = db.prepare('SELECT * FROM orders WHERE id = ?').get(code)
@@ -498,12 +555,7 @@ router.get('/delivery/lookup/:code', auth, requirePermission('entregas', 'view')
 
   // Si no se encontró nada
   if (!customer) {
-    // Dar mensaje útil según el tipo de código probado
-    const isOrderId = code.startsWith('ord-') || code.startsWith('o-')
-    const isPedidoNumber = /^D\d+$/i.test(code.replace(/\s+/g, '')) || /^PED-\d/i.test(code)
-    if (isOrderId) return res.status(404).json({ error: 'Pedido no encontrado' })
-    if (isPedidoNumber) return res.status(404).json({ error: 'Pedido no encontrado con ese número' })
-    return res.status(404).json({ error: 'Cliente no encontrado' })
+    return res.status(404).json({ error: 'Código no encontrado. Verifica el código QR e inténtalo de nuevo.' })
   }
 
   // Pedidos del cliente con productos detallados
