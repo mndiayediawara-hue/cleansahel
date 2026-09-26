@@ -1061,12 +1061,16 @@ router.delete('/delivery/:orderId', auth, requirePermission('sales', 'delete'), 
 })
 
 // ---------- ORDERS ----------
-const mapOrder = (o) => ({
-  id: o.id, number: o.number, customerId: o.customer_id, items: JSON.parse(o.items_json || '[]'),
-  subtotal: o.subtotal, tax: o.tax, discount: o.discount, total: o.total,
-  status: o.status, createdAt: o.created_at, deliveryDate: o.delivery_date, notes: o.notes, createdBy: o.created_by,
-  deliveredAt: o.delivered_at || null, deliveredBy: o.delivered_by || null
-})
+const mapOrder = (o) => {
+  let items = []
+  try { items = JSON.parse(o.items_json || '[]') } catch {}
+  return {
+    id: o.id, number: o.number, customerId: o.customer_id, items,
+    subtotal: o.subtotal, tax: o.tax, discount: o.discount, total: o.total,
+    status: o.status, createdAt: o.created_at, deliveryDate: o.delivery_date, notes: o.notes, createdBy: o.created_by,
+    deliveredAt: o.delivered_at || null, deliveredBy: o.delivered_by || null
+  }
+}
 
 router.get('/orders', auth, (_req, res) => {
   res.json(db.prepare('SELECT * FROM orders ORDER BY created_at DESC').all().map(mapOrder))
