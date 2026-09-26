@@ -481,7 +481,7 @@ router.get('/delivery/lookup/:code', auth, requirePermission('entregas', 'view')
   if (!customer) {
     // Normalizar: quitar espacios, mayúsculas
     const normalized = code.replace(/\s+/g, '').toUpperCase()
-    orderByNumber = db.prepare('SELECT * FROM orders WHERE UPPER(REPLACE(number, " ", "")) = ? OR number = ?').get(normalized, code)
+    orderByNumber = db.prepare("SELECT * FROM orders WHERE UPPER(REPLACE(number, ' ', '')) = ? OR number = ?").get(normalized, code)
     if (orderByNumber) {
       customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(orderByNumber.customer_id)
     }
