@@ -80,6 +80,8 @@ const LEVEL_COLORS = {
   none: { fill: '#e2e8f0', text: 'text-slate-400', bg: 'bg-slate-50', border: 'border-slate-200', badge: 'bg-slate-100 text-slate-500' },
 }
 
+const ZONAS_UNIQUE_ID = "ZONAS_BUILD_TEST_V1";
+window.__ZONAS_PAGE_LOADED_QAQQQQ = 1;
 export default function Zonas() {
   const { t, formatMoney } = useI18n()
   const [data, setData] = useState<ZonasData | null>(null)
