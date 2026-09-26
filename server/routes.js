@@ -490,7 +490,8 @@ router.get('/delivery/lookup/:code', auth, requirePermission('entregas', 'view')
       const oNum = (o.number || '').replace(/[_\s-]/g, '').toUpperCase()
       const oNumOrig = (o.number || '').toUpperCase()
       const cleanNoDash = clean.replace(/[_\s-]/g, '')
-      if (oNum === cleanNoDash || oNumOrig === clean || oNum.endsWith(cleanNoDash)) {
+      const orderDigits = oNum.replace(/^[A-Z]+/, '')
+      if (oNum === cleanNoDash || oNumOrig === clean || orderDigits === cleanNoDash) {
         orderByNumber = o
         break
       }
@@ -500,14 +501,13 @@ router.get('/delivery/lookup/:code', auth, requirePermission('entregas', 'view')
     }
   }
 
-  // 3. Si no, buscar en clientes (solo si no se encontró pedido)
+  // 3. Si no, buscar en clientes (con ORDER BY para orden determinista)
   if (!customer) {
-    const allCustomers = db.prepare('SELECT * FROM customers').all()
+    const allCustomers = db.prepare('SELECT * FROM customers ORDER BY code ASC').all()
     for (const c of allCustomers) {
       const cCode = (c.code || '').replace(/-/g, '').toUpperCase()
       const cCodeOrig = (c.code || '').toUpperCase()
-      // "00002" matches "CL00002" y "CL-00002"
-      if (cCode === clean || cCodeOrig === clean || cCode.endsWith(clean) || c.code === code || c.code === clean) {
+      if (cCodeOrig === clean || cCode.endsWith(clean) || c.code === code || c.code === clean) {
         customer = c
         break
       }
