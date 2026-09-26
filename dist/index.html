@@ -469,48 +469,46 @@
     </script>
     <script>
 (function(){
-  // STATUS_TONES fix: intercept module load, patch bundle, serve from Blob
-  var moduleScript = null;
-  var observer = new MutationObserver(function(records) {
-    for (var r = 0; r < records.length; r++) {
-      var nodes = records[r].addedNodes;
-      for (var i = 0; i < nodes.length; i++) {
-        var node = nodes[i];
-        if (node.nodeName === 'SCRIPT' && node.type === 'module') {
-          moduleScript = node;
-          observer.disconnect();
-          if (node.parentNode) node.parentNode.removeChild(node);
-          var xhr = new XMLHttpRequest();
-          xhr.open('GET', node.src, true);
-          xhr.onload = function() {
-            if (xhr.status === 200) {
-              var code = xhr.responseText;
-              if (code.indexOf('delivered') === -1) {
-                code = code.replace(
-                  /nu=\{(.+?)\}\;/,
-                  function(m, props) {
-                    return 'nu={'+props+',delivered:{label:"Entregado",cls:"bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"},shipped:{label:"Enviado",cls:"bg-brand-100 text-brand-800 dark:bg-brand-950/40 dark:text-brand-300"},cancelled:{label:"Cancelado",cls:"bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300"},__stAdded:true};function _st(n){return nu[n]||{label:n||"—",cls:"bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-300"}};';
-                  }
-                );
-                code = code.replace(/nu\[P\.status\]\.cls/g, '_st(P.status).cls');
-                code = code.replace(/nu\[P\.status\]\.label/g, '_st(P.status).label');
-                console.log('[CleanSahel] STATUS_TONES patch applied to index-DUENdaaH.js');
-              }
-              var blob = new Blob([code], {type: 'application/javascript'});
-              var script = document.createElement('script');
-              script.src = URL.createObjectURL(blob);
-              document.head.appendChild(script);
-            }
-          };
-          xhr.send();
-          break;
+  // STATUS_TONES fix: find nu object end via brace counting, inject keys + _st
+  var oldFetch = window.fetch;
+  window.fetch = function(url, opts) {
+    var u = typeof url === 'string' ? url : (url && url.url) || String(url);
+    if (u.indexOf('index-DUENdaaH.js') === -1) return oldFetch(url, opts);
+    return oldFetch(url, opts).then(function(resp) {
+      if (!resp.ok) return resp;
+      return resp.clone().text().then(function(code) {
+        if (code.indexOf('delivered') !== -1) return new Response(code, {status: resp.status, headers: resp.headers});
+        // Find nu={...}end position using brace counting
+        var nuStart = code.indexOf('nu={');
+        if (nuStart === -1) return new Response(code, {status: resp.status, headers: resp.headers});
+        var depth = 0, nuEnd = -1;
+        for (var i = nuStart + 3; i < code.length; i++) {
+          var ch = code[i];
+          if (ch === '{') depth++;
+          else if (ch === '}') { depth--; if (depth === 0) { nuEnd = i + 1; break; } }
         }
-      }
-    }
-  });
-  observer.observe(document.documentElement, {childList: true, subtree: true});
+        if (nuEnd === -1) return new Response(code, {status: resp.status, headers: resp.headers});
+        var afterNu = code.substring(nuEnd);
+        // Ensure we are at };function pattern
+        var semiFn = afterNu.match(/^;\s*function\s+/);
+        if (!semiFn) return new Response(code, {status: resp.status, headers: resp.headers});
+        // Build the nu extension + _st function
+        var extension = ';function _st(n){return nu[n]||{label:n||"—",cls:"bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-300"}};';
+        var nuExtended = code.substring(nuStart, nuEnd) +
+          ',delivered:{label:"Entregado",cls:"bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"},shipped:{label:"Enviado",cls:"bg-brand-100 text-brand-800 dark:bg-brand-950/40 dark:text-brand-300"},cancelled:{label:"Cancelado",cls:"bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300"}' +
+          extension;
+        var patched = nuExtended + afterNu;
+        // Fix nu[P.status].cls and nu[P.status].label
+        patched = patched.replace(/nu\[P\.status\]\.cls/g, '_st(P.status).cls');
+        patched = patched.replace(/nu\[P\.status\]\.label/g, '_st(P.status).label');
+        console.log('[CleanSahel] STATUS_TONES fix: nu patched with brace-counting, _st() added');
+        return new Response(patched, {status: resp.status, headers: resp.headers});
+      });
+    });
+  };
 })();
 </script>
+
 <script type="module" crossorigin src="./assets/index-DUENdaaH.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-DRWKbYCY.css">
   </head>
