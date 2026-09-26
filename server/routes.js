@@ -486,13 +486,17 @@ router.get('/delivery/lookup/:code', auth, requirePermission('entregas', 'view')
   if (!customer) {
     const noDash = clean.replace(/-/g, '')
     const allCustomers = db.prepare('SELECT * FROM customers').all()
+    console.log(`[LOOKUP] step2: noDash="${noDash}", checking ${allCustomers.length} customers`)
     for (const c of allCustomers) {
       const cCode = (c.code || '').replace(/-/g, '').toUpperCase()
       const cCodeOrig = (c.code || '').toUpperCase()
-      // "00002" matches "CL00002" (sin guión) y "CL-00002" (original)
-      if (cCode === noDash || cCodeOrig === clean || cCode.endsWith(noDash) || c.code === code || c.code === clean) {
+      const match = cCode === noDash || cCodeOrig === clean || cCode.endsWith(noDash) || c.code === code || c.code === clean
+      if (match) {
+        console.log(`[LOOKUP] MATCH: code="${c.code}", cCode="${cCode}", noDash="${noDash}"`)
         customer = c
         break
+      } else {
+        console.log(`[LOOKUP] skip: code="${c.code}", cCode="${cCode}", cCodeOrig="${cCodeOrig}", clean="${clean}", noDash="${noDash}", match=${match}`)
       }
     }
   }
