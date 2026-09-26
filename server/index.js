@@ -149,6 +149,10 @@ window.location.replace('/entregas');
   app.get('/entregas', (_req, res) => {
     res.sendFile(path.join(distPath, 'entregas.html'))
   })
+  // Serve Zonas standalone page
+  app.get('/zonas', (_req, res) => {
+    res.sendFile(path.join(distPath, 'zonas.html'))
+  })
   app.get(/^(?!\/api).*/, (_req, res) => {
     res.sendFile(path.join(distPath, 'index.html'))
   })
