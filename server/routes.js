@@ -1061,12 +1061,16 @@ router.delete('/delivery/:orderId', auth, requirePermission('sales', 'delete'), 
 })
 
 // ---------- ORDERS ----------
-const mapOrder = (o) => ({
-  id: o.id, number: o.number, customerId: o.customer_id, items: JSON.parse(o.items_json || '[]'),
-  subtotal: o.subtotal, tax: o.tax, discount: o.discount, total: o.total,
-  status: o.status, createdAt: o.created_at, deliveryDate: o.delivery_date, notes: o.notes, createdBy: o.created_by,
-  deliveredAt: o.delivered_at || null, deliveredBy: o.delivered_by || null
-})
+const mapOrder = (o) => {
+  let items = []
+  try { items = JSON.parse(o.items_json || '[]') } catch {}
+  return {
+    id: o.id, number: o.number, customerId: o.customer_id, items,
+    subtotal: o.subtotal, tax: o.tax, discount: o.discount, total: o.total,
+    status: o.status, createdAt: o.created_at, deliveryDate: o.delivery_date, notes: o.notes, createdBy: o.created_by,
+    deliveredAt: o.delivered_at || null, deliveredBy: o.delivered_by || null
+  }
+}
 
 router.get('/orders', auth, (_req, res) => {
   res.json(db.prepare('SELECT * FROM orders ORDER BY created_at DESC').all().map(mapOrder))
@@ -2595,52 +2599,59 @@ router.delete('/expenses/:id', auth, requirePermission('expenses', 'delete'), (r
 // ---------- LOTS ----------
 // Helper: calcular si un lote pendiente/en_curso se puede producir con el stock actual
 function canProduceLot(lotId) {
-  const lot = db.prepare('SELECT * FROM lots WHERE id = ?').get(lotId)
-  if (!lot) return { canProduce: false, shortages: [] }
-  const recipe = db.prepare('SELECT * FROM recipes WHERE product_id = ?').get(lot.product_id)
-  if (!recipe) return { canProduce: true, shortages: [] } // sin receta, asumimos OK
-  let items = []
-  try { items = JSON.parse(recipe.items_json || '[]') } catch {}
-  const recipeBatch = recipe.batch_size || 1
-  const liters = Number(lot.quantity) || 0
-  const ratio = liters / recipeBatch
-  const shortages = []
-  for (const it of items) {
-    const totalQty = it.quantity * ratio
-    let available = 0
-    if (it.materialType === 'raw') {
-      const m = db.prepare('SELECT stock FROM raw_materials WHERE id = ?').get(it.materialId)
-      available = m ? m.stock : 0
-    } else {
-      const m = db.prepare('SELECT stock FROM packaging WHERE id = ?').get(it.materialId)
-      available = m ? m.stock : 0
+  try {
+    const lot = db.prepare('SELECT * FROM lots WHERE id = ?').get(lotId)
+    if (!lot) return { canProduce: false, shortages: [] }
+    const recipe = db.prepare('SELECT * FROM recipes WHERE product_id = ?').get(lot.product_id)
+    if (!recipe) return { canProduce: true, shortages: [] } // sin receta, asumimos OK
+    let items = []
+    try { items = JSON.parse(recipe.items_json || '[]') } catch { items = [] }
+    const recipeBatch = recipe.batch_size || 1
+    const liters = Number(lot.quantity) || 0
+    const ratio = liters / recipeBatch
+    const shortages = []
+    for (const it of items) {
+      const totalQty = it.quantity * ratio
+      let available = 0
+      if (it.materialType === 'raw') {
+        const m = db.prepare('SELECT stock FROM raw_materials WHERE id = ?').get(it.materialId)
+        available = m ? m.stock : 0
+      } else {
+        const m = db.prepare('SELECT stock FROM packaging WHERE id = ?').get(it.materialId)
+        available = m ? m.stock : 0
+      }
+      if (available < totalQty) {
+        shortages.push({
+          materialId: it.materialId,
+          materialType: it.materialType,
+          required: totalQty,
+          available: available,
+          missing: totalQty - available
+        })
+      }
     }
-    if (available < totalQty) {
-      shortages.push({
-        materialId: it.materialId,
-        materialType: it.materialType,
-        required: totalQty,
-        available: available,
-        missing: totalQty - available
-      })
-    }
+    return { canProduce: shortages.length === 0, shortages }
+  } catch (e) {
+    return { canProduce: true, shortages: [], error: e.message }
   }
-  return { canProduce: shortages.length === 0, shortages }
 }
 
 const mapLot = (l) => {
-  const result = (l.status === 'pendiente' || l.status === 'en_curso') ? canProduceLot(l.id) : { canProduce: true, shortages: [] }
-  return {
+  try {
+    const result = (l.status === 'pendiente' || l.status === 'en_curso') ? canProduceLot(l.id) : { canProduce: true, shortages: [] }
+    let rawMaterialsUsed = []
+    try { rawMaterialsUsed = JSON.parse(l.raw_materials_json || '[]') } catch { rawMaterialsUsed = [] }
+    return {
     id: l.id,
     lotNumber: l.code || l.lot_number || '',
     productionOrderNumber: l.production_order_number || '',
     productId: l.product_id,
     recipeId: l.recipe_id || '',
     quantity: l.quantity || 0,
-    rawMaterialsUsed: JSON.parse(l.raw_materials_json || '[]'),
+    rawMaterialsUsed,
     producedBy: l.produced_by,
     machineId: l.machine_id || undefined,
-    producedAt: l.received_at || l.produced_at,
+    producedAt: l.received_at,
     expiryDate: l.expiry_date || undefined,
     status: l.status,
     notes: l.notes,
@@ -2648,7 +2659,7 @@ const mapLot = (l) => {
     shortages: result.shortages,
     startedAt: l.started_at || undefined,
     finishedAt: l.finished_at || undefined
-  }
+  }} catch (e) { return { id: l.id, lotNumber: l.code || l.lot_number || '', quantity: 0, rawMaterialsUsed: [], canProduce: true, shortages: [], status: l.status || 'unknown' } }
 }
 
 function mapUser(u) {
@@ -2686,7 +2697,13 @@ function requirePermission(module, action) {
 }
 
 router.get('/lots', auth, (_req, res) => {
-  res.json(db.prepare('SELECT * FROM lots ORDER BY produced_at DESC').all().map(mapLot))
+  try {
+    const lots = db.prepare('SELECT * FROM lots ORDER BY received_at DESC').all().map(mapLot)
+    res.json(lots)
+  } catch (e) {
+    console.error('Error in GET /lots:', e)
+    res.status(500).json({ error: 'Error loading lots', detail: e.message })
+  }
 })
 // GET /api/lots/preview-number — previsualizar el próximo número de lote (sin crear)
 router.get('/lots/preview-number', auth, (_req, res) => {
@@ -2979,6 +2996,7 @@ router.put('/config', auth, requirePermission('settings', 'edit'), (req, res) =>
 
 // ---------- DASHBOARD ----------
 router.get('/dashboard', auth, (_req, res) => {
+  try {
   const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0)
   const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - 7)
   const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0)
@@ -2999,9 +3017,9 @@ router.get('/dashboard', auth, (_req, res) => {
   const ordersMonth = db.prepare("SELECT COALESCE(SUM(total),0) t FROM orders WHERE created_at >= ?").get(monthStart.toISOString()).t
   const expensesMonth = db.prepare("SELECT COALESCE(SUM(amount),0) t FROM expenses WHERE date >= ?").get(monthStart.toISOString()).t
   const pendingOrders = db.prepare("SELECT COUNT(*) c FROM orders WHERE status IN ('pendiente','confirmado','preparando')").get().c
-  const productionToday = db.prepare("SELECT COALESCE(SUM(quantity),0) t FROM lots WHERE produced_at >= ? AND status = 'completado'").get(todayStart.toISOString()).t
-  const productionWeek = db.prepare("SELECT COALESCE(SUM(quantity),0) t FROM lots WHERE produced_at >= ? AND status = 'completado'").get(weekStart.toISOString()).t
-  const productionMonth = db.prepare("SELECT COALESCE(SUM(quantity),0) t FROM lots WHERE produced_at >= ? AND status = 'completado'").get(monthStart.toISOString()).t
+  const productionToday = db.prepare("SELECT COALESCE(SUM(quantity),0) t FROM lots WHERE received_at >= ? AND status = 'completado'").get(todayStart.toISOString()).t
+  const productionWeek = db.prepare("SELECT COALESCE(SUM(quantity),0) t FROM lots WHERE received_at >= ? AND status = 'completado'").get(weekStart.toISOString()).t
+  const productionMonth = db.prepare("SELECT COALESCE(SUM(quantity),0) t FROM lots WHERE received_at >= ? AND status = 'completado'").get(monthStart.toISOString()).t
 
   const benefit = ordersMonth - expensesMonth
 
@@ -3032,8 +3050,8 @@ router.get('/dashboard', auth, (_req, res) => {
     .map(o => ({ id: o.id, number: o.number, customer: o.customer_name, total: o.total, status: o.status, createdAt: o.created_at }))
   const recentPurchases = db.prepare(`SELECT p.*, s.name as supplier_name FROM purchases p LEFT JOIN suppliers s ON s.id = p.supplier_id ORDER BY p.date DESC LIMIT 5`).all()
     .map(p => ({ id: p.id, number: p.number, supplier: p.supplier_name, total: p.total, date: p.date }))
-  const recentLots = db.prepare(`SELECT l.*, p.name as product_name FROM lots l LEFT JOIN products p ON p.id = l.product_id ORDER BY l.produced_at DESC LIMIT 5`).all()
-    .map(l => ({ id: l.id, lotNumber: l.code || l.lot_number, product: l.product_name, quantity: l.quantity || l.quantity_received, status: l.status, producedAt: l.produced_at }))
+  const recentLots = db.prepare(`SELECT l.*, p.name as product_name FROM lots l LEFT JOIN products p ON p.id = l.product_id ORDER BY l.received_at DESC LIMIT 5`).all()
+    .map(l => ({ id: l.id, lotNumber: l.code || l.lot_number, product: l.product_name, quantity: l.quantity || l.quantity_received, status: l.status, producedAt: l.received_at }))
   const unreadNotifs = db.prepare("SELECT COUNT(*) c FROM notifications WHERE read = 0").get().c
 
   res.json({
@@ -3054,6 +3072,10 @@ router.get('/dashboard', auth, (_req, res) => {
     recent: { orders: recentOrders, purchases: recentPurchases, lots: recentLots },
     unreadNotifs,
   })
+  } catch (e) {
+    console.error('Dashboard error:', e)
+    res.status(500).json({ error: e.message })
+  }
 })
 
 // ---------- REPORTS ----------
@@ -3067,7 +3089,7 @@ router.get('/reports/inventory', auth, (_req, res) => {
 
 router.get('/reports/production', auth, (_req, res) => {
   res.json(db.prepare(`SELECT l.*, p.name as product_name, u.full_name as produced_by_name FROM lots l LEFT JOIN products p ON p.id = l.product_id LEFT JOIN users u ON u.id = l.produced_by WHERE l.type = 'product' ORDER BY l.received_at DESC LIMIT 200`).all()
-    .map(l => ({ lote: l.code || l.lot_number || '', producto: l.product_name, cantidad: l.quantity, operario: l.produced_by_name, fecha: l.received_at || l.produced_at, estado: l.status })))
+    .map(l => ({ lote: l.code || l.lot_number || '', producto: l.product_name, cantidad: l.quantity, operario: l.produced_by_name, fecha: l.received_at, estado: l.status })))
 })
 
 router.get('/reports/sales', auth, (_req, res) => {
@@ -3839,7 +3861,7 @@ router.get('/print-label/:lotId', auth, (req, res) => {
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(lot.product_id)
   if (!product) return res.status(404).send('<h1>Producto no encontrado</h1>')
 
-  const producedAt = lot.received_at || lot.produced_at ? (lot.received_at || lot.produced_at).split('T')[0] : new Date().toISOString().split('T')[0]
+  const producedAt = lot.received_at ? lot.received_at.split('T')[0] : new Date().toISOString().split('T')[0]
   const expiryDate = lot.expiry_date || ''
   const lotCode = lot.code || lot.lot_number || ''
 
@@ -4403,7 +4425,7 @@ router.get('/traceability/by-material/:id', auth, (req, res) => {
       SELECT 1 FROM json_each(l.raw_materials_json) AS item
       WHERE json_extract(item.value, '$.materialId') = ?
     )
-    ORDER BY l.produced_at DESC
+    ORDER BY l.received_at DESC
   `).all(materialId)
 
   const enrichedLots = lots.map(l => {
@@ -4413,7 +4435,7 @@ router.get('/traceability/by-material/:id', auth, (req, res) => {
     return {
       id: l.id, lotNumber: l.code || l.lot_number,
       productName: l.product_name, productCode: l.product_code,
-      quantity: l.quantity, producedAt: l.received_at || l.produced_at, status: l.status,
+      quantity: l.quantity, producedAt: l.received_at, status: l.status,
       usedQuantity: usedHere?.quantity || 0, usedUnit: usedHere?.unit || ''
     }
   })
@@ -4469,7 +4491,7 @@ router.get('/traceability/full', auth, (_req, res) => {
     LEFT JOIN products p ON p.id = l.product_id
     LEFT JOIN users u ON u.id = l.produced_by
     WHERE l.status = 'completado'
-    ORDER BY l.produced_at DESC
+    ORDER BY l.received_at DESC
     LIMIT 100
   `).all()
 
@@ -4484,7 +4506,7 @@ router.get('/traceability/full', auth, (_req, res) => {
     return {
       id: l.id, lotNumber: l.lot_number, productionOrderNumber: l.production_order_number,
       productName: l.product_name, productCode: l.product_code,
-      quantity: l.quantity, producedAt: l.produced_at, producedBy: l.produced_by_name,
+      quantity: l.quantity, producedAt: l.received_at, producedBy: l.produced_by_name,
       materialsUsed: enriched
     }
   })

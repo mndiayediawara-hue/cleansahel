@@ -55,30 +55,43 @@ export default function Dashboard() {
     try {
       if (!silent) { setLoading(true); setError(null) }
       const d = await api.get<DashboardData>('/dashboard')
-      setData(d)
+      if (!d || (d as any).error || !(d as any).inventory) {
+        const msg = (d as any)?.error || 'El servidor no devolvió datos del dashboard'
+        setError(msg)
+        setData(null)
+      } else {
+        setData(d as DashboardData)
+      }
     } catch (e: any) {
       setError(e?.message || 'Error al cargar el dashboard')
+      setData(null)
     } finally { setLoading(false) }
   }
 
   if (loading && !data) {
     return <div className="space-y-6">{[1,2,3].map(i => <div key={i} className="card p-6 animate-pulse h-32" />)}</div>
   }
-  if (error && !data) {
+  if (!data || error) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
         <p className="text-red-500 font-semibold mb-2">Error al cargar el dashboard</p>
-        <p className="text-surface-500 text-sm mb-4">{error}</p>
+        <p className="text-surface-500 text-sm mb-4">{error || 'El servidor no responde. Intenta de nuevo.'}</p>
         <button onClick={() => load()} className="btn btn-primary">Reintentar</button>
       </div>
     )
   }
-  if (!data) return null
+  if (!data.inventory) return (
+    <div className="flex flex-col items-center justify-center py-20 text-center">
+      <p className="text-red-500 font-semibold mb-2">Error al cargar el dashboard</p>
+      <p className="text-surface-500 text-sm mb-4">Datos de inventario no disponibles</p>
+      <button onClick={() => load()} className="btn btn-primary">Reintentar</button>
+    </div>
+  )
 
   const inventoryPie = [
-    { name: 'Materias Primas', value: data.inventory.rawValue, color: '#329bff' },
-    { name: 'Embalaje', value: data.inventory.pkgValue, color: '#8b5cf6' },
-    { name: 'Productos', value: data.inventory.prodValue, color: '#10b981' },
+    { name: 'Materias Primas', value: data.inventory?.rawValue ?? 0, color: '#329bff' },
+    { name: 'Embalaje', value: data.inventory?.pkgValue ?? 0, color: '#8b5cf6' },
+    { name: 'Productos', value: data.inventory?.prodValue ?? 0, color: '#10b981' },
   ].filter(d => d.value > 0)
 
   return (
@@ -100,18 +113,18 @@ export default function Dashboard() {
 
       {/* Main stats */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4">
-        <StatCard label={t('dash.kpi.inventory_value')} value={formatCurrency(data.inventory.totalValue)} icon={Wallet} tone="brand" />
-        <StatCard label={t('dash.kpi.raw_materials')} value={formatNumber(data.inventory.rawQty)} icon={Beaker} tone="cyan" hint={`${data.inventory.rawCount} refs`} />
-        <StatCard label={t('dash.kpi.packaging')} value={formatNumber(data.inventory.pkgQty)} icon={Package} tone="violet" hint={`${data.inventory.pkgCount}`} />
-        <StatCard label={t('dash.kpi.products')} value={formatNumber(data.inventory.prodQty)} icon={Boxes} tone="emerald" hint={`${data.inventory.prodCount} SKUs`} />
-        <StatCard label={t('dash.kpi.low_stock')} value={data.inventory.lowRaw + data.inventory.lowPkg + data.inventory.lowProd} icon={AlertTriangle} tone="amber" />
-        <StatCard label={t('dash.kpi.production_today')} value={formatNumber(data.production.today)} icon={Factory} tone="brand" />
-        <StatCard label={t('dash.kpi.production_week')} value={formatNumber(data.production.week)} icon={Activity} tone="cyan" />
-        <StatCard label={t('dash.kpi.production_month')} value={formatNumber(data.production.month)} icon={Activity} tone="violet" />
-        <StatCard label={t('dash.kpi.sales_today')} value={formatCurrency(data.sales.today)} icon={ShoppingCart} tone="emerald" />
-        <StatCard label={t('dash.kpi.sales_month')} value={formatCurrency(data.sales.month)} icon={TrendingUp} tone="emerald" />
-        <StatCard label={t('dash.kpi.expenses_month')} value={formatCurrency(data.expenses.month)} icon={Receipt} tone="amber" />
-        <StatCard label={t('dash.kpi.benefit')} value={formatCurrency(data.benefit)} icon={data.benefit >= 0 ? TrendingUp : TrendingDown} tone={data.benefit >= 0 ? 'emerald' : 'red'} />
+        <StatCard label={t('dash.kpi.inventory_value')} value={formatCurrency(data.inventory?.totalValue ?? 0)} icon={Wallet} tone="brand" />
+        <StatCard label={t('dash.kpi.raw_materials')} value={formatNumber(data.inventory?.rawQty ?? 0)} icon={Beaker} tone="cyan" hint={`${data.inventory?.rawCount ?? 0} refs`} />
+        <StatCard label={t('dash.kpi.packaging')} value={formatNumber(data.inventory?.pkgQty ?? 0)} icon={Package} tone="violet" hint={`${data.inventory?.pkgCount ?? 0}`} />
+        <StatCard label={t('dash.kpi.products')} value={formatNumber(data.inventory?.prodQty ?? 0)} icon={Boxes} tone="emerald" hint={`${data.inventory?.prodCount ?? 0} SKUs`} />
+        <StatCard label={t('dash.kpi.low_stock')} value={(data.inventory?.lowRaw ?? 0) + (data.inventory?.lowPkg ?? 0) + (data.inventory?.lowProd ?? 0)} icon={AlertTriangle} tone="amber" />
+        <StatCard label={t('dash.kpi.production_today')} value={formatNumber(data.production?.today ?? 0)} icon={Factory} tone="brand" />
+        <StatCard label={t('dash.kpi.production_week')} value={formatNumber(data.production?.week ?? 0)} icon={Activity} tone="cyan" />
+        <StatCard label={t('dash.kpi.production_month')} value={formatNumber(data.production?.month ?? 0)} icon={Activity} tone="violet" />
+        <StatCard label={t('dash.kpi.sales_today')} value={formatCurrency(data.sales?.today ?? 0)} icon={ShoppingCart} tone="emerald" />
+        <StatCard label={t('dash.kpi.sales_month')} value={formatCurrency(data.sales?.month ?? 0)} icon={TrendingUp} tone="emerald" />
+        <StatCard label={t('dash.kpi.expenses_month')} value={formatCurrency(data.expenses?.month ?? 0)} icon={Receipt} tone="amber" />
+        <StatCard label={t('dash.kpi.benefit')} value={formatCurrency(data.benefit ?? 0)} icon={data.benefit >= 0 ? TrendingUp : TrendingDown} tone={(data.benefit ?? 0) >= 0 ? 'emerald' : 'red'} />
       </div>
 
       {/* Charts row */}
@@ -128,7 +141,7 @@ export default function Dashboard() {
             </div>
           </div>
           <ResponsiveContainer width="100%" height={260}>
-            <AreaChart data={data.charts.last7} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+            <AreaChart data={data.charts?.last7 ?? []} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
               <defs>
                 <linearGradient id="gVentas" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="5%" stopColor="#329bff" stopOpacity={0.4} />
@@ -168,12 +181,12 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <div className="card p-5">
           <h3 className="font-semibold mb-4 flex items-center gap-2"><Boxes className="w-4 h-4 text-emerald-600" /> {t('dash.chart.top_products')}</h3>
-          {data.charts.salesByProduct.length === 0 ? (
+          {(data.charts?.salesByProduct?.length ?? 0) === 0 ? (
             <p className="text-sm text-surface-500 py-8 text-center">Sin datos este mes</p>
           ) : (
             <div className="space-y-3">
-              {data.charts.salesByProduct.map((p, i) => {
-                const max = Math.max(...data.charts.salesByProduct.map(x => x.qty))
+              {data.charts?.salesByProduct?.map((p: any, i: number) => {
+                const max = Math.max(...(data.charts?.salesByProduct?.map((x: any) => x.qty) ?? [1]))
                 return (
                   <div key={p.name}>
                     <div className="flex justify-between text-sm mb-1">
@@ -192,12 +205,12 @@ export default function Dashboard() {
 
         <div className="card p-5">
           <h3 className="font-semibold mb-4 flex items-center gap-2"><DollarSign className="w-4 h-4 text-brand-600" /> {t('dash.chart.top_customers')}</h3>
-          {data.charts.topCustomers.length === 0 ? (
+          {(data.charts?.topCustomers?.length ?? 0) === 0 ? (
             <p className="text-sm text-surface-500 py-8 text-center">Sin datos</p>
           ) : (
             <div className="space-y-3">
-              {data.charts.topCustomers.map((c, i) => {
-                const max = Math.max(...data.charts.topCustomers.map(x => x.total))
+              {data.charts?.topCustomers?.map((c: any, i: number) => {
+                const max = Math.max(...(data.charts?.topCustomers?.map((x: any) => x.total) ?? [1]))
                 return (
                   <div key={c.name}>
                     <div className="flex justify-between text-sm mb-1">
@@ -223,8 +236,8 @@ export default function Dashboard() {
             <Link to="/orders" className="text-xs text-brand-600 hover:underline flex items-center gap-1">{t('dash.recent.see_all')} <ArrowUpRight className="w-3 h-3" /></Link>
           </div>
           <div className="space-y-2">
-            {data.recent.orders.length === 0 ? <p className="text-sm text-surface-500 py-4 text-center">Sin pedidos</p> :
-              data.recent.orders.map((o: any) => (
+            {(data.recent?.orders?.length ?? 0) === 0 ? <p className="text-sm text-surface-500 py-4 text-center">Sin pedidos</p> :
+              (data.recent?.orders ?? []).map((o: any) => (
                 <div key={o.id} className="flex items-center justify-between gap-3 p-2.5 rounded-lg hover:bg-surface-50 dark:hover:bg-surface-800/50">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium truncate">{o.number}</p>
@@ -246,8 +259,8 @@ export default function Dashboard() {
             <Link to="/purchases" className="text-xs text-brand-600 hover:underline flex items-center gap-1">Ver todas <ArrowUpRight className="w-3 h-3" /></Link>
           </div>
           <div className="space-y-2">
-            {data.recent.purchases.length === 0 ? <p className="text-sm text-surface-500 py-4 text-center">Sin compras</p> :
-              data.recent.purchases.map((p: any) => (
+            {(data.recent?.purchases?.length ?? 0) === 0 ? <p className="text-sm text-surface-500 py-4 text-center">Sin compras</p> :
+              (data.recent?.purchases ?? []).map((p: any) => (
                 <div key={p.id} className="flex items-center justify-between gap-3 p-2.5 rounded-lg hover:bg-surface-50 dark:hover:bg-surface-800/50">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium truncate">{p.number}</p>
@@ -269,8 +282,8 @@ export default function Dashboard() {
             <Link to="/lots" className="text-xs text-brand-600 hover:underline flex items-center gap-1">{t('dash.recent.see_all')} <ArrowUpRight className="w-3 h-3" /></Link>
           </div>
           <div className="space-y-2">
-            {data.recent.lots.length === 0 ? <p className="text-sm text-surface-500 py-4 text-center">Sin producción</p> :
-              data.recent.lots.map((l: any) => (
+            {(data.recent?.lots?.length ?? 0) === 0 ? <p className="text-sm text-surface-500 py-4 text-center">Sin producción</p> :
+              (data.recent?.lots ?? []).map((l: any) => (
                 <div key={l.id} className="flex items-center justify-between gap-3 p-2.5 rounded-lg hover:bg-surface-50 dark:hover:bg-surface-800/50">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium truncate">{l.lotNumber}</p>

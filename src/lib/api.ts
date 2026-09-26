@@ -15,12 +15,17 @@ async function realFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json', ...(init.headers as any || {}) }
   const token = getToken()
   if (token) headers.Authorization = `Bearer ${token}`
+  const ac = new AbortController()
+  const to = setTimeout(() => ac.abort(), 10000)
   let res: Response
   try {
-    res = await fetch(`${BASE}${path}`, { ...init, headers })
+    res = await fetch(`${BASE}${path}`, { ...init, headers, signal: ac.signal })
   } catch (e: any) {
-    throw new Error('No se puede conectar con el servidor. Comprueba Render/backend y vuelve a intentarlo.')
+    clearTimeout(to)
+    if (e.name === 'AbortError') throw new Error('El servidor no responde. Inténtalo de nuevo.')
+    throw new Error('No se puede conectar con el servidor.')
   }
+  clearTimeout(to)
   if (res.status === 401) {
     localStorage.removeItem('cleanerp-token')
     localStorage.removeItem('cleanerp-user')

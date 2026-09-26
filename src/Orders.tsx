@@ -9,13 +9,20 @@ import { ShoppingCart, DollarSign, Plus, Trash2, Package, Search, CheckCircle2, 
 import { formatCurrency, formatDate, exportCSV } from '@/lib/utils'
 import type { Order, OrderStatus } from '@/types'
 
-const STATUS_TONES: Record<OrderStatus, { label: string; cls: string }> = {
+const STATUS_TONES: Record<string, { label: string; cls: string }> = {
   pendiente: { label: 'Pendiente', cls: 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' },
   confirmado: { label: 'Confirmado', cls: 'bg-sky-100 text-sky-800 dark:bg-sky-950/40 dark:text-sky-300' },
   preparando: { label: 'Preparando', cls: 'bg-violet-100 text-violet-800 dark:bg-violet-950/40 dark:text-violet-300' },
   enviado: { label: 'Enviado', cls: 'bg-brand-100 text-brand-800 dark:bg-brand-950/40 dark:text-brand-300' },
   entregado: { label: 'Entregado', cls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' },
+  delivered: { label: 'Entregado', cls: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' },
+  shipped: { label: 'Enviado', cls: 'bg-brand-100 text-brand-800 dark:bg-brand-950/40 dark:text-brand-300' },
   cancelado: { label: 'Cancelado', cls: 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300' },
+  cancelled: { label: 'Cancelado', cls: 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300' },
+}
+
+function safeTone(status: string) {
+  return STATUS_TONES[status] ?? { label: status || '—', cls: 'bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-300' }
 }
 
 export default function Orders() {
@@ -33,8 +40,8 @@ export default function Orders() {
     return matchesQ && matchesS
   })
 
-  const totalSales = orders.filter(o => o.status !== 'cancelado').reduce((s, o) => s + o.total, 0)
-  const pendingCount = orders.filter(o => o.status === 'pendiente' || o.status === 'confirmado').length
+  const totalSales = orders.filter(o => o.status !== 'cancelado' && o.status !== 'cancelled').reduce((s, o) => s + (o.total || 0), 0)
+  const pendingCount = orders.filter(o => o.status === 'pendiente' || o.status === 'pending' || o.status === 'confirmado' || o.status === 'confirmed').length
 
   async function save() {
     if (!editing) return
@@ -73,7 +80,7 @@ export default function Orders() {
           }
         }
       }
-      const taxRate = (config.defaults.tax || 21) / 100
+      const taxRate = (config?.defaults?.tax || 21) / 100
       const subtotal = items.reduce((s: number, it: any) => s + (it.unitPrice * it.quantity), 0)
       const totalDiscount = items.reduce((s: number, it: any) => s + (it.unitPrice * it.quantity * (it.discount || 0) / 100), 0)
       const taxable = subtotal - totalDiscount
@@ -104,7 +111,7 @@ export default function Orders() {
     { key: 'items', label: 'Items', align: 'right' as const, render: (r: Order) => <span className="tabular-nums">{r.items.length}</span> },
     { key: 'subtotal', label: 'Subtotal', align: 'right' as const, render: (r: Order) => <span className="tabular-nums text-xs">{formatCurrency(r.subtotal)}</span> },
     { key: 'total', label: 'Total', align: 'right' as const, sortable: true, render: (r: Order) => <span className="font-semibold tabular-nums">{formatCurrency(r.total)}</span> },
-    { key: 'status', label: 'Estado', render: (r: Order) => <span className={`badge ${STATUS_TONES[r.status].cls}`}>{STATUS_TONES[r.status].label}</span> },
+    { key: 'status', label: 'Estado', render: (r: Order) => <span className={`badge ${safeTone(r.status).cls}`}>{safeTone(r.status).label}</span> },
     { key: 'actions', label: '', align: 'right' as const, render: (r: Order) => (
         <div className="flex items-center justify-end gap-1">
           {can('orders.write') && r.status === 'pendiente' && <button onClick={() => changeStatus(r, 'confirmado')} className="btn-ghost p-1.5 text-emerald-600" title="Confirmar"><CheckCircle2 className="w-3.5 h-3.5" /></button>}
@@ -129,7 +136,7 @@ export default function Orders() {
         <StatCard label="Total pedidos" value={orders.length} icon={ShoppingCart} tone="brand" />
         <StatCard label="Pendientes" value={pendingCount} icon={Clock} tone="amber" hint="Por confirmar" />
         <StatCard label="Volumen total" value={formatCurrency(totalSales)} icon={DollarSign} tone="emerald" />
-        <StatCard label="Entregados" value={orders.filter(o => o.status === 'entregado').length} icon={CheckCircle2} tone="violet" />
+        <StatCard label="Entregados" value={orders.filter(o => o.status === 'entregado' || o.status === 'delivered').length} icon={CheckCircle2} tone="violet" />
       </div>
 
       <div className="card p-3 flex flex-wrap items-center gap-3">
@@ -149,7 +156,7 @@ export default function Orders() {
         <DataTable columns={columns} data={filtered} />
       )}
 
-      {editing && <OrderForm order={editing} setOrder={setEditing} onClose={() => setEditing(null)} onSave={save} customers={customers} products={products} tax={config.defaults.tax || 21} canEdit={can('orders.write')} />}
+      {editing && <OrderForm order={editing} setOrder={setEditing} onClose={() => setEditing(null)} onSave={save} customers={customers} products={products} tax={config?.defaults?.tax || 21} canEdit={can('orders.write')} />}
 
       <ConfirmDialog open={!!confirm} onClose={() => setConfirm(null)} onConfirm={() => confirm && remove(confirm)} title="Borrar pedido" message={`¿Eliminar el pedido ${confirm?.number}?`} danger />
     </div>
