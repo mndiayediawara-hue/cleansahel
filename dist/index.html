@@ -467,7 +467,10 @@
   console.info('[Reception Integrated] Patch loaded - Lotes integrados en recepción');
 })();
     </script>
-    <script>
+    <script type="module" crossorigin src="./assets/index-DUENdaaH.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DRWKbYCY.css">
+  
+<script>
 (function(){
   // STATUS_TONES fix: find nu object end via brace counting, inject keys + _st
   var oldFetch = window.fetch;
@@ -508,62 +511,7 @@
   };
 })();
 </script>
-
-<script type="module" crossorigin src="./assets/index-DUENdaaH.js"></script>
-<script>
-// STATUS_TONES corrector: runs after module, fixes nu with brace-counting
-(function(){
-  var tries = 0;
-  function applyFix() {
-    tries++;
-    // Find nu object in the module's executed code
-    var scripts = document.querySelectorAll('script');
-    var moduleCode = '';
-    for (var i = 0; i < scripts.length; i++) {
-      if (!scripts[i].src && scripts[i].type !== 'module' && scripts[i].textContent.indexOf('delivered') !== -1) {
-        moduleCode = scripts[i].textContent; break;
-      }
-    }
-    if (!moduleCode && tries < 20) { setTimeout(applyFix, 100); return; }
-    // Find nu={...}end using brace counting
-    var nuStart = moduleCode.indexOf('nu={');
-    if (nuStart === -1) return;
-    var depth = 0, nuEnd = -1;
-    for (var i = nuStart + 3; i < moduleCode.length; i++) {
-      var ch = moduleCode[i];
-      if (ch === '{') depth++;
-      else if (ch === '}') { depth--; if (depth === 0) { nuEnd = i + 1; break; } }
-    }
-    if (nuEnd === -1) return;
-    var nuObj = moduleCode.substring(nuStart, nuEnd);
-    var afterNu = moduleCode.substring(nuEnd);
-    // Build corrected nu with extra keys
-    var extra = ',delivered:{label:"Entregado",cls:"bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"},shipped:{label:"Enviado",cls:"bg-brand-100 text-brand-800 dark:bg-brand-950/40 dark:text-brand-300"},cancelled:{label:"Cancelado",cls:"bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300"}';
-    var stFn = ';function _st(n){return nu[n]||{label:n||"—",cls:"bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-300"}};';
-    var nuCorrected = nuObj + extra + '}' + stFn;
-    var patchedCode = nuCorrected + afterNu;
-    patchedCode = patchedCode.replace(/nu\[P\.status\]\.cls/g, '_st(P.status).cls');
-    patchedCode = patchedCode.replace(/nu\[P\.status\]\.label/g, '_st(P.status).label');
-    // Create a blob and load it as a module
-    var blob = new Blob([patchedCode], {type: 'application/javascript'});
-    var url = URL.createObjectURL(blob);
-    var script = document.createElement('script');
-    script.src = url;
-    document.head.appendChild(script);
-    console.log('[CleanSahel] STATUS_TONES corrector applied after module load');
-  }
-  // Wait for module to load
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', function() { setTimeout(applyFix, 50); });
-  } else {
-    setTimeout(applyFix, 50);
-  }
-})();
-</script>
-
-
-    <link rel="stylesheet" crossorigin href="./assets/index-DRWKbYCY.css">
-  </head>
+</head>
   <body>
     <div id="root"></div>
   </body>
