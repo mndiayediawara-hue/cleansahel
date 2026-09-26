@@ -876,6 +876,15 @@ document.addEventListener('DOMContentLoaded', () => {
   showTab('scanner')
   initScanner()
   loadHistoryUsers()
+  // Si hay ?code= en la URL (viene del QR), hacer lookup automático
+  const urlParams = new URLSearchParams(window.location.search)
+  if (urlParams.has('code') || urlParams.has('id')) {
+    const code = extractCodeFromQR(window.location.href)
+    if (code) {
+      document.getElementById('manual-code').value = code
+      lookupCustomer(code)
+    }
+  }
 })
 
 // Quick login form (used when no token in storage)
