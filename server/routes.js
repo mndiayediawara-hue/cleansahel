@@ -469,10 +469,43 @@ router.delete('/customers/:id', auth, requirePermission('customers', 'delete'), 
 })
 
 // ---------- DELIVERY / ENTREGA DE PEDIDOS ----------
-// GET /api/delivery/lookup/:code - Buscar cliente por código y devolver sus pedidos pendientes con productos
+// GET /api/delivery/lookup/:code - Buscar por código de cliente, número de pedido o ID de pedido
 router.get('/delivery/lookup/:code', auth, requirePermission('entregas', 'view'), (req, res) => {
-  const customer = db.prepare('SELECT * FROM customers WHERE code = ?').get(req.params.code)
-  if (!customer) return res.status(404).json({ error: 'Cliente no encontrado' })
+  const code = req.params.code
+
+  // 1. Intentar por código de cliente (CL-00001, CL-00002...)
+  let customer = db.prepare('SELECT * FROM customers WHERE code = ?').get(code)
+
+  // 2. Si no es código de cliente, intentar por número de pedido (D0001, PED-2026-0001, D 00-01...)
+  let orderByNumber = null
+  if (!customer) {
+    // Normalizar: quitar espacios, mayúsculas
+    const normalized = code.replace(/\s+/g, '').toUpperCase()
+    orderByNumber = db.prepare('SELECT * FROM orders WHERE UPPER(REPLACE(number, " ", "")) = ? OR number = ?').get(normalized, code)
+    if (orderByNumber) {
+      customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(orderByNumber.customer_id)
+    }
+  }
+
+  // 3. Si no, intentar por ID de pedido (ord-mthnrld0i1wsu8)
+  let orderById = null
+  if (!customer && !orderByNumber) {
+    orderById = db.prepare('SELECT * FROM orders WHERE id = ?').get(code)
+    if (orderById) {
+      customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(orderById.customer_id)
+    }
+  }
+
+  // Si no se encontró nada
+  if (!customer) {
+    // Dar mensaje útil según el tipo de código probado
+    const isOrderId = code.startsWith('ord-') || code.startsWith('o-')
+    const isPedidoNumber = /^D\d+$/i.test(code.replace(/\s+/g, '')) || /^PED-\d/i.test(code)
+    if (isOrderId) return res.status(404).json({ error: 'Pedido no encontrado' })
+    if (isPedidoNumber) return res.status(404).json({ error: 'Pedido no encontrado con ese número' })
+    return res.status(404).json({ error: 'Cliente no encontrado' })
+  }
+
   // Pedidos del cliente con productos detallados
   const allOrders = db.prepare(`SELECT * FROM orders WHERE customer_id = ? ORDER BY created_at DESC`).all(customer.id)
   const ordersList = allOrders.map(o => {
