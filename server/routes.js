@@ -484,13 +484,13 @@ router.get('/delivery/lookup/:code', auth, requirePermission('entregas', 'view')
 
   // 2. Si no, buscar en TODOS los clientes cuyo código contenga el valor escaneado
   if (!customer) {
-    // Buscar por código exacto sin guiones (CL00005 → CL-00005)
     const noDash = clean.replace(/-/g, '')
     const allCustomers = db.prepare('SELECT * FROM customers').all()
     for (const c of allCustomers) {
       const cCode = (c.code || '').replace(/-/g, '').toUpperCase()
       const cCodeOrig = (c.code || '').toUpperCase()
-      if (cCode === noDash || cCodeOrig === clean || c.code === code || c.code === clean) {
+      // "00002" matches "CL00002" (sin guión) y "CL-00002" (original)
+      if (cCode === noDash || cCodeOrig === clean || cCode.endsWith(noDash) || c.code === code || c.code === clean) {
         customer = c
         break
       }
@@ -504,8 +504,9 @@ router.get('/delivery/lookup/:code', auth, requirePermission('entregas', 'view')
     for (const o of allOrders) {
       const oNum = (o.number || '').replace(/[_\s-]/g, '').toUpperCase()
       const oNumOrig = (o.number || '').toUpperCase()
-      // Comparar: 00005 = D0005 = d0005 = PED-2026-0005
-      if (oNum === clean.replace(/[_\s-]/g, '') || oNumOrig === clean) {
+      // Comparar: 0001 = D0001 = d0001 = PED-2026-0001
+      const cleanNoDash = clean.replace(/[_\s-]/g, '')
+      if (oNum === cleanNoDash || oNumOrig === clean || oNum.endsWith(cleanNoDash)) {
         orderByNumber = o
         break
       }
