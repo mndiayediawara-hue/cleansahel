@@ -508,6 +508,57 @@
   };
 })();
 </script>
+<script>
+(function(){
+  // STATUS_TONES fix: intercept module load, patch bundle, serve from Blob
+  var origDefine = window.define;
+  var bundlePatched = false;
+  var moduleScript = null;
+  var observer = new MutationObserver(function(records) {
+    for (var r = 0; r < records.length; r++) {
+      var added = records[r].addedNodes;
+      for (var i = 0; i < added.length; i++) {
+        var node = added[i];
+        if (node.nodeName === 'SCRIPT' && node.type === 'module') {
+          moduleScript = node;
+          observer.disconnect();
+          // Prevent the module from loading
+          if (node.parentNode) node.parentNode.removeChild(node);
+          // Download and patch the bundle
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', node.src, true);
+          xhr.onload = function() {
+            if (xhr.status === 200) {
+              var code = xhr.responseText;
+              if (code.indexOf('delivered') === -1) {
+                // Fix 1: extend nu with English status keys and _st function
+                code = code.replace(
+                  /nu=\{(.+?)\}\;/,
+                  function(m, props) {
+                    return 'nu={' + props + ',delivered:{label:"Entregado",cls:"bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"},shipped:{label:"Enviado",cls:"bg-brand-100 text-brand-800 dark:bg-brand-950/40 dark:text-brand-300"},cancelled:{label:"Cancelado",cls:"bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300"},__stAdded:true};function _st(n){return nu[n]||{label:n||"—",cls:"bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-300"}};';
+                  }
+                );
+                // Fix 2: replace unsafe nu[P.status].cls/label with _st()
+                code = code.replace(/nu\[P\.status\]\.cls/g, '_st(P.status).cls');
+                code = code.replace(/nu\[P\.status\]\.label/g, '_st(P.status).label');
+                console.log('[CleanSahel] STATUS_TONES bundle patch applied');
+              }
+              var blob = new Blob([code], {type: 'application/javascript'});
+              var url = URL.createObjectURL(blob);
+              var script = document.createElement('script');
+              script.src = url;
+              document.head.appendChild(script);
+            }
+          };
+          xhr.send();
+          break;
+        }
+      }
+    }
+  });
+  observer.observe(document.documentElement, {childList: true, subtree: true});
+})();
+</script>
 <script type="module" crossorigin src="./assets/index-DskLDoYx.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-DRWKbYCY.css">
   </head>
