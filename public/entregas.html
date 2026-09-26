@@ -454,6 +454,8 @@ function showTab(name) {
 let scanner = null
 let selectedOrderId = null
 
+let lookupInProgress = false
+
 async function initScanner() {
   if (scanner) return
   try {
@@ -461,7 +463,13 @@ async function initScanner() {
     await scanner.start(
       { facingMode: 'environment' },
       { fps: 10, qrbox: 250 },
-      code => { playBeep(); scanner.pause(true); lookupCustomer(code) },
+      async code => {
+        if (lookupInProgress) return
+        lookupInProgress = true
+        try { playBeep() } catch {}
+        await lookupCustomer(code)
+        // lookupCustomer's finally block handles scanner.resume() and lookupInProgress = false
+      },
       () => {}
     )
   } catch (e) {
@@ -483,9 +491,15 @@ function playBeep() {
 }
 
 async function lookupManual() {
+  if (lookupInProgress) return
   const code = document.getElementById('manual-code').value.trim()
   if (!code) return
-  await lookupCustomer(code)
+  lookupInProgress = true
+  try {
+    await lookupCustomer(code)
+  } finally {
+    lookupInProgress = false
+  }
 }
 
 async function lookupCustomer(code) {
@@ -494,73 +508,82 @@ async function lookupCustomer(code) {
   result.style.display = 'block'
   result.innerHTML = '<div class="loading"><div class="spinner"></div>Buscando cliente...</div>'
 
-  // Silenciar scanner mientras buscamos
   if (scanner) scanner.pause(true)
 
-  const res = await apiFetch('/delivery/lookup/' + encodeURIComponent(code))
+  try {
+    const res = await apiFetch('/delivery/lookup/' + encodeURIComponent(code))
 
-  // Error (HTTP, red, timeout, o respuesta con .error)
-  if (res.error) {
-    result.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div style="color:var(--red);font-size:14px">${res.error}</div><div style="margin-top:8px"><button class="pill" onclick="clearScanner(); if(scanner)scanner.resume()">Reintentar</button></div></div>`
-    return
-  }
+    if (res.error) {
+      result.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div style="color:var(--red);font-size:14px">${res.error}</div><div style="margin-top:8px"><button class="pill" onclick="clearScanner(); if(scanner)scanner.resume()">Reintentar</button></div></div>`
+      return
+    }
 
-  const data = res.data
-  const c = data.customer || {}
-  const pending = data.pendingOrders || []
-  const stats = data.stats || {}
+    const data = res.data
+    const c = data.customer || {}
+    const pending = data.pendingOrders || []
+    const stats = data.stats || {}
 
-  result.innerHTML = `
-    <div class="customer-card">
-      <div class="customer-name">${c.name || '—'}</div>
-      <div class="customer-code">📋 Código: ${c.code || code}</div>
-      ${c.address ? `<div style="font-size:12px;color:var(--text-2);margin-top:4px">${c.address}</div>` : ''}
-      ${c.phone ? `<div style="font-size:12px;color:var(--text-2)">📞 ${c.phone}</div>` : ''}
-      <div class="customer-stats">
-        <div class="cust-stat"><div class="cust-stat-val pending">${stats.pendingCount || 0}</div><div class="cust-stat-lbl">Pendientes</div></div>
-        <div class="cust-stat"><div class="cust-stat-val done">${stats.deliveredCount || 0}</div><div class="cust-stat-lbl">Entregados</div></div>
-        <div class="cust-stat"><div class="cust-stat-val">${fmtCurrency(stats.pendingAmount || 0)}</div><div class="cust-stat-lbl">Importe pendiente</div></div>
-      </div>
-    </div>
-  `
-
-  const pendingTitle = document.getElementById('pending-title')
-  const pendingOrdersDiv = document.getElementById('pending-orders')
-  const noPending = document.getElementById('no-pending')
-
-  if (!pending.length) {
-    pendingTitle.style.display = 'none'
-    pendingOrdersDiv.innerHTML = ''
-    noPending.style.display = 'block'
-    return
-  }
-
-  pendingTitle.style.display = 'block'
-  noPending.style.display = 'none'
-  pendingOrdersDiv.innerHTML = pending.map(o => `
-    <div class="pending-order" id="order-${o.id}" onclick="selectOrder('${o.id}', '${o.number || o.id}', ${o.total || 0}, ${JSON.stringify(o.items || []).replace(/"/g, '&quot;')}, '${(o.customer_name || c.name || '').replace(/'/g, "\\'")}', ${o.subtotal || 0}, ${o.tax || 0}, ${o.discount || 0})">
-      <div class="pending-header">
-        <div>
-          <div class="pending-order-num">📦 ${o.number || o.id}</div>
-          <div style="font-size:12px;color:var(--text-2);margin-top:2px">${o.items?.length || 0} productos · ${o.totalItems || 0} unidades</div>
+    result.innerHTML = `
+      <div class="customer-card">
+        <div class="customer-name">${c.name || '—'}</div>
+        <div class="customer-code">📋 Código: ${c.code || code}</div>
+        ${c.address ? `<div style="font-size:12px;color:var(--text-2);margin-top:4px">${c.address}</div>` : ''}
+        ${c.phone ? `<div style="font-size:12px;color:var(--text-2)">📞 ${c.phone}</div>` : ''}
+        <div class="customer-stats">
+          <div class="cust-stat"><div class="cust-stat-val pending">${stats.pendingCount || 0}</div><div class="cust-stat-lbl">Pendientes</div></div>
+          <div class="cust-stat"><div class="cust-stat-val done">${stats.deliveredCount || 0}</div><div class="cust-stat-lbl">Entregados</div></div>
+          <div class="cust-stat"><div class="cust-stat-val">${fmtCurrency(stats.pendingAmount || 0)}</div><div class="cust-stat-lbl">Importe pendiente</div></div>
         </div>
-        <div class="pending-order-total">${fmtCurrency(o.total)}</div>
       </div>
-      <div class="pending-items">
-        ${(o.items || []).slice(0, 3).map(item => `
-          <div class="pending-item">
-            <span class="pending-item-name">${item.productName || item.name || '—'}</span>
-            <span class="pending-item-qty">×${item.quantity || 0}</span>
+    `
+
+    const pendingTitle = document.getElementById('pending-title')
+    const pendingOrdersDiv = document.getElementById('pending-orders')
+    const noPending = document.getElementById('no-pending')
+
+    if (!pending.length) {
+      pendingTitle.style.display = 'none'
+      pendingOrdersDiv.innerHTML = ''
+      noPending.style.display = 'block'
+      return
+    }
+
+    pendingTitle.style.display = 'block'
+    noPending.style.display = 'none'
+    pendingOrdersDiv.innerHTML = pending.map(o => `
+      <div class="pending-order" id="order-${o.id}" onclick="selectOrder('${o.id}', '${o.number || o.id}', ${o.total || 0}, ${JSON.stringify(o.items || []).replace(/"/g, '&quot;')}, '${(o.customer_name || c.name || '').replace(/'/g, "\\'")}', ${o.subtotal || 0}, ${o.tax || 0}, ${o.discount || 0})">
+        <div class="pending-header">
+          <div>
+            <div class="pending-order-num">📦 ${o.number || o.id}</div>
+            <div style="font-size:12px;color:var(--text-2);margin-top:2px">${o.items?.length || 0} productos · ${o.totalItems || 0} unidades</div>
           </div>
-        `).join('')}
-        ${(o.items || []).length > 3 ? `<div style="font-size:12px;color:var(--text-3);padding-top:4px">+${(o.items || []).length - 3} más</div>` : ''}
+          <div class="pending-order-total">${fmtCurrency(o.total)}</div>
+        </div>
+        <div class="pending-items">
+          ${(o.items || []).slice(0, 3).map(item => `
+            <div class="pending-item">
+              <span class="pending-item-name">${item.productName || item.name || '—'}</span>
+              <span class="pending-item-qty">×${item.quantity || 0}</span>
+            </div>
+          `).join('')}
+          ${(o.items || []).length > 3 ? `<div style="font-size:12px;color:var(--text-3);padding-top:4px">+${(o.items || []).length - 3} más</div>` : ''}
+        </div>
+        <div class="pending-footer">
+          <span style="font-size:12px;color:var(--text-3)">Toca para confirmar entrega</span>
+          <span style="font-size:18px">→</span>
+        </div>
       </div>
-      <div class="pending-footer">
-        <span style="font-size:12px;color:var(--text-3)">Toca para confirmar entrega</span>
-        <span style="font-size:18px">→</span>
-      </div>
-    </div>
-  `).join('')
+    `).join('')
+
+  } catch (err) {
+    // Fallback de seguridad: si algo falla inesperadamente, muestra error y reactiva scanner
+    result.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div style="color:var(--red);font-size:14px">Error inesperado. Intenta de nuevo.</div><div style="margin-top:8px"><button class="pill" onclick="clearScanner(); if(scanner)scanner.resume()">Reintentar</button></div></div>`
+    console.error('lookupCustomer error:', err)
+  } finally {
+    // SIEMPRE reactiva el scanner (incluso si hay error)
+    if (scanner) scanner.resume()
+    lookupInProgress = false
+  }
 }
 
 function selectOrder(id, number, total, items, customerName, subtotal, tax, discount) {
