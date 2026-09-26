@@ -473,78 +473,49 @@ router.delete('/customers/:id', auth, requirePermission('customers', 'delete'), 
 router.get('/delivery/lookup/:code', auth, requirePermission('entregas', 'view'), (req, res) => {
   const code = req.params.code
 
-  // ===== HELPER: normalizar un código de cliente =====
-  // Acepta: "00005" → "CL-00005", "CL-00005" → "CL-00005", "5" → "CL-00005"
-  // Acepta: "00001" → "CL-00001", "1" → "CL-00001"
-  function normalizeCustomerCode(raw) {
-    // Ya tiene prefijo CL-: buscar tal cual
-    if (/^CL-\d+$/i.test(raw)) return raw.toUpperCase()
-    // Solo dígitos: puede ser "00005" o "5" → construir CL-00005
-    if (/^\d+$/.test(raw)) {
-      // Buscar si existe un cliente con CL-XXXXX donde XXXXX es el número con ceros
-      const digits = raw.replace(/^0+/, '') || '0'
-      // Intentar con ceros a la izquierda hasta 5 dígitos
-      for (let len = 5; len >= 1; len--) {
-        const padded = String(digits).padStart(len, '0')
-        const candidate = 'CL-' + padded
-        const found = db.prepare('SELECT * FROM customers WHERE code = ?').get(candidate)
-        if (found) return candidate
-      }
-      // No se encontró: devolver null
-      return null
-    }
-    // Otros formatos: buscar tal cual
-    return raw.toUpperCase()
-  }
+  // ===== BÚSQUEDA SIMPLE Y ROBUSTA =====
+  // Soporta: CL-00005, 00005, 5, CL00005, D0001, 0001, PED-2026-0001, ord-xxx, o-xxx
 
-  // ===== HELPER: normalizar número de pedido =====
-  // Acepta: "0001" → "D0001", "D0001" → "D0001", "D 0001" → "D0001"
-  function normalizeOrderNumber(raw) {
-    const cleaned = raw.replace(/\s+/g, '').toUpperCase()
-    // Ya empieza con D o PED: buscar tal cual
-    if (/^(D|PED-)/.test(cleaned)) return cleaned
-    // Solo dígitos: probar "D" + padded, "PED-" + year + padded
-    if (/^\d+$/.test(cleaned)) {
-      const digits = cleaned.replace(/^0+/, '') || '0'
-      // Probar D0001, D0002, ... hasta D09999
-      for (let len = 5; len >= 1; len--) {
-        const padded = String(digits).padStart(len, '0')
-        const dCandidate = 'D' + padded
-        const found = db.prepare("SELECT * FROM orders WHERE number = ?").get(dCandidate)
-        if (found) return dCandidate
-        // También probar PED-2026-XXXXX
-        const pedCandidate = 'PED-2026-' + String(digits).padStart(len, '0')
-        const pedFound = db.prepare("SELECT * FROM orders WHERE number = ?").get(pedCandidate)
-        if (pedFound) return pedCandidate
-      }
-    }
-    return null
-  }
+  // Limpiar el código: quitar espacios y normalizar a mayúsculas
+  const clean = code.trim().toUpperCase()
 
-  // ===== BÚSQUEDA EN 4 ETAPAS =====
+  // 1. Exact match por código de cliente
+  let customer = db.prepare('SELECT * FROM customers WHERE UPPER(code) = ?').get(clean)
 
-  // 1. Exact match por código de cliente (CL-00005)
-  let customer = db.prepare('SELECT * FROM customers WHERE code = ?').get(code)
-
-  // 2. Normalizar "00005" → "CL-00005" y buscar
+  // 2. Si no, buscar en TODOS los clientes cuyo código contenga el valor escaneado
   if (!customer) {
-    const normalizedCode = normalizeCustomerCode(code)
-    if (normalizedCode) customer = db.prepare('SELECT * FROM customers WHERE code = ?').get(normalizedCode)
+    // Buscar por código exacto sin guiones (CL00005 → CL-00005)
+    const noDash = clean.replace(/-/g, '')
+    const allCustomers = db.prepare('SELECT * FROM customers').all()
+    for (const c of allCustomers) {
+      const cCode = (c.code || '').replace(/-/g, '').toUpperCase()
+      const cCodeOrig = (c.code || '').toUpperCase()
+      if (cCode === noDash || cCodeOrig === clean || c.code === code || c.code === clean) {
+        customer = c
+        break
+      }
+    }
   }
 
-  // 3. Buscar por número de pedido (normalizado: "0001" → "D0001")
+  // 3. Si no, buscar por número de pedido
   let orderByNumber = null
   if (!customer) {
-    const normalizedNum = normalizeOrderNumber(code)
-    if (normalizedNum) {
-      orderByNumber = db.prepare("SELECT * FROM orders WHERE number = ?").get(normalizedNum)
-      if (orderByNumber) {
-        customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(orderByNumber.customer_id)
+    const allOrders = db.prepare('SELECT * FROM orders').all()
+    for (const o of allOrders) {
+      const oNum = (o.number || '').replace(/[_\s-]/g, '').toUpperCase()
+      const oNumOrig = (o.number || '').toUpperCase()
+      // Comparar: 00005 = D0005 = d0005 = PED-2026-0005
+      if (oNum === clean.replace(/[_\s-]/g, '') || oNumOrig === clean) {
+        orderByNumber = o
+        break
       }
+    }
+    if (orderByNumber) {
+      customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(orderByNumber.customer_id)
     }
   }
 
-  // 4. Buscar por ID de pedido exacto (ord-mthnrld0i1wsu8)
+  // 4. Si no, buscar por ID de pedido exacto
   let orderById = null
   if (!customer && !orderByNumber) {
     orderById = db.prepare('SELECT * FROM orders WHERE id = ?').get(code)
