@@ -88,9 +88,10 @@
 
     /* ── Scanner ── */
     .scanner-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 16px; gap: 12px; }
-    #qr-reader { width: 100%; max-width: 320px; border-radius: 16px; overflow: hidden; border: 2px solid var(--border); }
-    #qr-reader video { border-radius: 14px; }
-    .scanner-hint { font-size: 13px; color: var(--text-2); text-align: center; max-width: 260px; }
+    #qr-reader { width: 100%; max-width: 320px; height: 280px; border-radius: 16px; overflow: hidden; border: 2px solid var(--border); position: relative; }
+    #qr-reader video { width: 100%; height: 100%; object-fit: cover; border-radius: 14px; display: block; }
+    .scanner-hint { font-size: 13px; color: var(--text-2); text-align: center; max-width: 280px; }
+    .scanner-hint.camera-error { color: var(--amber); font-weight: 600; }
     .scanner-manual { display: flex; gap: 8px; width: 100%; max-width: 320px; }
     .scanner-manual input { flex: 1; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; background: var(--surface); }
     .scanner-manual button { padding: 10px 16px; background: var(--primary); color: white; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
@@ -229,12 +230,14 @@
   </div>
 
   <div class="scanner-wrap">
-    <div id="qr-reader"></div>
-    <p class="scanner-hint">Apunta la cámara al código QR del cliente o introduce el código manualmente</p>
-    <div class="scanner-manual">
+    <!-- Manual input: always visible first, works immediately -->
+    <div class="scanner-manual" style="margin-bottom:4px">
       <input type="text" id="manual-code" placeholder="Código del cliente...">
       <button onclick="lookupManual()">Buscar</button>
     </div>
+    <!-- Camera scanner: works if the device/browser supports it -->
+    <div id="qr-reader"></div>
+    <p class="scanner-hint" id="scanner-hint">Escanea el QR del cliente o escribe el código arriba</p>
   </div>
 
   <!-- Customer result (hidden initially) -->
@@ -478,22 +481,26 @@ let selectedOrderId = null
 let lookupInProgress = false
 
 async function initScanner() {
+  // Always stop any existing scanner before creating a new one — prevents
+  // the "scanner is dead but exists so we skip creation" bug
   if (scanner) {
-    // If scanner exists but may have stopped, try to restart it
-    try { await scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: 250 }, () => {}, () => {}) } catch {}
-    return
+    try { await scanner.stop() } catch {}
+    scanner = null
   }
+
   try {
+    // Clear any stale content from previous attempts
+    document.getElementById('qr-reader').innerHTML = ''
+
     scanner = new Html5Qrcode('qr-reader')
     await scanner.start(
       { facingMode: 'environment' },
-      { fps: 10, qrbox: 250 },
+      { fps: 10, qrbox: { width: 220, height: 220 } },
       async rawCode => {
         if (lookupInProgress) return
         lookupInProgress = true
         try { playBeep() } catch {}
 
-        // Extract the actual code from whatever the QR contains
         const code = extractCodeFromQR(rawCode)
         if (!code) {
           showError('customer-result', 'Código QR no válido. Intenta de nuevo.')
@@ -503,18 +510,20 @@ async function initScanner() {
         }
 
         await lookupCustomer(code)
-        // lookupCustomer's finally block handles scanner.resume() and lookupInProgress = false
       },
-      () => {} // QR scan error — ignore silently
+      () => {} // scan error — ignore silently, keep scanning
     )
   } catch (e) {
-    // Camera not available — show clear message with manual input
+    console.error('Camera init error:', e && e.message ? e.message : e)
     document.getElementById('qr-reader').innerHTML = `
-      <div style="padding:24px;text-align:center;color:var(--text-2)">
-        <div style="font-size:40px;margin-bottom:12px">📷</div>
-        <div style="font-size:14px;font-weight:600;margin-bottom:6px">Cámara no disponible</div>
-        <div style="font-size:12px">Usa el campo de texto abajo para escribir el código manualmente.</div>
+      <div style="padding:20px;text-align:center;color:var(--text-2);height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center">
+        <div style="font-size:40px;margin-bottom:10px">📷</div>
+        <div style="font-size:14px;font-weight:700;margin-bottom:4px">Cámara no disponible</div>
+        <div style="font-size:12px">${e && e.message ? e.message : 'Comprueba los permisos del navegador'}</div>
+        <button onclick="initScanner()" style="margin-top:12px;padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px">Reintentar cámara</button>
       </div>`
+    const hint = document.getElementById('scanner-hint')
+    if (hint) { hint.textContent = '❌ Cámara no disponible'; hint.classList.add('camera-error') }
   }
 }
 
@@ -529,6 +538,11 @@ function playBeep() {
     gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.15)
     osc.start(); osc.stop(ctx.currentTime + 0.15)
   } catch {}
+}
+
+function clearScanner() {
+  if (!scanner) return
+  try { scanner.pause(true) } catch {}
 }
 
 async function lookupManual() {
@@ -781,10 +795,16 @@ function clearScanner() {
     result.innerHTML = ''
   }
   document.getElementById('pending-orders').innerHTML = ''
+  document.getElementById('delivered-orders').innerHTML = ''
+  document.getElementById('delivered-title').style.display = 'none'
   document.getElementById('manual-code').value = ''
   document.getElementById('pending-title').style.display = 'none'
   document.getElementById('no-pending').style.display = 'none'
   document.querySelectorAll('.pending-order').forEach(el => el.classList.remove('selected'))
+
+  // Reset scanner hint
+  const hint = document.getElementById('scanner-hint')
+  if (hint) { hint.textContent = 'Escanea el QR del cliente o escribe el código arriba'; hint.classList.remove('camera-error') }
 
   // Resume scanner if it exists and is paused
   if (scanner) {
