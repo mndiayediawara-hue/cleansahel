@@ -42,19 +42,27 @@ export function seed({ force = false } = {}) {
   const produccionPerms = {"home":{"view":true,"create":false,"edit":false,"delete":false},"raw_materials":{"view":true,"create":true,"edit":true,"delete":false},"recipes":{"view":true,"create":true,"edit":true,"delete":false},"production":{"view":true,"create":true,"edit":true,"delete":false},"lots":{"view":true,"create":true,"edit":true,"delete":false},"packaging":{"view":true,"create":true,"edit":true,"delete":false},"recalls":{"view":true,"create":true,"edit":true,"delete":false}}
   const contabilidadPerms = {"home":{"view":true,"create":false,"edit":false,"delete":false},"customers":{"view":true,"create":true,"edit":true,"delete":false},"sales":{"view":true,"create":true,"edit":true,"delete":false},"purchases":{"view":true,"create":true,"edit":true,"delete":false},"expenses":{"view":true,"create":true,"edit":true,"delete":false},"reports":{"view":true,"create":false,"edit":false,"delete":false},"inventory":{"view":true,"create":false,"edit":false,"delete":false},"suppliers":{"view":true,"create":true,"edit":true,"delete":false}}
 
-  const repartidorPerms = {"home":{"view":true,"create":false,"edit":false,"delete":false},"entregas":{"view":true,"create":true,"edit":false,"delete":false,"history":true,"stats":true},"orders":{"view":true,"create":true,"edit":true,"delete":false},"customers":{"view":true,"create":false,"edit":false,"delete":false},"sales":{"view":false,"create":false,"edit":false,"delete":false}}
+  const repartidorPerms = {"home":{"view":true,"create":false,"edit":false,"delete":false},"entregas":{"view":true,"register":true,"history":true,"stats":true},"orders":{"view":true,"create":true},"customers":{"view":true,"create":true},"sales":{"view":false}}
 
   const users = [
     { id: 'u-admin', username: 'admin', password: hashPassword('ADMIN_PASSWORD', '41668585Z'), fullName: 'Administrador', email: 'admin@cleansahel.com', role: 'admin', permissions: allPerms },
     { id: 'u-prod', username: 'produccion', password: hashPassword('PRODUCCION_PASSWORD', 'produccion2024'), fullName: 'Operario Producción', email: 'produccion@cleansahel.com', role: 'produccion', permissions: produccionPerms },
     { id: 'u-cont', username: 'contabilidad', password: hashPassword('CONTABILIDAD_PASSWORD', 'contabilidad2024'), fullName: 'Operario Contabilidad', email: 'contabilidad@cleansahel.com', role: 'contabilidad', permissions: contabilidadPerms },
-    { id: 'u-rep1', username: 'moussa', password: hashPassword('REP1_PASSWORD', 'moussa123'), fullName: 'Moussa Diallo', email: 'moussa@cleansahel.com', role: 'repartidor', permissions: repartidorPerms },
-    { id: 'u-rep2', username: 'fanta', password: hashPassword('REP2_PASSWORD', 'fanta123'), fullName: 'Fanta Samaké', email: 'fanta@cleansahel.com', role: 'repartidor', permissions: repartidorPerms },
+    { id: 'u-rep1', username: 'moussa', password: hashPassword('REP1_PASSWORD', 'SKIP_PASSWORD'), fullName: 'Moussa Diallo', email: 'moussa@cleansahel.com', role: 'repartidor', permissions: repartidorPerms, preservePassword: true },
+    { id: 'u-rep2', username: 'fanta', password: hashPassword('REP2_PASSWORD', 'fanta123'), fullName: 'Fanta Samaké', email: 'fanta@cleansahel.com', role: 'repartidor', permissions: repartidorPerms, preservePassword: false },
   ]
   
-  const insUser = db.prepare(`INSERT OR REPLACE INTO users (id, username, password_hash, full_name, email, role, active, created_at, last_login, permissions, failed_attempts) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?, 0)`)
+  const insUser = db.prepare(`INSERT OR IGNORE INTO users (id, username, password_hash, full_name, email, role, active, created_at, permissions, failed_attempts) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, 0)`)
+  const updUser = db.prepare(`UPDATE users SET permissions = ?, failed_attempts = 0 WHERE id = ?`)
   for (const u of users) {
-    insUser.run(u.id, u.username, u.password, u.fullName, u.email, u.role, monthsAgo(12), null, JSON.stringify(u.permissions || null))
+    const existing = db.prepare('SELECT id FROM users WHERE id = ?').get(u.id)
+    if (existing) {
+      // Solo actualizar permisos y desbloquear (failed_attempts=0), NO la contraseña
+      updUser.run(JSON.stringify(u.permissions || null), u.id)
+    } else {
+      const pwd = u.preservePassword ? hashPassword(u.password, null) : u.password
+      insUser.run(u.id, u.username, pwd, u.fullName, u.email, u.role, monthsAgo(12), JSON.stringify(u.permissions || null))
+    }
   }
   console.log(`✓ ${users.length} usuarios esenciales (admin/produccion/contabilidad/repartidores) asegurados`)
 
@@ -277,5 +285,4 @@ export function seed({ force = false } = {}) {
   }
 
   console.log('✅ Seed completo - BD lista para usar')
-  return { seeded: true, users: 3 }
-}
+  return {
