@@ -467,7 +467,51 @@
   console.info('[Reception Integrated] Patch loaded - Lotes integrados en recepción');
 })();
     </script>
-    <script type="module" crossorigin src="./assets/index-DUENdaaH.js"></script>
+    <script>
+(function(){
+  // STATUS_TONES fix: intercept module load, patch bundle, serve from Blob
+  var moduleScript = null;
+  var observer = new MutationObserver(function(records) {
+    for (var r = 0; r < records.length; r++) {
+      var nodes = records[r].addedNodes;
+      for (var i = 0; i < nodes.length; i++) {
+        var node = nodes[i];
+        if (node.nodeName === 'SCRIPT' && node.type === 'module') {
+          moduleScript = node;
+          observer.disconnect();
+          if (node.parentNode) node.parentNode.removeChild(node);
+          var xhr = new XMLHttpRequest();
+          xhr.open('GET', node.src, true);
+          xhr.onload = function() {
+            if (xhr.status === 200) {
+              var code = xhr.responseText;
+              if (code.indexOf('delivered') === -1) {
+                code = code.replace(
+                  /nu=\{(.+?)\}\;/,
+                  function(m, props) {
+                    return 'nu={'+props+',delivered:{label:"Entregado",cls:"bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"},shipped:{label:"Enviado",cls:"bg-brand-100 text-brand-800 dark:bg-brand-950/40 dark:text-brand-300"},cancelled:{label:"Cancelado",cls:"bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300"},__stAdded:true};function _st(n){return nu[n]||{label:n||"—",cls:"bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-300"}};';
+                  }
+                );
+                code = code.replace(/nu\[P\.status\]\.cls/g, '_st(P.status).cls');
+                code = code.replace(/nu\[P\.status\]\.label/g, '_st(P.status).label');
+                console.log('[CleanSahel] STATUS_TONES patch applied to index-DUENdaaH.js');
+              }
+              var blob = new Blob([code], {type: 'application/javascript'});
+              var script = document.createElement('script');
+              script.src = URL.createObjectURL(blob);
+              document.head.appendChild(script);
+            }
+          };
+          xhr.send();
+          break;
+        }
+      }
+    }
+  });
+  observer.observe(document.documentElement, {childList: true, subtree: true});
+})();
+</script>
+<script type="module" crossorigin src="./assets/index-DUENdaaH.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-DRWKbYCY.css">
   </head>
   <body>
