@@ -504,49 +504,56 @@
 </script>
 <script>
 (function(){
-  // STATUS_TONES fix: intercept module load, patch bundle, serve from Blob
   var origDefine = window.define;
   var bundlePatched = false;
   var moduleScript = null;
-  var observer = new MutationObserver(function(records) {
-    for (var r = 0; r < records.length; r++) {
-      var added = records[r].addedNodes;
-      for (var i = 0; i < added.length; i++) {
-        var node = added[i];
-        if (node.nodeName === 'SCRIPT' && node.type === 'module') {
-          moduleScript = node;
-          observer.disconnect();
-          // Prevent the module from loading
-          if (node.parentNode) node.parentNode.removeChild(node);
-          // Download and patch the bundle
-          var xhr = new XMLHttpRequest();
-          xhr.open('GET', node.src, true);
-          xhr.onload = function() {
-            if (xhr.status === 200) {
-              var code = xhr.responseText;
-              if (code.indexOf('delivered') === -1) {
-                // Fix 1: extend nu with English status keys and _st function
-                code = code.replace(
-                  /nu=\{(.+?)\}\;/,
-                  function(m, props) {
-                    return 'nu={' + props + ',delivered:{label:"Entregado",cls:"bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"},shipped:{label:"Enviado",cls:"bg-brand-100 text-brand-800 dark:bg-brand-950/40 dark:text-brand-300"},cancelled:{label:"Cancelado",cls:"bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300"},__stAdded:true};function _st(n){return nu[n]||{label:n||"—",cls:"bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-300"}};';
-                  }
-                );
-                // Fix 2: replace unsafe nu[P.status].cls/label with _st()
-                code = code.replace(/nu\[P\.status\]\.cls/g, '_st(P.status).cls');
-                code = code.replace(/nu\[P\.status\]\.label/g, '_st(P.status).label');
-                console.log('[CleanSahel] STATUS_TONES bundle patch applied');
-              }
-              var blob = new Blob([code], {type: 'application/javascript'});
-              var url = URL.createObjectURL(blob);
-              var script = document.createElement('script');
-              script.src = url;
-              document.head.appendChild(script);
-            }
-          };
-          xhr.send();
-          break;
-        }
+  var observer = new MutationObserver(function(mutations) {
+    for (var mi = 0; mi < mutations.length; mi++) {
+      var added = mutations[mi].addedNodes;
+      for (var ni = 0; ni < added.length; ni++) {
+        var node = added[ni];
+        if (node.nodeType !== 1 || node.tagName !== 'SCRIPT') continue;
+        var src = node.src || '';
+        if (!src) continue;
+        var lastSeg = src.split('/').pop();
+        if (lastSeg !== 'index-DskLDoYx.js' && !src.includes('index-DskLDoYx')) continue;
+        moduleScript = node;
+        var scriptContent = '';
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', src, false);
+        xhr.onload = function() {
+          if (xhr.status !== 200) return;
+          scriptContent = xhr.responseText;
+          if (scriptContent.indexOf('delivered') !== -1) { bundlePatched = true; return; }
+          var nuStart = scriptContent.indexOf('nu={');
+          if (nuStart === -1) return;
+          var depth = 0, nuEnd = -1;
+          for (var i = nuStart + 3; i < scriptContent.length; i++) {
+            var ch = scriptContent[i];
+            if (ch === '{') depth++;
+            else if (ch === '}') { depth--; if (depth === 0) { nuEnd = i + 1; break; } }
+          }
+          if (nuEnd === -1) return;
+          var afterNu = scriptContent.substring(nuEnd);
+          if (!/^;\s*function\s+/.test(afterNu)) return;
+          var extra = ',delivered:{label:"Entregado",cls:"bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300"},shipped:{label:"Enviado",cls:"bg-brand-100 text-brand-800 dark:bg-brand-950/40 dark:text-brand-300"},cancelled:{label:"Cancelado",cls:"bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300"}';
+          var stFn = ';function _st(n){return nu[n]||{label:n||"—",cls:"bg-surface-100 text-surface-600 dark:bg-surface-800 dark:text-surface-300"}};';
+          var nuExtended = scriptContent.substring(nuStart, nuEnd) + extra + '}' + stFn;
+          var patched = nuExtended + afterNu;
+          patched = patched.replace(/nu\[P\.status\]\.cls/g, '_st(P.status).cls');
+          patched = patched.replace(/nu\[P\.status\]\.label/g, '_st(P.status).label');
+          var blob = new Blob([patched], {type: 'application/javascript'});
+          var blobUrl = URL.createObjectURL(blob);
+          var newScript = document.createElement('script');
+          newScript.src = blobUrl;
+          newScript.type = 'module';
+          newScript.crossOrigin = 'anonymous';
+          moduleScript.parentNode.replaceChild(newScript, moduleScript);
+          bundlePatched = true;
+          console.log('[CleanSahel] STATUS_TONES MutationObserver fix applied via brace-counting');
+        };
+        xhr.send();
+        break;
       }
     }
   });
