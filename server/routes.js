@@ -3710,6 +3710,221 @@ router.delete('/packaging-lots/:id', auth, requirePermission('purchases', 'delet
   res.json({ ok: true })
 })
 
+// ══════════════════════════════════════════════════════════════
+// ZONAS / COBERTURA COMERCIAL
+// ══════════════════════════════════════════════════════════════
+
+//jerarchy of Mali regions and cities
+const MALI_ZONES = [
+  { id: 'bamako', name: 'Bamako', type: 'city', parent: 'bamako-region', color: '#10b981', order: 1 },
+  { id: 'kayes', name: 'Kayes', type: 'region', parent: null, color: '#3b82f6', order: 2 },
+  { id: 'koulikoro', name: 'Koulikoro', type: 'region', parent: null, color: '#3b82f6', order: 3 },
+  { id: 'sikasso', name: 'Sikasso', type: 'region', parent: null, color: '#3b82f6', order: 4 },
+  { id: 'segou', name: 'Ségou', type: 'region', parent: null, color: '#3b82f6', order: 5 },
+  { id: 'mopti', name: 'Mopti', type: 'region', parent: null, color: '#3b82f6', order: 6 },
+  { id: 'tombouctou', name: 'Tombouctou', type: 'region', parent: null, color: '#3b82f6', order: 7 },
+  { id: 'gao', name: 'Gao', type: 'region', parent: null, color: '#3b82f6', order: 8 },
+  { id: 'kidal', name: 'Kidal', type: 'region', parent: null, color: '#3b82f6', order: 9 },
+  { id: 'taoudeni', name: 'Taoudéni', type: 'region', parent: null, color: '#3b82f6', order: 10 },
+  { id: 'menaka', name: 'Ménaka', type: 'region', parent: null, color: '#3b82f6', order: 11 },
+]
+
+// City-to-region mapping
+const CITY_TO_REGION = {
+  'bamako': 'bamako',
+  'kayes': 'kayes',
+  'koulikoro': 'koulikoro',
+  'sikasso': 'sikasso',
+  'ségou': 'segou',
+  'segou': 'segou',
+  'mopti': 'mopti',
+  'tombouctou': 'tombouctou',
+  'timbuktu': 'tombouctou',
+  'gao': 'gao',
+  'kidal': 'kidal',
+  'taoudéni': 'taoudeni',
+  'menaka': 'menaka',
+}
+
+// Normalize city name to region id
+function cityToRegion(city) {
+  if (!city) return null
+  const normalized = city.toLowerCase().trim()
+  return CITY_TO_REGION[normalized] || null
+}
+
+router.get('/zonas', auth, (req, res) => {
+  try {
+    const { from, to } = req.query
+
+    // Date filter
+    let dateFilter = ''
+    const params = []
+    if (from) {
+      dateFilter += ' AND o.created_at >= ?'
+      params.push(from)
+    }
+    if (to) {
+      dateFilter += ' AND o.created_at <= ?'
+      params.push(to + 'T23:59:59')
+    }
+
+    // Get customers with their regions
+    const customers = db.prepare('SELECT id, code, name, city, country, created_at FROM customers').all()
+    const customersByRegion = {}
+    for (const c of customers) {
+      const region = cityToRegion(c.city) || 'other'
+      if (!customersByRegion[region]) customersByRegion[region] = []
+      customersByRegion[region].push(c)
+    }
+
+    // Get orders with items
+    const ordersQuery = `
+      SELECT o.id, o.number, o.customer_id, o.total, o.subtotal, o.tax, o.discount,
+             o.status, o.delivered_at, o.created_at,
+             c.city
+      FROM orders o
+      LEFT JOIN customers c ON c.id = o.customer_id
+      WHERE 1=1 ${dateFilter}
+      ORDER BY o.created_at DESC
+    `
+    const orders = db.prepare(ordersQuery).all(...params)
+
+    // Also get items for margin calculation
+    const ordersWithItems = orders.map(o => {
+      const items = JSON.parse(o.items_json || '[]')
+      const costPrice = items.reduce((sum, i) => sum + (i.costPrice || 0) * (i.quantity || 0), 0)
+      const revenue = o.total || 0
+      return { ...o, items, costPrice, margin: revenue - costPrice }
+    })
+
+    // Group orders by region
+    const ordersByRegion = {}
+    for (const o of ordersWithItems) {
+      const region = cityToRegion(o.city) || 'other'
+      if (!ordersByRegion[region]) ordersByRegion[region] = []
+      ordersByRegion[region].push(o)
+    }
+
+    // Calculate metrics per region
+    const regionIds = [...new Set([...Object.keys(customersByRegion), ...Object.keys(ordersByRegion)])]
+    const zoneMetrics = {}
+
+    for (const regionId of regionIds) {
+      const regionOrders = ordersByRegion[regionId] || []
+      const regionCustomers = customersByRegion[regionId] || []
+
+      const totalRevenue = regionOrders.reduce((s, o) => s + (o.total || 0), 0)
+      const totalCost = regionOrders.reduce((s, o) => s + (o.costPrice || 0), 0)
+      const totalMargin = totalRevenue - totalCost
+      const marginPct = totalRevenue > 0 ? (totalMargin / totalRevenue) * 100 : 0
+      const totalUnits = regionOrders.reduce((s, o) =>
+        s + (o.items || []).reduce((si, i) => si + (i.quantity || 0), 0), 0)
+      const deliveredOrders = regionOrders.filter(o => o.delivered_at)
+      const pendingOrders = regionOrders.filter(o => !o.delivered_at && (o.status === 'pendiente' || o.status === 'confirmado'))
+
+      // New customers in period
+      const newCustomers = regionCustomers.filter(c => {
+        if (!from) return true
+        return c.created_at && c.created_at >= from
+      })
+
+      // Average ticket
+      const orderCount = regionOrders.length
+      const avgTicket = orderCount > 0 ? totalRevenue / orderCount : 0
+
+      // Activity level
+      const clientCount = regionCustomers.length
+      let level = 'none'
+      if (clientCount === 0) level = 'none'
+      else if (clientCount >= 5 && orderCount >= 10) level = 'high'
+      else if (clientCount >= 2 || orderCount >= 3) level = 'medium'
+      else level = 'low'
+
+      zoneMetrics[regionId] = {
+        regionId,
+        customers: clientCount,
+        orders: orderCount,
+        pendingOrders: pendingOrders.length,
+        deliveredOrders: deliveredOrders.length,
+        revenue: totalRevenue,
+        cost: totalCost,
+        margin: totalMargin,
+        marginPct: Math.round(marginPct * 10) / 10,
+        units: totalUnits,
+        avgTicket,
+        newCustomers: newCustomers.length,
+        level,
+        cities: [...new Set(regionCustomers.map(c => c.city).filter(Boolean))],
+        recentOrders: regionOrders.slice(0, 5).map(o => ({
+          id: o.id,
+          number: o.number,
+          total: o.total,
+          status: o.status,
+          delivered_at: o.delivered_at,
+          created_at: o.created_at,
+        })),
+      }
+    }
+
+    // Build zones array
+    const zones = MALI_ZONES.map(z => ({
+      ...z,
+      ...(zoneMetrics[z.id] || {
+        customers: 0,
+        orders: 0,
+        pendingOrders: 0,
+        deliveredOrders: 0,
+        revenue: 0,
+        cost: 0,
+        margin: 0,
+        marginPct: 0,
+        units: 0,
+        avgTicket: 0,
+        newCustomers: 0,
+        level: 'none',
+        cities: [],
+        recentOrders: [],
+      }),
+    }))
+
+    // Add 'other' zone for unmatched
+    if (zoneMetrics['other']) {
+      zones.push({
+        id: 'other',
+        name: 'Sin zona asignada',
+        type: 'region',
+        parent: null,
+        color: '#94a3b8',
+        order: 99,
+        ...zoneMetrics['other'],
+      })
+    }
+
+    // Summary totals
+    const totals = {
+      customers: Object.values(zoneMetrics).reduce((s, z) => s + z.customers, 0),
+      orders: Object.values(zoneMetrics).reduce((s, z) => s + z.orders, 0),
+      revenue: Object.values(zoneMetrics).reduce((s, z) => s + z.revenue, 0),
+      margin: Object.values(zoneMetrics).reduce((s, z) => s + z.margin, 0),
+      units: Object.values(zoneMetrics).reduce((s, z) => s + z.units, 0),
+      newCustomers: Object.values(zoneMetrics).reduce((s, z) => s + z.newCustomers, 0),
+    }
+    totals.avgTicket = totals.orders > 0 ? totals.revenue / totals.orders : 0
+    totals.marginPct = totals.revenue > 0 ? Math.round((totals.margin / totals.revenue) * 1000) / 10 : 0
+
+    // Coverage breakdown
+    const highZones = zones.filter(z => z.level === 'high').length
+    const mediumZones = zones.filter(z => z.level === 'medium' || z.level === 'low').length
+    const noZones = zones.filter(z => z.level === 'none' && z.type === 'region').length
+
+    res.json({ zones, totals, highZones, mediumZones, noZones, count: zones.length })
+  } catch (e) {
+    console.error('Error /api/zonas:', e)
+    res.status(500).json({ error: e.message })
+  }
+})
+
 export default router
 
 // ---------- RESET DB (dev only) ----------
