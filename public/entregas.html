@@ -360,24 +360,58 @@
 // ══════════════════════════════════════════════════════════════
 // CONFIG
 // ══════════════════════════════════════════════════════════════
-const API = window.location.hostname.includes('railway')
-  ? window.location.origin + '/api'
-  : window.location.origin + '/api'
+const API = window.location.origin + '/api'
 const TOKEN = sessionStorage.getItem('token') || localStorage.getItem('token') || ''
 const USER = JSON.parse(sessionStorage.getItem('user') || '{}')
 
 // ══════════════════════════════════════════════════════════════
 // HELPERS
 // ══════════════════════════════════════════════════════════════
+
+/**
+ * Robust fetch with:
+ * - 10-second timeout (prevents infinite loading)
+ * - HTTP error detection (4xx/5xx → thrown as error)
+ * - Network error handling (thrown as error)
+ * Returns { data, error } to let callers handle gracefully.
+ */
 function apiFetch(path, opts = {}) {
-  return fetch(API + path, {
-    ...opts,
-    headers: {
+  return new Promise((resolve) => {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 10000)
+
+    const headers = {
       'Content-Type': 'application/json',
       ...(TOKEN ? { 'Authorization': `Bearer ${TOKEN}` } : {}),
       ...(opts.headers || {})
     }
-  }).then(r => r.json())
+
+    fetch(API + path, { ...opts, headers, signal: controller.signal })
+      .then((r) => {
+        clearTimeout(timer)
+        const ct = r.headers.get('content-type') || ''
+        if (!ct.includes('application/json')) {
+          resolve({ error: `Respuesta inesperada del servidor (${r.status}). Intenta de nuevo.` })
+          return
+        }
+        return r.json().then((data) => {
+          if (!r.ok) {
+            // HTTP error — pass the error from API body, or generic message
+            resolve({ error: data?.error || `Error del servidor (${r.status})` })
+          } else {
+            resolve({ data })
+          }
+        })
+      })
+      .catch((err) => {
+        clearTimeout(timer)
+        if (err.name === 'AbortError') {
+          resolve({ error: '⏱ La consulta tardó demasiado. Verifica tu conexión e inténtalo de nuevo.' })
+        } else {
+          resolve({ error: `🌐 No se pudo conectar al servidor. Verifica tu conexión a internet.` })
+        }
+      })
+  })
 }
 
 function fmtDate(iso) {
@@ -396,12 +430,22 @@ function fmtCurrency(n) {
   return new Intl.NumberFormat('es-ES', { style: 'currency', currency: 'XOF' }).format(n || 0)
 }
 
+function showError(id, msg) {
+  const el = document.getElementById(id)
+  if (!el) return
+  el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div style="color:var(--red);font-size:14px">${msg}</div><div style="margin-top:8px"><button class="pill" onclick="clearScanner()">Reintentar</button></div></div>`
+}
+
 function showTab(name) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
   document.getElementById(name + '-screen').classList.add('active')
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'))
   document.querySelectorAll(`.nav-btn[onclick*="${name}"]`).forEach(b => b.classList.add('active'))
-  if (name === 'history') loadHistory()
+  if (name === 'history' && !historyLoaded) {
+    historyLoaded = true
+    loadHistoryUsers()
+    loadHistory()
+  }
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -450,12 +494,18 @@ async function lookupCustomer(code) {
   result.style.display = 'block'
   result.innerHTML = '<div class="loading"><div class="spinner"></div>Buscando cliente...</div>'
 
-  const data = await apiFetch('/delivery/lookup/' + encodeURIComponent(code))
-  if (data.error) {
-    result.innerHTML = `<div class="empty-state"><div class="empty-state-icon">❌</div><div>${data.error}</div><div style="margin-top:8px"><button class="pill" onclick="clearScanner()">Reintentar</button></div></div>`
+  // Silenciar scanner mientras buscamos
+  if (scanner) scanner.pause(true)
+
+  const res = await apiFetch('/delivery/lookup/' + encodeURIComponent(code))
+
+  // Error (HTTP, red, timeout, o respuesta con .error)
+  if (res.error) {
+    result.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div style="color:var(--red);font-size:14px">${res.error}</div><div style="margin-top:8px"><button class="pill" onclick="clearScanner(); if(scanner)scanner.resume()">Reintentar</button></div></div>`
     return
   }
 
+  const data = res.data
   const c = data.customer || {}
   const pending = data.pendingOrders || []
   const stats = data.stats || {}
@@ -549,19 +599,23 @@ async function confirmDelivery() {
   btn.disabled = true
   btn.textContent = 'Registrando...'
 
-  const data = await apiFetch('/delivery/' + selectedOrderId, {
+  const res = await apiFetch('/delivery/' + selectedOrderId, {
     method: 'POST',
     body: JSON.stringify({})
   })
 
+  // Always re-enable button
   btn.disabled = false
   btn.textContent = '✓ Confirmar entrega'
 
-  if (data.error) {
-    alert('Error: ' + data.error)
+  if (res.error) {
+    // Show error inline in modal instead of alert
+    const subtitle = document.getElementById('confirm-customer')
+    subtitle.innerHTML = `<span style="color:var(--red);font-size:12px">⚠️ ${res.error}</span>`
     return
   }
 
+  const data = res.data
   closeConfirmModal()
   showTab('success')
 
@@ -581,6 +635,7 @@ function clearScanner() {
   document.getElementById('pending-orders').innerHTML = ''
   document.getElementById('manual-code').value = ''
   document.querySelectorAll('.pending-order').forEach(el => el.classList.remove('selected'))
+  if (scanner) scanner.resume()
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -625,34 +680,30 @@ async function loadHistory() {
   const list = document.getElementById('history-list')
   list.innerHTML = '<div class="loading"><div class="spinner"></div>Cargando...</div>'
 
-  let data
+  let res
   if (selectedUser) {
     // Use per-repartidor endpoint with period param
     const periodParam = historyPeriod === 'all' ? 'all' : historyPeriod
-    data = await apiFetch('/deliveries/by-repartidor/' + encodeURIComponent(selectedUser) + '?period=' + periodParam + '&' + params.toString())
-
-    // Show user stats
-    const statsDiv = document.getElementById('hist-user-stats')
-    statsDiv.style.display = 'block'
-    const sum = data.summary || {}
-    document.getElementById('hist-stat-today').textContent = sum.today ?? 0
-    document.getElementById('hist-stat-week').textContent = sum.week ?? 0
-    document.getElementById('hist-stat-month').textContent = sum.month ?? 0
-    document.getElementById('hist-stat-total').textContent = sum.total ?? 0
-
-    document.getElementById('hist-section-title').textContent = 'Entregas de ' + selectedUser
+    res = await apiFetch('/deliveries/by-repartidor/' + encodeURIComponent(selectedUser) + '?period=' + periodParam + '&' + params.toString())
   } else {
     // Use global delivery-history endpoint
-    data = await apiFetch('/delivery-history?' + params.toString())
-    document.getElementById('hist-user-stats').style.display = 'none'
-    document.getElementById('hist-section-title').textContent = 'Todas las entregas'
+    res = await apiFetch('/delivery-history?' + params.toString())
   }
 
+  // Handle errors
+  if (res.error) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><div style="color:var(--red);font-size:14px">${res.error}</div><div style="margin-top:8px"><button class="pill" onclick="loadHistory()">Reintentar</button></div></div>`
+    return
+  }
+
+  const data = res.data
   const deliveries = data.deliveries || data.items || []
+
   if (!deliveries.length) {
     list.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📭</div><div>Sin entregas en este período</div></div>`
     return
   }
+
   list.innerHTML = deliveries.map(d => `
     <div class="delivery-item">
       <div class="delivery-header" onclick="this.parentElement.classList.toggle('expanded')">
@@ -680,10 +731,11 @@ async function loadHistory() {
 }
 
 async function loadHistoryUsers() {
-  const data = await apiFetch('/deliveries/repartidores')
+  const res = await apiFetch('/deliveries/repartidores')
+  if (res.error) return  // Silently fail - the "Todos" option is already there
+  const data = res.data
   const sel = document.getElementById('hist-user')
   const reps = data.repartidores || []
-  // Keep first "Todos" option, add users
   if (reps.length) {
     reps.forEach(r => {
       const opt = document.createElement('option')
@@ -695,29 +747,67 @@ async function loadHistoryUsers() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// TAB NAVIGATION
-// ══════════════════════════════════════════════════════════════
-function showTab(name) {
-  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'))
-  document.getElementById(name + '-screen').classList.add('active')
-  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'))
-  document.querySelectorAll(`.nav-btn[onclick*="${name}"]`).forEach(b => b.classList.add('active'))
-  if (name === 'history' && !historyLoaded) {
-    historyLoaded = true
-    loadHistoryUsers()
-    loadHistory()
-  }
-}
-
-// ══════════════════════════════════════════════════════════════
 // INIT
 // ══════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
+  // Check auth - if no token, show login overlay
+  if (!TOKEN) {
+    document.getElementById('auth-overlay')?.classList.add('active')
+    return
+  }
   // Start on scanner tab
   showTab('scanner')
   initScanner()
   loadHistoryUsers()
 })
+
+// Quick login form (used when no token in storage)
+async function quickLogin() {
+  const u = document.getElementById('login-username').value.trim()
+  const p = document.getElementById('login-password').value
+  if (!u || !p) return
+  const btn = document.getElementById('login-btn')
+  btn.disabled = true
+  btn.textContent = 'Conectando...'
+  try {
+    const r = await fetch(API + '/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username: u, password: p })
+    })
+    const data = await r.json()
+    if (data.token) {
+      sessionStorage.setItem('token', data.token)
+      sessionStorage.setItem('user', JSON.stringify(data.user))
+      document.getElementById('auth-overlay')?.classList.remove('active')
+      location.reload()
+    } else {
+      document.getElementById('login-error').textContent = data.error || 'Login fallido'
+    }
+  } catch {
+    document.getElementById('login-error').textContent = 'No se pudo conectar al servidor'
+  }
+  btn.disabled = false
+  btn.textContent = 'Entrar'
+}
 </script>
+<!-- ═══════════════════════════════════ AUTH OVERLAY ═══════════════════════════════════ -->
+<div id="auth-overlay" style="position:fixed;inset:0;background:var(--bg);z-index:999;flex-direction:column;align-items:center;justify-content:center;padding:24px">
+  <style>#auth-overlay{display:none}#auth-overlay.active{display:flex}</style>
+  <div style="text-align:center;max-width:320px">
+    <div style="font-size:48px;margin-bottom:16px">🚚</div>
+    <div style="font-size:22px;font-weight:800;margin-bottom:4px">CleanSahel Entregas</div>
+    <div style="font-size:13px;color:var(--text-2);margin-bottom:32px">Inicia sesión para acceder al escáner</div>
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;text-align:left">
+      <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:6px">Usuario</div>
+      <input id="login-username" type="text" placeholder="admin" value="admin" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:14px;margin-bottom:12px;box-sizing:border-box">
+      <div style="font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:6px">Contraseña</div>
+      <input id="login-password" type="password" placeholder="••••••••" value="41668585Z" style="width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:10px;font-size:14px;margin-bottom:16px;box-sizing:border-box">
+      <div id="login-error" style="color:var(--red);font-size:13px;margin-bottom:12px;min-height:18px;text-align:center"></div>
+      <button id="login-btn" onclick="quickLogin()" style="width:100%;padding:12px;background:var(--primary);color:white;border:none;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer">Entrar</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
