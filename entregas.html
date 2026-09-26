@@ -88,8 +88,8 @@
 
     /* ── Scanner ── */
     .scanner-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 16px; gap: 12px; }
-    #qr-reader { width: 100%; max-width: 320px; border-radius: 16px; overflow: hidden; border: 2px solid var(--border); }
-    #qr-reader video { border-radius: 14px; }
+    #qr-reader { width: 100%; max-width: 320px; height: 280px; border-radius: 16px; overflow: hidden; border: 2px solid var(--border); position: relative; }
+    #qr-reader video { width: 100%; height: 100%; object-fit: cover; border-radius: 14px; display: block; }
     .scanner-hint { font-size: 13px; color: var(--text-2); text-align: center; max-width: 280px; }
     .scanner-hint.camera-error { color: var(--amber); font-weight: 600; }
     .scanner-manual { display: flex; gap: 8px; width: 100%; max-width: 320px; }
@@ -481,22 +481,26 @@ let selectedOrderId = null
 let lookupInProgress = false
 
 async function initScanner() {
+  // Always stop any existing scanner before creating a new one — prevents
+  // the "scanner is dead but exists so we skip creation" bug
   if (scanner) {
-    // If scanner exists but may have stopped, try to restart it
-    try { await scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: 250 }, () => {}, () => {}) } catch {}
-    return
+    try { await scanner.stop() } catch {}
+    scanner = null
   }
+
   try {
+    // Clear any stale content from previous attempts
+    document.getElementById('qr-reader').innerHTML = ''
+
     scanner = new Html5Qrcode('qr-reader')
     await scanner.start(
       { facingMode: 'environment' },
-      { fps: 10, qrbox: 250 },
+      { fps: 10, qrbox: { width: 220, height: 220 } },
       async rawCode => {
         if (lookupInProgress) return
         lookupInProgress = true
         try { playBeep() } catch {}
 
-        // Extract the actual code from whatever the QR contains
         const code = extractCodeFromQR(rawCode)
         if (!code) {
           showError('customer-result', 'Código QR no válido. Intenta de nuevo.')
@@ -506,20 +510,20 @@ async function initScanner() {
         }
 
         await lookupCustomer(code)
-        // lookupCustomer's finally block handles scanner.resume() and lookupInProgress = false
       },
-      () => {} // QR scan error — ignore silently
+      () => {} // scan error — ignore silently, keep scanning
     )
   } catch (e) {
-    // Camera not available — show clear message pointing to the manual input above
+    console.error('Camera init error:', e && e.message ? e.message : e)
     document.getElementById('qr-reader').innerHTML = `
-      <div style="padding:20px;text-align:center;color:var(--text-2)">
+      <div style="padding:20px;text-align:center;color:var(--text-2);height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center">
         <div style="font-size:40px;margin-bottom:10px">📷</div>
-        <div style="font-size:14px;font-weight:700;margin-bottom:6px">Cámara no disponible</div>
-        <div style="font-size:13px">Escribe el código del cliente arriba · Ej: CL-00002</div>
+        <div style="font-size:14px;font-weight:700;margin-bottom:4px">Cámara no disponible</div>
+        <div style="font-size:12px">${e && e.message ? e.message : 'Comprueba los permisos del navegador'}</div>
+        <button onclick="initScanner()" style="margin-top:12px;padding:8px 16px;background:var(--primary);color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px">Reintentar cámara</button>
       </div>`
     const hint = document.getElementById('scanner-hint')
-    if (hint) { hint.textContent = '❌ Cámara no disponible — usa el campo de texto arriba'; hint.classList.add('camera-error') }
+    if (hint) { hint.textContent = '❌ Cámara no disponible'; hint.classList.add('camera-error') }
   }
 }
 
