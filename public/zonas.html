@@ -45,12 +45,26 @@
 <body>
   <div class="header">
     <h1><div class="logo">S</div> Zonas Comerciales — CleanSahel</h1>
-    <a href="/" class="back-link">← Volver al dashboard</a>
+    <a id="back-link" href="#" class="back-link" style="color: #2563eb; font-weight: 600;">← Volver al dashboard</a>
   </div>
   <div class="container" id="app">
     <div class="loading">Cargando zonas...</div>
   </div>
 
+  <script>
+    // Detect base path for GitHub Pages (/cleansahel/) vs Render (/)
+    ;(function() {
+      var base = window.PN || '';
+      var dashIdx = location.pathname.indexOf('/zonas');
+      if (dashIdx > 0) {
+        base = location.pathname.slice(0, dashIdx);
+      }
+      var link = document.getElementById('back-link');
+      if (link) {
+        link.href = base ? base + '/' : '/';
+      }
+    })();
+  </script>
   <script>
 // Zonas Commercial Coverage Module — ES Module
 const zonasStyles = `
