@@ -212,26 +212,22 @@ export default function Recipes() {
                       <option value="raw">Materia prima</option>
                       <option value="packaging">Embalaje</option>
                     </select>
-                    <div className="col-span-5 relative">
-                      <input
-                        className="input"
-                        list={`recipes-materials-${i}`}
-                        value={it.materialName || ''}
-                        onChange={e => {
-                          const v = e.target.value
-                          const list = it.materialType === 'raw' ? rawMaterials : packaging
-                          const match = list.find((m: any) => m.name.toLowerCase() === v.toLowerCase())
-                          updateItem(i, 'materialName', v)
-                          updateItem(i, 'materialId', match?.id || '')
-                        }}
-                        placeholder="Escribe o selecciona material"
-                        autoComplete="off"
-                        style={{ color: '#0f172a', WebkitTextFillColor: '#0f172a', backgroundColor: '#ffffff' }}
-                      />
-                      <datalist id={`recipes-materials-${i}`}>
-                        {(it.materialType === 'raw' ? rawMaterials : packaging).map(m => <option key={m.id} value={m.name} />)}
-                      </datalist>
-                    </div>
+                    <select
+                      className="input col-span-5"
+                      value={it.materialId || ''}
+                      onChange={e => {
+                        const list = it.materialType === 'raw' ? rawMaterials : packaging
+                        const mat = list.find((m: any) => m.id === e.target.value)
+                        updateItem(i, 'materialId', e.target.value)
+                        updateItem(i, 'materialName', mat?.name || '')
+                      }}
+                      style={{ color: '#0f172a', WebkitTextFillColor: '#0f172a', backgroundColor: '#ffffff' }}
+                    >
+                      <option value="">Selecciona material...</option>
+                      {(it.materialType === 'raw' ? rawMaterials : packaging).map(m => (
+                        <option key={m.id} value={m.id}>{m.name}</option>
+                      ))}
+                    </select>
                     <input
                       type="number"
                       step="0.001"
