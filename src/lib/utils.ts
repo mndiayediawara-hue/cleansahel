@@ -5,9 +5,9 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-// Tipo de cambio fijo EUR → XOF (FCFA, Franco Africano — usado en Mali)
-// Referencia: 1 EUR = 655,957 XOF
-// Los precios en la BD están en EUR; se convierten a FCFA para visualización en Mali
+// Tipo de cambio de referencia EUR → XOF (FCFA, Franco Africano — usado en Mali)
+// 1 EUR = 655,957 XOF — este valor es solo referencia; NO se aplica conversión automática
+// Los precios se guardan y muestran tal cual en la moneda configurada en Control
 const EUR_TO_XOF = 655.957
 
 // Lee la moneda actual del localStorage (gestionada por el i18n)
@@ -20,12 +20,11 @@ function getActiveCurrency(): 'EUR' | 'XOF' {
 export function formatCurrency(value: number, currency?: string): string {
   const curr = (currency as 'EUR' | 'XOF') || getActiveCurrency()
   if (curr === 'XOF') {
-    // FCFA: convertir de EUR a XOF y formatear sin decimales
-    const inFcfa = value * EUR_TO_XOF
+    // FCFA: mostrar el valor tal cual, sin conversión
     const formatted = new Intl.NumberFormat('fr-FR', {
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
-    }).format(inFcfa)
+    }).format(value)
     return `${formatted} FCFA`
   }
   // EUR (u otra): usa Intl con la moneda dada
