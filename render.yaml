@@ -12,3 +12,5 @@ services:
         value: production
       - key: JWT_SECRET
         generateValue: true
+
+# Force redeploy - Mavis Agent - product stock deduction fix
