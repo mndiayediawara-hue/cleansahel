@@ -619,10 +619,30 @@ router.post('/delivery/:orderId', auth, requirePermission('entregas', 'register'
       description: `Pedido ${order.number} entregado a ${order.customer_name || 'cliente'} por ${userName}`
     })
 
+    // Descontar Producto Terminado: por cada item del pedido, descontar del stock del producto
+    const deductedProducts = []
+    for (const item of items) {
+      const productId = item.productId || item.product_id
+      const qty = parseInt(item.quantity) || 0
+      if (productId && qty > 0) {
+        const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId)
+        if (product) {
+          const newStock = Math.max(0, product.stock - qty)
+          db.prepare('UPDATE products SET stock = ? WHERE id = ?').run(newStock, productId)
+          addHistory(req, {
+            action: 'venta', module: 'Stock PT',
+            entityId: req.params.orderId,
+            description: `Entrega pedido ${order.number}: ${qty} ud de ${product.name} (stock PT: ${product.stock} → ${newStock})`
+          })
+          deductedProducts.push({ productId, productName: product.name, qty, oldStock: product.stock, newStock })
+        }
+      }
+    }
+
     // Guardar registro en tabla delivery_records si existe, si no en notes del pedido
     try {
       db.prepare('UPDATE orders SET notes = ? WHERE id = ?').run(
-        JSON.stringify({ deliveryNotes, items, totalItems, userId, userName, userFullName }),
+        JSON.stringify({ deliveryNotes, items, totalItems, userId, userName, userFullName, deductedProducts }),
         req.params.orderId
       )
     } catch {}
@@ -639,6 +659,7 @@ router.post('/delivery/:orderId', auth, requirePermission('entregas', 'register'
       deliveredBy: userName,
       deliveredByFullName: userFullName,
       userId,
+      deductedProducts,
     })
   } catch (e) {
     console.error('Error POST /delivery:', e.message)
