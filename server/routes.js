@@ -129,16 +129,6 @@ router.post('/users', auth, requirePermission('users', 'create'), (req, res) => 
   }
 })
 
-// PATCH /api/users/:id/unlock — Desbloquear cuenta bloqueada por intentos fallidos
-router.patch('/users/:id/unlock', auth, requirePermission('users', 'edit'), (req, res) => {
-  const { id } = req.params
-  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(id)
-  if (!u) return res.status(404).json({ error: 'Usuario no encontrado' })
-  db.prepare('UPDATE users SET failed_attempts = 0 WHERE id = ?').run(id)
-  addHistory(req, { action: 'unlock', module: 'Usuarios', entityId: id, description: `Cuenta desbloqueada: ${u.username}` })
-  res.json({ ok: true, message: 'Cuenta desbloqueada correctamente' })
-})
-
 router.put('/users/:id', auth, requirePermission('users', 'edit'), (req, res) => {
   const { id } = req.params
   const { fullName, email, role, active, password, failedAttempts } = req.body
@@ -149,6 +139,16 @@ router.put('/users/:id', auth, requirePermission('users', 'edit'), (req, res) =>
   if (password) db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(password, 10), id)
   addHistory(req, { action: 'modificar', module: 'Usuarios', entityId: id, description: `Modificado usuario ${u.username}`, before: u })
   res.json({ ok: true })
+})
+
+// PATCH /api/users/:id/unlock — Desbloquear cuenta
+router.patch('/users/:id/unlock', auth, requirePermission('users', 'edit'), (req, res) => {
+  const { id } = req.params
+  const u = db.prepare('SELECT * FROM users WHERE id = ?').get(id)
+  if (!u) return res.status(404).json({ error: 'Usuario no encontrado' })
+  db.prepare('UPDATE users SET failed_attempts = 0 WHERE id = ?').run(id)
+  addHistory(req, { action: 'unlock', module: 'Usuarios', entityId: id, description: `Cuenta desbloqueada: ${u.username}` })
+  res.json({ ok: true, message: 'Cuenta desbloqueada' })
 })
 
 router.delete('/users/:id', auth, requirePermission('users', 'delete'), (req, res) => {
@@ -619,10 +619,30 @@ router.post('/delivery/:orderId', auth, requirePermission('entregas', 'register'
       description: `Pedido ${order.number} entregado a ${order.customer_name || 'cliente'} por ${userName}`
     })
 
+    // Descontar Producto Terminado: por cada item del pedido, descontar del stock del producto
+    const deductedProducts = []
+    for (const item of items) {
+      const productId = item.productId || item.product_id
+      const qty = parseInt(item.quantity) || 0
+      if (productId && qty > 0) {
+        const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId)
+        if (product) {
+          const newStock = Math.max(0, product.stock - qty)
+          db.prepare('UPDATE products SET stock = ? WHERE id = ?').run(newStock, productId)
+          addHistory(req, {
+            action: 'venta', module: 'Stock PT',
+            entityId: req.params.orderId,
+            description: `Entrega pedido ${order.number}: ${qty} ud de ${product.name} (stock PT: ${product.stock} → ${newStock})`
+          })
+          deductedProducts.push({ productId, productName: product.name, qty, oldStock: product.stock, newStock })
+        }
+      }
+    }
+
     // Guardar registro en tabla delivery_records si existe, si no en notes del pedido
     try {
       db.prepare('UPDATE orders SET notes = ? WHERE id = ?').run(
-        JSON.stringify({ deliveryNotes, items, totalItems, userId, userName, userFullName }),
+        JSON.stringify({ deliveryNotes, items, totalItems, userId, userName, userFullName, deductedProducts }),
         req.params.orderId
       )
     } catch {}
@@ -639,6 +659,7 @@ router.post('/delivery/:orderId', auth, requirePermission('entregas', 'register'
       deliveredBy: userName,
       deliveredByFullName: userFullName,
       userId,
+      deductedProducts,
     })
   } catch (e) {
     console.error('Error POST /delivery:', e.message)
@@ -1143,8 +1164,14 @@ router.post('/orders', auth, requirePermission('sales', 'create'), (req, res) =>
   const id = uid('o-')
   const count = db.prepare("SELECT COUNT(*) c FROM orders WHERE number LIKE 'PED-%'").get().c
   const number = b.number || `PED-${new Date().getFullYear()}-${String(count + 1).padStart(4, '0')}`
+  // Auto-calculate totals from items if not provided
+  const items = b.items || []
+  const subtotal = b.subtotal ?? items.reduce((s, i) => s + (i.quantity || 0) * (i.unitPrice || 0), 0)
+  const discount = b.discount || 0
+  const tax = b.tax ?? subtotal * 0.18
+  const total = b.total ?? subtotal + tax - discount
   db.prepare('INSERT INTO orders (id, number, customer_id, items_json, subtotal, tax, discount, total, status, created_at, delivery_date, notes, created_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)')
-    .run(id, number, b.customerId, JSON.stringify(b.items || []), b.subtotal || 0, b.tax || 0, b.discount || 0, b.total || 0, b.status || 'pendiente', new Date().toISOString(), b.deliveryDate || null, b.notes || null, req.user.id)
+    .run(id, number, b.customerId, JSON.stringify(items), subtotal, tax, discount, total, b.status || 'pendiente', new Date().toISOString(), b.deliveryDate || null, b.notes || null, req.user.id)
   addHistory(req, { action: 'crear', module: 'Pedidos', entityId: id, description: `Creado pedido ${number}` })
   // add notification
   db.prepare('INSERT INTO notifications (id, type, title, message, severity, read, created_at, related_id) VALUES (?,?,?,?,?,0,?,?)')
@@ -3704,6 +3731,221 @@ router.delete('/packaging-lots/:id', auth, requirePermission('purchases', 'delet
   res.json({ ok: true })
 })
 
+// ══════════════════════════════════════════════════════════════
+// ZONAS / COBERTURA COMERCIAL
+// ══════════════════════════════════════════════════════════════
+
+//jerarchy of Mali regions and cities
+const MALI_ZONES = [
+  { id: 'bamako', name: 'Bamako', type: 'city', parent: 'bamako-region', color: '#10b981', order: 1 },
+  { id: 'kayes', name: 'Kayes', type: 'region', parent: null, color: '#3b82f6', order: 2 },
+  { id: 'koulikoro', name: 'Koulikoro', type: 'region', parent: null, color: '#3b82f6', order: 3 },
+  { id: 'sikasso', name: 'Sikasso', type: 'region', parent: null, color: '#3b82f6', order: 4 },
+  { id: 'segou', name: 'Ségou', type: 'region', parent: null, color: '#3b82f6', order: 5 },
+  { id: 'mopti', name: 'Mopti', type: 'region', parent: null, color: '#3b82f6', order: 6 },
+  { id: 'tombouctou', name: 'Tombouctou', type: 'region', parent: null, color: '#3b82f6', order: 7 },
+  { id: 'gao', name: 'Gao', type: 'region', parent: null, color: '#3b82f6', order: 8 },
+  { id: 'kidal', name: 'Kidal', type: 'region', parent: null, color: '#3b82f6', order: 9 },
+  { id: 'taoudeni', name: 'Taoudéni', type: 'region', parent: null, color: '#3b82f6', order: 10 },
+  { id: 'menaka', name: 'Ménaka', type: 'region', parent: null, color: '#3b82f6', order: 11 },
+]
+
+// City-to-region mapping
+const CITY_TO_REGION = {
+  'bamako': 'bamako',
+  'kayes': 'kayes',
+  'koulikoro': 'koulikoro',
+  'sikasso': 'sikasso',
+  'ségou': 'segou',
+  'segou': 'segou',
+  'mopti': 'mopti',
+  'tombouctou': 'tombouctou',
+  'timbuktu': 'tombouctou',
+  'gao': 'gao',
+  'kidal': 'kidal',
+  'taoudéni': 'taoudeni',
+  'menaka': 'menaka',
+}
+
+// Normalize city name to region id
+function cityToRegion(city) {
+  if (!city) return null
+  const normalized = city.toLowerCase().trim()
+  return CITY_TO_REGION[normalized] || null
+}
+
+router.get('/zonas', auth, (req, res) => {
+  try {
+    const { from, to } = req.query
+
+    // Date filter
+    let dateFilter = ''
+    const params = []
+    if (from) {
+      dateFilter += ' AND o.created_at >= ?'
+      params.push(from)
+    }
+    if (to) {
+      dateFilter += ' AND o.created_at <= ?'
+      params.push(to + 'T23:59:59')
+    }
+
+    // Get customers with their regions
+    const customers = db.prepare('SELECT id, code, name, city, country, created_at FROM customers').all()
+    const customersByRegion = {}
+    for (const c of customers) {
+      const region = cityToRegion(c.city) || 'other'
+      if (!customersByRegion[region]) customersByRegion[region] = []
+      customersByRegion[region].push(c)
+    }
+
+    // Get orders with items
+    const ordersQuery = `
+      SELECT o.id, o.number, o.customer_id, o.total, o.subtotal, o.tax, o.discount,
+             o.status, o.delivered_at, o.created_at,
+             c.city
+      FROM orders o
+      LEFT JOIN customers c ON c.id = o.customer_id
+      WHERE 1=1 ${dateFilter}
+      ORDER BY o.created_at DESC
+    `
+    const orders = db.prepare(ordersQuery).all(...params)
+
+    // Also get items for margin calculation
+    const ordersWithItems = orders.map(o => {
+      const items = JSON.parse(o.items_json || '[]')
+      const costPrice = items.reduce((sum, i) => sum + (i.costPrice || 0) * (i.quantity || 0), 0)
+      const revenue = o.total || 0
+      return { ...o, items, costPrice, margin: revenue - costPrice }
+    })
+
+    // Group orders by region
+    const ordersByRegion = {}
+    for (const o of ordersWithItems) {
+      const region = cityToRegion(o.city) || 'other'
+      if (!ordersByRegion[region]) ordersByRegion[region] = []
+      ordersByRegion[region].push(o)
+    }
+
+    // Calculate metrics per region
+    const regionIds = [...new Set([...Object.keys(customersByRegion), ...Object.keys(ordersByRegion)])]
+    const zoneMetrics = {}
+
+    for (const regionId of regionIds) {
+      const regionOrders = ordersByRegion[regionId] || []
+      const regionCustomers = customersByRegion[regionId] || []
+
+      const totalRevenue = regionOrders.reduce((s, o) => s + (o.total || 0), 0)
+      const totalCost = regionOrders.reduce((s, o) => s + (o.costPrice || 0), 0)
+      const totalMargin = totalRevenue - totalCost
+      const marginPct = totalRevenue > 0 ? (totalMargin / totalRevenue) * 100 : 0
+      const totalUnits = regionOrders.reduce((s, o) =>
+        s + (o.items || []).reduce((si, i) => si + (i.quantity || 0), 0), 0)
+      const deliveredOrders = regionOrders.filter(o => o.delivered_at)
+      const pendingOrders = regionOrders.filter(o => !o.delivered_at && (o.status === 'pendiente' || o.status === 'confirmado'))
+
+      // New customers in period
+      const newCustomers = regionCustomers.filter(c => {
+        if (!from) return true
+        return c.created_at && c.created_at >= from
+      })
+
+      // Average ticket
+      const orderCount = regionOrders.length
+      const avgTicket = orderCount > 0 ? totalRevenue / orderCount : 0
+
+      // Activity level
+      const clientCount = regionCustomers.length
+      let level = 'none'
+      if (clientCount === 0) level = 'none'
+      else if (clientCount >= 5 && orderCount >= 10) level = 'high'
+      else if (clientCount >= 2 || orderCount >= 3) level = 'medium'
+      else level = 'low'
+
+      zoneMetrics[regionId] = {
+        regionId,
+        customers: clientCount,
+        orders: orderCount,
+        pendingOrders: pendingOrders.length,
+        deliveredOrders: deliveredOrders.length,
+        revenue: totalRevenue,
+        cost: totalCost,
+        margin: totalMargin,
+        marginPct: Math.round(marginPct * 10) / 10,
+        units: totalUnits,
+        avgTicket,
+        newCustomers: newCustomers.length,
+        level,
+        cities: [...new Set(regionCustomers.map(c => c.city).filter(Boolean))],
+        recentOrders: regionOrders.slice(0, 5).map(o => ({
+          id: o.id,
+          number: o.number,
+          total: o.total,
+          status: o.status,
+          delivered_at: o.delivered_at,
+          created_at: o.created_at,
+        })),
+      }
+    }
+
+    // Build zones array
+    const zones = MALI_ZONES.map(z => ({
+      ...z,
+      ...(zoneMetrics[z.id] || {
+        customers: 0,
+        orders: 0,
+        pendingOrders: 0,
+        deliveredOrders: 0,
+        revenue: 0,
+        cost: 0,
+        margin: 0,
+        marginPct: 0,
+        units: 0,
+        avgTicket: 0,
+        newCustomers: 0,
+        level: 'none',
+        cities: [],
+        recentOrders: [],
+      }),
+    }))
+
+    // Add 'other' zone for unmatched
+    if (zoneMetrics['other']) {
+      zones.push({
+        id: 'other',
+        name: 'Sin zona asignada',
+        type: 'region',
+        parent: null,
+        color: '#94a3b8',
+        order: 99,
+        ...zoneMetrics['other'],
+      })
+    }
+
+    // Summary totals
+    const totals = {
+      customers: Object.values(zoneMetrics).reduce((s, z) => s + z.customers, 0),
+      orders: Object.values(zoneMetrics).reduce((s, z) => s + z.orders, 0),
+      revenue: Object.values(zoneMetrics).reduce((s, z) => s + z.revenue, 0),
+      margin: Object.values(zoneMetrics).reduce((s, z) => s + z.margin, 0),
+      units: Object.values(zoneMetrics).reduce((s, z) => s + z.units, 0),
+      newCustomers: Object.values(zoneMetrics).reduce((s, z) => s + z.newCustomers, 0),
+    }
+    totals.avgTicket = totals.orders > 0 ? totals.revenue / totals.orders : 0
+    totals.marginPct = totals.revenue > 0 ? Math.round((totals.margin / totals.revenue) * 1000) / 10 : 0
+
+    // Coverage breakdown
+    const highZones = zones.filter(z => z.level === 'high').length
+    const mediumZones = zones.filter(z => z.level === 'medium' || z.level === 'low').length
+    const noZones = zones.filter(z => z.level === 'none' && z.type === 'region').length
+
+    res.json({ zones, totals, highZones, mediumZones, noZones, count: zones.length })
+  } catch (e) {
+    console.error('Error /api/zonas:', e)
+    res.status(500).json({ error: e.message })
+  }
+})
+
 export default router
 
 // ---------- RESET DB (dev only) ----------
@@ -4321,7 +4563,15 @@ router.get('/delivery-mobile', (req, res) => {
   <script>
     const API = window.location.origin + '/api'
     let token = localStorage.getItem('cleanerp-token') || new URLSearchParams(window.location.search).get('token')
-    if (token) { localStorage.setItem('cleanerp-token', token); showMain() } else { document.getElementById('loginSection').classList.remove('hidden') }
+    // Guardar el código prefill ANTES de que startScanner() lo pueda borrar
+    let prefillCode = new URLSearchParams(window.location.search).get('code') || ''
+    if (token) {
+      localStorage.setItem('cleanerp-token', token)
+      showMain()
+      startScanner() // iniciar cámara en background
+    } else {
+      document.getElementById('loginSection').classList.remove('hidden')
+    }
     function showToast(msg, color) { const t = document.getElementById('toast'); t.textContent = msg; t.style.background = color || '#1f2937'; t.classList.add('show'); setTimeout(() => t.classList.remove('show'), 2500) }
     async function doLogin() {
       const username = document.getElementById('loginUser').value.trim()
@@ -4336,27 +4586,40 @@ router.get('/delivery-mobile', (req, res) => {
         document.getElementById('loginSection').classList.add('hidden')
         document.getElementById('loginError').classList.add('hidden')
         showMain()
+        startScanner()
       } catch (e) { document.getElementById('loginError').textContent = e.message; document.getElementById('loginError').classList.remove('hidden') }
     }
-    function showMain() { document.getElementById('mainSection').classList.remove('hidden'); const prefill = document.getElementById('codeInput').value.trim(); if (prefill) lookupCustomer() }
+    function showMain() {
+      document.getElementById('mainSection').classList.remove('hidden')
+      // Usar prefillCode (de URL) en vez del valor del input (que puede estar vacío tras login)
+      if (prefillCode) {
+        document.getElementById('codeInput').value = prefillCode
+        lookupCustomer()
+      }
+    }
+    let _html5Qr = null
     function startScanner() {
+      if (_html5Qr) return // ya está activo
       const readerEl = document.getElementById('qr-reader'); readerEl.innerHTML = ''
-      const html5QrCode = new Html5Qrcode('qr-reader')
       const startBtn = document.getElementById('startScanBtn')
       startBtn.disabled = true; startBtn.textContent = 'Escaneando...'
-      html5QrCode.start({ facingMode: 'environment' }, { fps: 10, qrbox: 250 },
+      _html5Qr = new Html5Qrcode('qr-reader')
+      _html5Qr.start({ facingMode: 'environment' }, { fps: 10, qrbox: 250 },
         (decodedText) => {
-          html5QrCode.stop().then(() => {
+          _html5Qr.stop().then(() => {
+            _html5Qr = null
             startBtn.disabled = false; startBtn.textContent = 'Reiniciar cámara'
-            const codeMatch = decodedText.match(/CL-\\d{4,6}/)
-            const code = codeMatch ? codeMatch[0] : decodedText.trim()
+            // Soportar tanto URLs completas como códigos planos
+            const codeMatch = decodedText.match(/CL-\d{4,6}/)
+            const code = codeMatch ? codeMatch[0] : decodedText.trim().toUpperCase()
             document.getElementById('codeInput').value = code
+            prefillCode = code // guardar para posible reúso
             lookupCustomer()
           }).catch(() => {})
         }, (error) => {}
-      ).catch(err => { startBtn.disabled = false; startBtn.textContent = 'Iniciar cámara'; showToast('Error al acceder a la cámara: ' + err.message, '#dc2626') })
+      ).catch(err => { _html5Qr = null; startBtn.disabled = false; startBtn.textContent = 'Iniciar cámara'; showToast('Error al acceder a la cámara: ' + err.message, '#dc2626') })
     }
-    async function lookupCustomer() {
+async function lookupCustomer() {
       const code = document.getElementById('codeInput').value.trim().toUpperCase()
       if (!code) { showToast('Introduce un código', '#dc2626'); return }
       document.getElementById('codeInput').value = code
@@ -6087,3 +6350,5 @@ router.get('/lots-catalog', auth, (_req, res) => {
     res.status(500).json({ error: e.message })
   }
 })
+
+// force-rebuild: Sat Sep 26 17:37:35 UTC 2026
