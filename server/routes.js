@@ -3589,13 +3589,11 @@ router.post('/raw-material-lots', auth, requirePermission('purchases', 'create')
   // 2. Registrar el lote MP en la tabla unificada lots para trazabilidad completa
   db.prepare(`
     INSERT INTO lots (id, code, type, reference_id, raw_material_id, quantity, quantity_received, quantity_remaining, unit,
-                      supplier_id, supplier_name, invoice, received_at, expiry_date, status, notes, created_at,
-                      supplier_lot_number, manufacture_date)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                      supplier_id, supplier_name, invoice, received_at, expiry_date, status, notes, created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(lotId, code, 'raw', id, rawMaterialId, qty, qty, qty, material.unit,
           supplierId || null, supplierName || null, invoice || null,
-          receivedAt || now, expiryDate || null, 'active', notes || null, now,
-          supplierLotNumber || null, manufactureDate || null)
+          receivedAt || now, expiryDate || null, 'active', notes || null, now)
 
   // 3. Sumar al stock del material
   db.prepare('UPDATE raw_materials SET stock = stock + ?, last_updated = ? WHERE id = ?').run(qty, now, rawMaterialId)
