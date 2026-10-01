@@ -3614,7 +3614,7 @@ router.post('/raw-material-lots', auth, requirePermission('purchases', 'create')
          internalLotNumber || code, supplierLotNumber || null, manufactureDate || null)
 
   // 2. Insertar en lots (TABLA ÚNICA de lotes para toda la app)
-  db.prepare(`INSERT OR IGNORE INTO lots (id, code, type, reference_id, raw_material_id, quantity, quantity_received, quantity_remaining, unit, supplier_id, supplier_name, invoice, received_at, expiry_date, status, notes, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+  db.prepare(`INSERT OR IGNORE INTO lots (id, code, type, reference_id, raw_material_id, quantity, quantity_received, quantity_remaining, unit, supplier_id, supplier_name, invoice, received_at, expiry_date, status, notes, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(lotId, code, 'raw', id, rawMaterialId, qty, qty, qty, material.unit,
          supplierId || null, supplierName || null, invoice || null,
          receivedAt || now, expiryDate || null, 'active', notes || null, now)
