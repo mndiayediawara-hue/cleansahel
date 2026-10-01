@@ -3613,12 +3613,6 @@ router.post('/raw-material-lots', auth, requirePermission('purchases', 'create')
          receivedAt || now, expiryDate || null, 'active', notes || null, now,
          internalLotNumber || code, supplierLotNumber || null, manufactureDate || null)
 
-  // 2. Insertar en lots (TABLA ÚNICA de lotes para toda la app)
-  db.prepare(`INSERT OR IGNORE INTO lots (id, code, type, reference_id, raw_material_id, quantity, quantity_received, quantity_remaining, unit, supplier_id, supplier_name, invoice, received_at, expiry_date, status, notes, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(lotId, code, 'raw', id, rawMaterialId, qty, qty, qty, material.unit,
-         supplierId || null, supplierName || null, invoice || null,
-         receivedAt || now, expiryDate || null, 'active', notes || null, now)
-
   // 3. Sumar al stock del material
   db.prepare('UPDATE raw_materials SET stock = stock + ?, last_updated = ? WHERE id = ?').run(qty, now, rawMaterialId)
 
@@ -3707,12 +3701,6 @@ router.post('/packaging-lots', auth, requirePermission('purchases', 'create'), (
   // 1. Insertar en packaging_lots
   db.prepare(`INSERT INTO packaging_lots (id, packaging_id, code, quantity, remaining, supplier_id, supplier_name, invoice, received_at, expiry_date, status, notes, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
     .run(id, packagingId, code, qty, qty, supplierId || null, supplierName || null, invoice || null,
-         receivedAt || now, expiryDate || null, 'active', notes || null, now)
-
-  // 2. Insertar en lots (TABLA ÚNICA)
-  db.prepare(`INSERT OR IGNORE INTO lots (id, code, type, reference_id, raw_material_id, product_id, quantity, quantity_received, quantity_remaining, unit, supplier_id, supplier_name, invoice, received_at, expiry_date, status, notes, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    .run(lotId, code, lotType, id, null, packagingId, qty, qty, qty, 'ud',
-         supplierId || null, supplierName || null, invoice || null,
          receivedAt || now, expiryDate || null, 'active', notes || null, now)
 
   db.prepare('UPDATE packaging SET stock = stock + ?, last_updated = ? WHERE id = ?').run(qty, now, packagingId)
