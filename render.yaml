@@ -13,4 +13,4 @@ services:
       - key: JWT_SECRET
         generateValue: true
 
-# Force redeploy trigger - Mavis Agent - fix delivery stock deduction
+# Redeploy trigger - Mavis Agent - product stock deduction fix deployed
