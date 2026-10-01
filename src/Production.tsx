@@ -55,19 +55,21 @@ export default function Production() {
     }
     setLoading(true)
     try {
-      const res = await api.post<{ lotNumber: string; productionOrderNumber: string }>('/produce-with-lots', {
-        productId: producing, quantity, notes, machineId: machineId || undefined,
+      // Flujo de fabricación con trazabilidad por lotes: crear → iniciar → completar
+      const po = await api.post<{ id: string; number: string; status: string }>('/production-orders', {
+        productId: producing, quantity, notes,
       })
-      setSuccess(`¡Fabricación completada! Lote ${res.lotNumber} (${res.productionOrderNumber})`)
+      await api.patch(`/production-orders/${po.id}/start`, {})
+      const res = await api.patch<{ ok: boolean; lot: { code: string; productName: string; quantity: number }; consumptions: any[]; productionOrder: { id: string; number: string; status: string } }>(`/production-orders/${po.id}/complete`, {})
+      setSuccess(`¡Fabricación completada! Lote ${res.lot.code} (${res.productionOrder.number})`)
       setTimeout(() => setSuccess(''), 4000)
       setProducing(''); setQuantity(500); setNotes(''); setMachineId('')
       await refresh()
     } catch (e: any) {
-      const shortages = e.data?.shortages
-      if (shortages) {
-        setError('Stock insuficiente: ' + shortages.map((s: any) => `${s.name} (${formatNumber(s.available)} / ${formatNumber(s.needed)})`).join(', '))
+      if (e.data?.shortage) {
+        setError(`Stock insuficiente de ${e.data.shortage.materialName}: faltan ${formatNumber(e.data.shortage.missing)} ${e.data.shortage.unit || ''}`)
       } else {
-        setError(e.message)
+        setError(e.message || e.data?.error || 'Error al fabricar')
       }
     } finally {
       setLoading(false)
