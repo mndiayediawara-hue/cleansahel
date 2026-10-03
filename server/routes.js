@@ -2553,12 +2553,13 @@ router.get('/production-orders', auth, (_req, res) => {
 })
 
 // Crear una orden de fabricacion manual
-router.post('/production-orders', auth, requirePermission('production', 'create'), (req, res) => {
-  const b = req.body
-  if (!b.productId) return res.status(400).json({ error: 'Falta productId' })
-  if (!b.quantity || b.quantity <= 0) return res.status(400).json({ error: 'Cantidad inválida' })
+// Logica de creacion de orden. Se extrae a funcion para que el adaptador
+// /produce-with-lots reutilice EXACTAMENTE la misma, sin duplicarla.
+function createProductionOrder(req, b) {
+  if (!b.productId) return { status: 400, body: { error: 'Falta productId' } }
+  if (!b.quantity || b.quantity <= 0) return { status: 400, body: { error: 'Cantidad inválida' } }
   const product = db.prepare('SELECT * FROM products WHERE id = ?').get(b.productId)
-  if (!product) return res.status(404).json({ error: 'Producto no encontrado' })
+  if (!product) return { status: 404, body: { error: 'Producto no encontrado' } }
   // Auto-buscar receta para este producto
   const recipe = db.prepare('SELECT * FROM recipes WHERE product_id = ?').get(b.productId)
   const id = uid('po-')
@@ -2569,36 +2570,49 @@ router.post('/production-orders', auth, requirePermission('production', 'create'
     .run(id, number, b.productId, recipe ? recipe.id : null, b.quantity, b.status || 'pendiente', b.pedidoId || null, b.notes || null, req.user.id, new Date().toISOString())
   addHistory(req, { action: 'crear', module: 'Producción', entityId: id, description: `Creada orden de fabricación ${number} (${b.quantity} L de ${product.name})` })
   const created = db.prepare('SELECT * FROM production_orders WHERE id = ?').get(id)
-  res.json(mapProductionOrder(created))
+  return { status: 200, body: mapProductionOrder(created) }
+}
+
+router.post('/production-orders', auth, requirePermission('production', 'create'), (req, res) => {
+  const r = createProductionOrder(req, req.body)
+  res.status(r.status).json(r.body)
 })
 
 // Confirmar fabricacion: pendiente -> en_proceso
-router.patch('/production-orders/:id/start', auth, requirePermission('production', 'edit'), (req, res) => {
-  const o = db.prepare('SELECT * FROM production_orders WHERE id = ?').get(req.params.id)
-  if (!o) return res.status(404).json({ error: 'No encontrado' })
-  if (o.status !== 'pendiente') return res.status(400).json({ error: `No se puede iniciar una orden en estado '${o.status}'` })
+function startProductionOrder(req, id) {
+  const o = db.prepare('SELECT * FROM production_orders WHERE id = ?').get(id)
+  if (!o) return { status: 404, body: { error: 'No encontrado' } }
+  if (o.status !== 'pendiente') return { status: 400, body: { error: `No se puede iniciar una orden en estado '${o.status}'` } }
   db.prepare(`UPDATE production_orders SET status = 'en_proceso', started_at = ? WHERE id = ?`)
-    .run(new Date().toISOString(), req.params.id)
+    .run(new Date().toISOString(), id)
   addHistory(req, { action: 'modificar', module: 'Producción', entityId: o.id, description: `Orden ${o.number} → en_proceso` })
-  const updated = db.prepare('SELECT * FROM production_orders WHERE id = ?').get(req.params.id)
-  res.json(mapProductionOrder(updated))
+  const updated = db.prepare('SELECT * FROM production_orders WHERE id = ?').get(id)
+  return { status: 200, body: mapProductionOrder(updated) }
+}
+
+router.patch('/production-orders/:id/start', auth, requirePermission('production', 'edit'), (req, res) => {
+  const r = startProductionOrder(req, req.params.id)
+  res.status(r.status).json(r.body)
 })
 
 // Marcar como acabada: en_proceso -> acabada, descuenta MPs y suma stock producto
 // PATCH /api/production-orders/:id/complete
 // Completa una orden de producción con consumo FIFO por lote y creación de lote de producto terminado
-router.patch('/production-orders/:id/complete', auth, requirePermission('production', 'edit'), (req, res) => {
+// Logica de finalizacion de fabricacion: genera lote PT, consume lotes MP/envase
+// por FEFO, registra lot_consumptions y suma stock de producto terminado.
+// Se extrae a funcion para reutilizarla desde /produce-with-lots sin duplicarla.
+function completeProductionOrder(req, orderId) {
   try {
-    const po = db.prepare('SELECT * FROM production_orders WHERE id = ?').get(req.params.id)
-    if (!po) return res.status(404).json({ error: 'Orden de producción no encontrada' })
-    if (po.status === 'acabada') return res.status(400).json({ error: 'La orden ya está completada' })
-    if (po.status !== 'en_proceso') return res.status(400).json({ error: `La orden debe estar en proceso (actual: '${po.status}')` })
+    const po = db.prepare('SELECT * FROM production_orders WHERE id = ?').get(orderId)
+    if (!po) return { status: 404, body: { error: 'Orden de producción no encontrada' } }
+    if (po.status === 'acabada') return { status: 400, body: { error: 'La orden ya está completada' } }
+    if (po.status !== 'en_proceso') return { status: 400, body: { error: `La orden debe estar en proceso (actual: '${po.status}')` } }
 
     const product = db.prepare('SELECT * FROM products WHERE id = ?').get(po.product_id)
-    if (!product) return res.status(404).json({ error: 'Producto no encontrado' })
+    if (!product) return { status: 404, body: { error: 'Producto no encontrado' } }
 
     const recipe = po.recipe_id ? db.prepare('SELECT * FROM recipes WHERE id = ?').get(po.recipe_id) : null
-    if (!recipe) return res.status(400).json({ error: 'La orden no tiene receta asociada' })
+    if (!recipe) return { status: 400, body: { error: 'La orden no tiene receta asociada' } }
 
     let materials = []
     try { materials = JSON.parse(recipe.items_json || '[]') } catch {}
@@ -2642,10 +2656,10 @@ router.patch('/production-orders/:id/complete', auth, requirePermission('product
       if (shortage > 0) {
         // Rollback: borrar el lote de PT que acabamos de crear
         db.prepare('DELETE FROM lots WHERE id = ?').run(lotId)
-        return res.status(400).json({
+        return { status: 400, body: {
           error: `Stock insuficiente de ${m.name}: faltan ${shortage.toFixed(2)} ${m.unit || ''}`,
           shortage: { materialId: m.materialId, materialName: m.name, missing: shortage }
-        })
+        } }
       }
 
       for (const alloc of allocations) {
@@ -2677,16 +2691,41 @@ router.patch('/production-orders/:id/complete', auth, requirePermission('product
     addHistory(req, { action: 'completar', module: 'Producción', entityId: po.id,
       description: `Producción ${po.number} → Lote ${lotCode} (${po.quantity} ud) de ${product.name}` })
 
-    res.json({
+    return { status: 200, body: {
       ok: true,
       lot: { id: lotId, code: lotCode, productId: product.id, productName: product.name, productCode: product.code, quantity: po.quantity, producedAt: now, expiryDate },
       consumptions,
       productionOrder: { id: po.id, number: po.number, status: 'acabada' }
-    })
+    } }
   } catch (e) {
-    res.status(500).json({ error: e.message })
+    return { status: 500, body: { error: e.message } }
   }
+}
+
+router.patch('/production-orders/:id/complete', auth, requirePermission('production', 'edit'), (req, res) => {
+  const r = completeProductionOrder(req, req.params.id)
+  res.status(r.status).json(r.body)
 })
+
+// ---------- ADAPTADORES DE COMPATIBILIDAD ----------
+// El frontend desplegado (assets/index-CLouT4yk.js) sigue llamando a
+// /produce-with-lots, ruta que habia desaparecido -> boton "Fabricar" en 404.
+// Estos endpoints NO implementan fabricacion: encadenan las MISMAS funciones
+// que usan las rutas reales de production_orders. Una sola logica de produccion.
+function produceCompat(req, res) {
+  const created = createProductionOrder(req, req.body)
+  if (created.status >= 400) return res.status(created.status).json(created.body)
+  const orderId = created.body?.id
+  if (!orderId) return res.status(500).json({ error: 'No se pudo crear la orden de producción' })
+  const started = startProductionOrder(req, orderId)
+  if (started.status >= 400) return res.status(started.status).json(started.body)
+  const done = completeProductionOrder(req, orderId)
+  if (done.status >= 400) return res.status(done.status).json(done.body)
+  res.json({ ...done.body, productionOrderId: orderId, flow: 'production_orders' })
+}
+
+router.post('/produce-with-lots', auth, requirePermission('production', 'create'), produceCompat)
+router.post('/produce', auth, requirePermission('production', 'create'), produceCompat)
 
 // Borrar orden de fabricacion
 router.delete('/production-orders/:id', auth, requirePermission('production', 'delete'), (req, res) => {
@@ -3185,13 +3224,39 @@ router.get('/reports/consumption', auth, (_req, res) => {
 })
 
 // ---------- BACKUP ----------
+// Lista UNICA compartida por /backup y /restore. Antes /backup volcaba 14
+// tablas y /restore solo 13 (sin 'config'), y NINGUNA de las tres tablas que
+// sostienen la trazabilidad (raw_material_lots, packaging_lots,
+// lot_consumptions). Un restore dejaba consumos apuntando a lotes inexistentes.
+const BACKUP_TABLES = [
+  'users', 'suppliers',
+  'raw_materials', 'raw_material_lots',
+  'packaging', 'packaging_lots',
+  'products', 'recipes', 'production_orders', 'lots', 'lot_consumptions',
+  'stock_reservations', 'stock_adjustments', 'recalls',
+  'customers', 'orders', 'purchases', 'expenses',
+  'notifications', 'history', 'config'
+]
+// Orden de borrado: hijos antes que padres, para que el ON DELETE CASCADE de
+// las tablas dependientes no arrase filas que se van a reinsertar despues.
+const RESTORE_ORDER = [
+  'lot_consumptions', 'stock_reservations', 'stock_adjustments', 'recalls',
+  'lots', 'production_orders', 'notifications', 'history', 'orders',
+  'purchases', 'expenses', 'customers', 'recipes', 'products',
+  'raw_material_lots', 'packaging_lots', 'raw_materials', 'packaging',
+  'suppliers', 'users', 'config'
+]
+// Orden de insercion: exactamente el inverso (padres antes que hijos), para
+// que ninguna FK falle al restaurar.
+const INSERT_ORDER = [...RESTORE_ORDER].reverse()
+const existingTables = (list) => list.filter(t =>
+  !!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name = ?").get(t))
+
 router.get('/backup', auth, requirePermission('settings', 'view'), (_req, res) => {
-  const tables = ['users','suppliers','raw_materials','packaging','products','recipes','customers','orders','purchases','expenses','lots','notifications','history','config']
+  const tables = existingTables(BACKUP_TABLES)
   const dump = {}
-  for (const t of tables) {
-    if (t === 'config') dump[t] = db.prepare('SELECT * FROM config').all()
-    else dump[t] = db.prepare(`SELECT * FROM ${t}`).all()
-  }
+  for (const t of tables) dump[t] = db.prepare(`SELECT * FROM ${t}`).all()
+  dump.__meta = { schema: 'v2-lotes', tables, exported_at: new Date().toISOString() }
   res.setHeader('Content-Disposition', `attachment; filename="cleanerp-backup-${new Date().toISOString().slice(0,10)}.json"`)
   res.json(dump)
 })
@@ -3200,22 +3265,26 @@ router.post('/restore', auth, requirePermission('settings', 'edit'), (req, res) 
   const dump = req.body
   if (!dump || typeof dump !== 'object') return res.status(400).json({ error: 'Datos inválidos' })
   try {
-    const tables = ['users','suppliers','raw_materials','packaging','products','recipes','customers','orders','purchases','expenses','lots','notifications','history']
+    // Mismas tablas que el backup. Si el volcado es antiguo y no trae una
+    // tabla, se restaura igualmente vacia: el objetivo es que el inventario
+    // y la trazabilidad queden completos y coherentes.
+    const tables = existingTables(BACKUP_TABLES)
+    const delOrder = tables.slice().sort((a, b) => RESTORE_ORDER.indexOf(a) - RESTORE_ORDER.indexOf(b))
     const tx = db.transaction(() => {
-      for (const t of tables) db.prepare(`DELETE FROM ${t}`).run()
-      for (const t of tables) {
-        if (Array.isArray(dump[t])) {
-          for (const row of dump[t]) {
-            const cols = Object.keys(row)
-            const placeholders = cols.map(() => '?').join(',')
-            db.prepare(`INSERT INTO ${t} (${cols.join(',')}) VALUES (${placeholders})`).run(...cols.map(c => row[c]))
-          }
+      for (const t of delOrder) db.prepare(`DELETE FROM ${t}`).run()
+      for (const t of INSERT_ORDER) {
+        if (!tables.includes(t)) continue
+        const rows = Array.isArray(dump[t]) ? dump[t] : []
+        for (const row of rows) {
+          const cols = Object.keys(row)
+          const placeholders = cols.map(() => '?').join(',')
+          db.prepare(`INSERT INTO ${t} (${cols.join(',')}) VALUES (${placeholders})`).run(...cols.map(c => row[c] ?? null))
         }
       }
     })
     tx()
     addHistory(req, { action: 'modificar', module: 'Sistema', description: 'Restauración desde backup' })
-    res.json({ ok: true })
+    res.json({ ok: true, tables: tables.length })
   } catch (e) {
     res.status(500).json({ error: e.message })
   }
@@ -3230,7 +3299,7 @@ router.get('/search', auth, (req, res) => {
   db.prepare('SELECT id, code, name FROM customers WHERE LOWER(name) LIKE ? OR LOWER(company) LIKE ? OR LOWER(cif) LIKE ?').all(`%${q}%`, `%${q}%`, `%${q}%`).forEach(c => results.push({ type: 'cliente', id: c.id, title: c.name, subtitle: c.company }))
   db.prepare('SELECT id, name, cif FROM suppliers WHERE LOWER(name) LIKE ? OR LOWER(cif) LIKE ?').all(`%${q}%`, `%${q}%`).forEach(s => results.push({ type: 'proveedor', id: s.id, title: s.name, subtitle: s.cif }))
   db.prepare('SELECT id, code, name FROM raw_materials WHERE LOWER(name) LIKE ? OR LOWER(code) LIKE ? OR LOWER(lot) LIKE ?').all(`%${q}%`, `%${q}%`, `%${q}%`).forEach(r => results.push({ type: 'materia_prima', id: r.id, title: r.name, subtitle: r.code }))
-  db.prepare('SELECT id, code, lot_number, product_id FROM lots WHERE LOWER(COALESCE(code, lot_number)) LIKE ?').all(`%${q}%`).forEach(l => results.push({ type: 'lote', id: l.id, title: l.code || l.lot_number || '', subtitle: 'Lote' }))
+  db.prepare('SELECT id, code, product_id FROM lots WHERE LOWER(code) LIKE ?').all(`%${q}%`).forEach(l => results.push({ type: 'lote', id: l.id, title: l.code || '', subtitle: 'Lote' }))
   db.prepare('SELECT id, number FROM orders WHERE LOWER(number) LIKE ?').all(`%${q}%`).forEach(o => results.push({ type: 'pedido', id: o.id, title: o.number, subtitle: 'Pedido' }))
   res.json({ results: results.slice(0, 30) })
 })
@@ -6124,9 +6193,9 @@ router.get('/lots/by-code/:code', auth, (req, res) => {
         SELECT l.*, p.name as product_name, p.code as product_code
         FROM lots l
         LEFT JOIN products p ON l.product_id = p.id
-        WHERE l.code = ? OR l.lot_number = ?
+        WHERE l.code = ?
         LIMIT 1
-      `).get(codeUpper, codeUpper)
+      `).get(codeUpper)
       if (!lot) return res.status(404).json({ error: 'Lote no encontrado' })
       return res.json({ type: 'product', lot })
     } else if (codeUpper.startsWith('OP-')) {

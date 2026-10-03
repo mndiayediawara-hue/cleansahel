@@ -549,62 +549,151 @@ try {
     console.log('✓ Migrated: added production_order_id to lots')
   }
 
-  // ─── UNIFICADO: recrear tabla lots con esquema completo ───
-  // Esto limpia el esquema antiguo (lot_number, raw_materials_json) y
-  // establece lots como la tabla ÚNICA para todos los tipos de lote.
+  // ─── UNIFICADO: tabla lots ÚNICA para todos los tipos de lote ───
+  // REGLA: esta migración es IDEMPOTENTE y NUNCA destructiva si la tabla ya
+  // existe con el esquema correcto. Antes de esta corrección hacía
+  // DROP TABLE lots en CADA arranque, lo que borraba los lotes de MP/envase
+  // y, por ON DELETE CASCADE con foreign_keys=ON, tambien los lot_consumptions.
   try {
-    // Guardar datos de producción existentes (solo PT lots del old schema)
-    const oldLots = db.prepare(`SELECT id, lot_number, product_id, recipe_id, quantity, raw_materials_json, produced_by, produced_at, status, notes, production_order_id, expiry_date FROM lots WHERE lot_number LIKE 'PT-%' OR lot_number LIKE 'LOT-%'`).all()
-    const oldData = oldLots.map(l => ({
-      id: l.id, lot_number: l.lot_number, product_id: l.product_id, recipe_id: l.recipe_id,
-      quantity: l.quantity, raw_materials_json: l.raw_materials_json, produced_by: l.produced_by,
-      produced_at: l.produced_at, status: l.status, notes: l.notes,
-      production_order_id: l.production_order_id, expiry_date: l.expiry_date
-    }))
+    const lotCols = db.prepare("PRAGMA table_info(lots)").all().map(c => c.name)
+    const UNIFIED = ['code', 'type', 'reference_id', 'raw_material_id', 'packaging_id',
+                     'quantity_received', 'quantity_remaining', 'unit', 'supplier_id',
+                     'supplier_name', 'invoice', 'received_at', 'expiry_date', 'created_at']
+    const yaEsUnificada = UNIFIED.every(c => lotCols.includes(c))
+    const esEsquemaAntiguo = lotCols.length > 0 && lotCols.includes('lot_number') && !lotCols.includes('code')
 
-    db.exec('DROP TABLE IF EXISTS lots')
-    db.exec(`
-      CREATE TABLE lots (
-        id TEXT PRIMARY KEY,
-        code TEXT UNIQUE NOT NULL,
-        type TEXT NOT NULL,
-        reference_id TEXT,
-        raw_material_id TEXT,
-        packaging_id TEXT,
-        product_id TEXT,
-        production_order_id TEXT,
-        quantity REAL DEFAULT 0,
-        quantity_received REAL DEFAULT 0,
-        quantity_remaining REAL DEFAULT 0,
-        unit TEXT,
-        supplier_id TEXT,
-        supplier_name TEXT,
-        invoice TEXT,
-        received_at TEXT,
-        expiry_date TEXT,
-        status TEXT NOT NULL,
-        notes TEXT,
-        created_at TEXT NOT NULL,
-        recipe_id TEXT,
-        machine_id TEXT,
-        started_at TEXT,
-        finished_at TEXT,
-        production_order_number TEXT,
-        produced_by TEXT,
-        raw_materials_json TEXT
-      )
-    `)
-    console.log('✓ Migrated: lots table recreated with unified schema')
+    if (lotCols.length === 0) {
+      // La tabla no existe todavia: se crea directamente con el esquema unificado.
+      db.exec(`
+        CREATE TABLE lots (
+          id TEXT PRIMARY KEY,
+          code TEXT UNIQUE NOT NULL,
+          type TEXT NOT NULL,
+          reference_id TEXT,
+          raw_material_id TEXT,
+          packaging_id TEXT,
+          product_id TEXT,
+          production_order_id TEXT,
+          quantity REAL DEFAULT 0,
+          quantity_received REAL DEFAULT 0,
+          quantity_remaining REAL DEFAULT 0,
+          unit TEXT,
+          supplier_id TEXT,
+          supplier_name TEXT,
+          invoice TEXT,
+          received_at TEXT,
+          expiry_date TEXT,
+          status TEXT NOT NULL,
+          notes TEXT,
+          created_at TEXT NOT NULL,
+          recipe_id TEXT,
+          machine_id TEXT,
+          started_at TEXT,
+          finished_at TEXT,
+          production_order_number TEXT,
+          produced_by TEXT,
+          raw_materials_json TEXT
+        )
+      `)
+      console.log('✓ Migrated: lots table created with unified schema')
 
-    // Restaurar datos de producción en el nuevo esquema
-    const insert = db.prepare(`INSERT INTO lots (id, code, type, reference_id, product_id, production_order_id, quantity, quantity_received, quantity_remaining, unit, status, notes, created_at, recipe_id, produced_by, expiry_date, raw_materials_json, production_order_number) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
-    for (const l of oldData) {
-      insert.run(l.id, l.lot_number, 'product', l.id, l.product_id, l.production_order_id,
-                 l.quantity, l.quantity, l.quantity, 'ud', l.status, l.notes,
-                 l.produced_at, l.recipe_id, l.produced_by, l.expiry_date,
-                 l.raw_materials_json, l.lot_number)
+    } else if (yaEsUnificada) {
+      // El esquema ya es el correcto. NO se hace nada. Este es el caso normal
+      // en cada arranque: la migracion debe ser un no-op, no un DROP.
+      console.log('✓ lots: esquema unificado correcto, sin cambios')
+
+    } else if (esEsquemaAntiguo) {
+      // Migracion UNICA desde el esquema antiguo, con copia de seguridad previa.
+      const stamp = new Date().toISOString().replace(/[-:T.]/g, '').slice(0, 14)
+      const lotRows = db.prepare('SELECT * FROM lots').all()
+      let consRows = []
+      try { consRows = db.prepare('SELECT * FROM lot_consumptions').all() } catch {}
+
+      // 1) Copia integra de AMBAS tablas ANTES de tocar nada.
+      db.pragma('foreign_keys = OFF')
+      const bkLots = `lots_backup_${stamp}`
+      const bkCons = `lot_consumptions_backup_${stamp}`
+      db.exec(`CREATE TABLE ${bkLots} AS SELECT * FROM lots`)
+      if (consRows.length) db.exec(`CREATE TABLE ${bkCons} AS SELECT * FROM lot_consumptions`)
+
+      // 2) Recrear con el esquema unificado.
+      db.exec('DROP TABLE IF EXISTS lots')
+      db.exec(`
+        CREATE TABLE lots (
+          id TEXT PRIMARY KEY,
+          code TEXT UNIQUE NOT NULL,
+          type TEXT NOT NULL,
+          reference_id TEXT,
+          raw_material_id TEXT,
+          packaging_id TEXT,
+          product_id TEXT,
+          production_order_id TEXT,
+          quantity REAL DEFAULT 0,
+          quantity_received REAL DEFAULT 0,
+          quantity_remaining REAL DEFAULT 0,
+          unit TEXT,
+          supplier_id TEXT,
+          supplier_name TEXT,
+          invoice TEXT,
+          received_at TEXT,
+          expiry_date TEXT,
+          status TEXT NOT NULL,
+          notes TEXT,
+          created_at TEXT NOT NULL,
+          recipe_id TEXT,
+          machine_id TEXT,
+          started_at TEXT,
+          finished_at TEXT,
+          production_order_number TEXT,
+          produced_by TEXT,
+          raw_materials_json TEXT
+        )
+      `)
+
+      // 3) Reinsertar TODO, no solo los PT-/LOT-. Cualquier lote de MP o
+      //    envase que existiera tambien se conserva.
+      const ins = db.prepare(`INSERT OR REPLACE INTO lots
+        (id, code, type, reference_id, product_id, production_order_id, quantity,
+         quantity_received, quantity_remaining, unit, status, notes, created_at,
+         recipe_id, produced_by, expiry_date, raw_materials_json, production_order_number)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      let migrated = 0
+      for (const l of lotRows) {
+        const code = l.code || l.lot_number
+        if (!code) continue
+        const qty = l.quantity_received != null ? l.quantity_received : (l.quantity || 0)
+        ins.run(l.id, code, l.type || 'product', l.reference_id || l.id, l.product_id || null,
+                l.production_order_id || null, l.quantity ?? qty, qty,
+                l.quantity_remaining ?? qty, l.unit || 'ud', l.status || 'completado',
+                l.notes || null, l.created_at || l.produced_at || new Date().toISOString(),
+                l.recipe_id || null, l.produced_by || null, l.expiry_date || null,
+                l.raw_materials_json || null, l.production_order_number || code)
+        migrated++
+      }
+      db.pragma('foreign_keys = ON')
+      console.log(`✓ Migrated: lots ${lotRows.length} -> unified schema (${migrated} rows, backup in ${bkLots})`)
+
+    } else {
+      // Esquema parcial: se COMPLETA con ALTER TABLE, nunca con DROP.
+      for (const [col, ddl] of [
+        ['code', 'ALTER TABLE lots ADD COLUMN code TEXT'],
+        ['type', "ALTER TABLE lots ADD COLUMN type TEXT DEFAULT 'product'"],
+        ['reference_id', 'ALTER TABLE lots ADD COLUMN reference_id TEXT'],
+        ['raw_material_id', 'ALTER TABLE lots ADD COLUMN raw_material_id TEXT'],
+        ['packaging_id', 'ALTER TABLE lots ADD COLUMN packaging_id TEXT'],
+        ['quantity_received', 'ALTER TABLE lots ADD COLUMN quantity_received REAL'],
+        ['quantity_remaining', 'ALTER TABLE lots ADD COLUMN quantity_remaining REAL'],
+        ['unit', 'ALTER TABLE lots ADD COLUMN unit TEXT'],
+        ['supplier_id', 'ALTER TABLE lots ADD COLUMN supplier_id TEXT'],
+        ['supplier_name', 'ALTER TABLE lots ADD COLUMN supplier_name TEXT'],
+        ['invoice', 'ALTER TABLE lots ADD COLUMN invoice TEXT'],
+        ['received_at', 'ALTER TABLE lots ADD COLUMN received_at TEXT'],
+        ['created_at', 'ALTER TABLE lots ADD COLUMN created_at TEXT'],
+      ]) {
+        if (!lotCols.includes(col)) db.exec(ddl)
+      }
+      console.log('✓ Migrated: lots partial schema completed with ALTER TABLE (no DROP)')
     }
-    console.log(`✓ Migrated: restored ${oldData.length} production lots`)
   } catch (e) { console.warn('migration lots unified schema:', e.message) }
 
 // Migración: packaging.category para distinguir envases de embalajes
